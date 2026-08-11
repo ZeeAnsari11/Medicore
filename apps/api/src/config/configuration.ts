@@ -14,4 +14,9 @@ export default () => ({
     .split(',')
     .map((origin) => origin.trim())
     .filter(Boolean),
+  platformAdmin: {
+    tenantName: process.env.PLATFORM_TENANT_NAME ?? 'Medicore Platform',
+    email: process.env.PLATFORM_ADMIN_EMAIL,
+    password: process.env.PLATFORM_ADMIN_PASSWORD,
+  },
 });

@@ -17,7 +17,11 @@ const localStorageTokenStorage: TokenStorage = {
   },
 };
 
-export const { apiFetch } = createApiClient({
+const client = createApiClient({
   baseUrl: API_BASE_URL,
   tokenStorage: localStorageTokenStorage,
 });
+
+export const apiFetch = client.apiFetch;
+export const getStoredToken = () => localStorageTokenStorage.getToken();
+export const setStoredToken = (token: string | null) => localStorageTokenStorage.setToken(token);

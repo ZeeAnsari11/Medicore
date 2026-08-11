@@ -15,6 +15,7 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 export { Input } from './primitives/input';
 export { Label } from './primitives/label';
 export { Alert, AlertTitle, AlertDescription } from './primitives/alert';
+export { Badge, badgeVariants, type BadgeProps } from './primitives/badge';
 export {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -32,3 +33,26 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuRadioGroup,
 } from './primitives/dropdown-menu';
+
+// Table
+export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell } from './table/table';
+
+// Forms
+export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectItem, SelectSeparator, SelectScrollUpButton, SelectScrollDownButton } from './forms/select';
+export { Checkbox } from './forms/checkbox';
+export { Switch } from './forms/switch';
+
+// Feedback & Layout
+export {
+  Dialog,
+  DialogPortal,
+  DialogOverlay,
+  DialogClose,
+  DialogTrigger,
+  DialogContent,
+  DialogHeader,
+  DialogFooter,
+  DialogTitle,
+  DialogDescription,
+} from './feedback/dialog';
+export { Toaster, toast } from './feedback/toast';

@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { Pill, AlertCircle } from 'lucide-react';
@@ -98,13 +97,6 @@ export default function LoginPage() {
             </form>
           </CardContent>
         </Card>
-
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          New to Medicore?{' '}
-          <Link href="/register" className="font-medium text-primary hover:underline">
-            Create your organization
-          </Link>
-        </p>
       </div>
     </div>
   );

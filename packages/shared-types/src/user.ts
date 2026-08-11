@@ -7,6 +7,8 @@ export interface User extends TenantOwnedEntity {
   status: UserStatus;
   systemRole?: SystemRole;
   tenantRole: TenantRole;
+  roleId?: string;
+  role?: { id: string; name: string } | null;
 }
 
 export interface AuthenticatedUser {
@@ -15,4 +17,25 @@ export interface AuthenticatedUser {
   email: string;
   tenantRole: TenantRole;
   systemRole?: SystemRole;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  fullName: string;
+  tenantRole: TenantRole;
+  roleId?: string;
+}
+
+export interface CreateUserResponse extends User {
+  temporaryPassword: string;
+}
+
+export interface UpdateUserRequest {
+  fullName?: string;
+  tenantRole?: TenantRole;
+  roleId?: string | null;
+}
+
+export interface UpdateUserStatusRequest {
+  status: UserStatus;
 }

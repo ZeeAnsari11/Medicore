@@ -32,6 +32,9 @@ export class User {
 
   @Prop({ enum: SystemRole })
   systemRole?: SystemRole;
+
+  @Prop({ type: Types.ObjectId, ref: 'Role' })
+  roleId?: Types.ObjectId;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

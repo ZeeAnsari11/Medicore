@@ -6,5 +6,8 @@
 export { SystemRole, TenantRole, UserStatus, TenantStatus } from './enums';
 export type { BaseEntity, TenantOwnedEntity } from './base';
 export type { Tenant } from './tenant';
-export type { User, AuthenticatedUser } from './user';
-export type { LoginRequest, RegisterTenantRequest, AuthResponse } from './auth';
+export type { Permission, CreatePermissionRequest, UpdatePermissionRequest, UpdatePermissionStatusRequest } from './permission';
+export type { PermissionSummary, Role, CreateRoleRequest, UpdateRoleRequest, UpdateRoleStatusRequest } from './role';
+export type { User, CreateUserRequest, CreateUserResponse, UpdateUserRequest, UpdateUserStatusRequest, AuthenticatedUser } from './user';
+export type { LoginRequest, AuthResponse, AuthMeResponse } from './auth';
+export type { CreatePlatformTenantRequest, CreatePlatformTenantResponse, UpdateTenantStatusRequest } from './platform';

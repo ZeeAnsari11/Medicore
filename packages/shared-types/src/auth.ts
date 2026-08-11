@@ -5,14 +5,11 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface RegisterTenantRequest {
-  tenantName: string;
-  fullName: string;
-  email: string;
-  password: string;
-}
-
 export interface AuthResponse {
   accessToken: string;
   user: AuthenticatedUser;
+}
+
+export interface AuthMeResponse extends AuthenticatedUser {
+  permissions: string[];
 }

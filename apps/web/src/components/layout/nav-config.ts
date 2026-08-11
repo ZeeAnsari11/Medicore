@@ -9,17 +9,14 @@ import {
   Users,
   BarChart3,
   Settings,
+  LockKeyhole,
+  Shield,
+  Key,
   type LucideIcon,
 } from 'lucide-react';
+import type { NavItem, NavSection } from '@medicore/ui';
 
-export interface NavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-  comingSoon?: boolean;
-}
-
-export const navSections: { title: string; items: NavItem[] }[] = [
+export const navSections: NavSection[] = [
   {
     title: 'Overview',
     items: [{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
@@ -44,6 +41,14 @@ export const navSections: { title: string; items: NavItem[] }[] = [
   {
     title: 'Insights',
     items: [{ label: 'Reports', href: '/reports', icon: BarChart3, comingSoon: true }],
+  },
+  {
+    title: 'Administration',
+    items: [
+      { label: 'Permissions', href: '/administration/permissions', icon: Key, requires: { anyOf: ['permissions:read'] } },
+      { label: 'Roles', href: '/administration/roles', icon: Shield, requires: { anyOf: ['roles:read'] } },
+      { label: 'Users', href: '/administration/users', icon: LockKeyhole, requires: { anyOf: ['users:read'] } },
+    ],
   },
   {
     title: 'Workspace',

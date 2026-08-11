@@ -13,10 +13,13 @@
     "@medicore/api-client": "workspace:*",
     "@medicore/shared-types": "workspace:*",
     "@medicore/ui": "workspace:*",
+    "@radix-ui/react-checkbox": "^1.1.1",
     "@radix-ui/react-dialog": "^1.1.4",
     "@radix-ui/react-dropdown-menu": "^2.1.4",
     "@radix-ui/react-label": "^2.1.1",
+    "@radix-ui/react-select": "^2.1.4",
     "@radix-ui/react-slot": "^1.1.1",
+    "@radix-ui/react-switch": "^1.1.1",
     "@tanstack/react-query": "^5.62.11",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -25,6 +28,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-hook-form": "^7.54.2",
+    "sonner": "^1.7.0",
     "tailwind-merge": "^2.6.0"
   },
   "devDependencies": {
