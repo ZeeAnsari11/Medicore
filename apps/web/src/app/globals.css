@@ -1,0 +1,12 @@
+@import "tailwindcss";
+@import "@medicore/ui/styles/tokens.css";
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+
+body {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+code,
+pre {
+  font-family: var(--font-geist-mono);
+}

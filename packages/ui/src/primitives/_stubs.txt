@@ -1,0 +1,1 @@
+Stub files created to allow packages/ui to build. These will be replaced with real implementations in sequence per the plan.

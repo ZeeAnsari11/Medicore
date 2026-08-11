@@ -1,0 +1,26 @@
+{
+  "name": "medicore",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Medicore - SaaS platform for medicine/pharmaceutical distribution",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "turbo run dev --filter=@medicore/api --filter=@medicore/web",
+    "dev:api": "turbo run dev --filter=@medicore/api",
+    "dev:web": "turbo run dev --filter=@medicore/web",
+    "dev:desktop": "pnpm --filter @medicore/desktop tauri dev",
+    "dev:mobile": "pnpm --filter @medicore/mobile start",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\" --ignore-path .gitignore",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}
