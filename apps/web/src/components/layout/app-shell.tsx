@@ -11,8 +11,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !user) {
-      router.replace('/login');
+    if (!isLoading) {
+      if (!user) {
+        router.replace('/login');
+      } else if (user.systemRole === 'SUPER_ADMIN') {
+        router.replace('/platform/tenants');
+      }
     }
   }, [isLoading, user, router]);
 

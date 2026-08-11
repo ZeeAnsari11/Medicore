@@ -24,14 +24,16 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!isLoading && user) {
-      router.replace('/dashboard');
+      const destination = user.systemRole === 'SUPER_ADMIN' ? '/platform/tenants' : '/dashboard';
+      router.replace(destination);
     }
   }, [isLoading, user, router]);
 
   const onSubmit = async (values: LoginFormValues) => {
     try {
-      await login(values);
-      router.replace('/dashboard');
+      const result = await login(values);
+      const destination = result.user.systemRole === 'SUPER_ADMIN' ? '/platform/tenants' : '/dashboard';
+      router.replace(destination);
     } catch {
       // surfaced via loginError below
     }
