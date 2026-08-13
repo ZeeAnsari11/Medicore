@@ -64,7 +64,7 @@ function UsersPage() {
         email: email.trim(),
         fullName: fullName.trim(),
         tenantRole,
-        roleId: selectedRoleId || undefined,
+        ...(selectedRoleId ? { roleId: selectedRoleId } : {}),
       });
 
       if (result && 'temporaryPassword' in result) {
