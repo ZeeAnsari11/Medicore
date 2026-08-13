@@ -261,8 +261,8 @@ function UsersPage() {
                   onChange={(e) => setTenantRole(e.target.value as TenantRole)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 >
-                  <option value={TenantRole.TENANT_USER}>User</option>
-                  <option value={TenantRole.TENANT_SUPER_ADMIN}>Admin</option>
+                  <option value="TENANT_USER">User</option>
+                  <option value="TENANT_SUPER_ADMIN">Admin</option>
                 </select>
               </div>
 
@@ -448,8 +448,8 @@ function UsersPage() {
                   onChange={(e) => setTenantRole(e.target.value as TenantRole)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 >
-                  <option value={TenantRole.TENANT_USER}>User</option>
-                  <option value={TenantRole.TENANT_SUPER_ADMIN}>Admin</option>
+                  <option value="TENANT_USER">User</option>
+                  <option value="TENANT_SUPER_ADMIN">Admin</option>
                 </select>
               </div>
 
