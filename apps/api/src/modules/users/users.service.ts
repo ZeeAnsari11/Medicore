@@ -56,6 +56,13 @@ export class UsersService {
       .populate('roleId', 'name');
   }
 
+  async findAdminForTenant(tenantId: string) {
+    return this.userModel.findOne({
+      tenantId: new Types.ObjectId(tenantId),
+      tenantRole: TenantRole.TENANT_SUPER_ADMIN,
+    });
+  }
+
   private async createUserWithTempPassword(params: {
     tenantId: string;
     email: string;
@@ -134,6 +141,39 @@ export class UsersService {
     return user;
   }
 
+  async updateAdminForTenant(tenantId: string, updates: { email?: string; password?: string; fullName?: string }) {
+    const user = await this.userModel.findOne({
+      tenantId: new Types.ObjectId(tenantId),
+      tenantRole: TenantRole.TENANT_SUPER_ADMIN,
+    });
+
+    if (!user) {
+      throw new NotFoundException('Admin user not found for this tenant');
+    }
+
+    if (updates.email !== undefined) {
+      const existing = await this.userModel.findOne({
+        email: updates.email.toLowerCase(),
+        _id: { $ne: user._id },
+      });
+      if (existing) {
+        throw new ConflictException('Email already in use');
+      }
+      user.email = updates.email.toLowerCase();
+    }
+
+    if (updates.password !== undefined) {
+      user.passwordHash = await bcrypt.hash(updates.password, SALT_ROUNDS);
+    }
+
+    if (updates.fullName !== undefined) {
+      user.fullName = updates.fullName;
+    }
+
+    await user.save();
+    return user;
+  }
+
   async setStatus(tenantId: string, id: string, status: UserStatus) {
     const user = await this.userModel.findOne({
       _id: new Types.ObjectId(id),
@@ -166,6 +206,10 @@ export class UsersService {
 
   toUserResponse(user: UserDocument): UserType {
     const obj = user.toObject() as any;
+    let roleId: string | undefined;
+    if (obj.roleId) {
+      roleId = typeof obj.roleId === 'string' ? obj.roleId : (obj.roleId._id?.toString?.() || obj.roleId.toString?.());
+    }
     return {
       id: obj._id.toString(),
       tenantId: obj.tenantId.toString(),
@@ -174,7 +218,7 @@ export class UsersService {
       status: obj.status,
       systemRole: obj.systemRole,
       tenantRole: obj.tenantRole,
-      roleId: obj.roleId?.toString(),
+      roleId,
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt,
     };
