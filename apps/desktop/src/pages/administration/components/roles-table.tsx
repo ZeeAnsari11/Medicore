@@ -41,7 +41,7 @@ export function RolesTable({ roles, onEdit }: RolesTableProps) {
           <TableRow>
             <TableHead>Name</TableHead>
             <TableHead>Description</TableHead>
-            <TableHead>Permissions</TableHead>
+            <TableHead>Modules</TableHead>
             <TableHead>Status</TableHead>
             <TableHead className="w-16">Active</TableHead>
             <TableHead className="w-12"></TableHead>
@@ -55,7 +55,7 @@ export function RolesTable({ roles, onEdit }: RolesTableProps) {
                 {role.description || '—'}
               </TableCell>
               <TableCell>
-                <Badge variant="outline">{role.permissions.length} permission(s)</Badge>
+                <Badge variant="outline">{role.allowedModules.length} module(s)</Badge>
               </TableCell>
               <TableCell>
                 <Badge variant={role.isActive ? 'default' : 'secondary'}>

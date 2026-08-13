@@ -50,6 +50,15 @@ export class TenantsService {
     return tenant.save();
   }
 
+  async update(id: string, name: string) {
+    const tenant = await this.tenantModel.findById(id);
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+    tenant.name = name;
+    return tenant.save();
+  }
+
   toTenantResponse(tenant: TenantDocument): TenantType {
     const obj = tenant.toObject() as any;
     return {

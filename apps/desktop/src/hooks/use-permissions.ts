@@ -1,11 +1,11 @@
 import { useAuth } from './use-auth';
-import { SystemRole, TenantRole } from '@medicore/shared-types';
 
 export function usePermissions() {
   const { user } = useAuth();
 
+  // Compare strings directly (enums can have import issues)
   const isAdmin =
-    user?.tenantRole === TenantRole.TENANT_SUPER_ADMIN || user?.systemRole === SystemRole.SUPER_ADMIN;
+    user?.tenantRole === 'TENANT_SUPER_ADMIN' || user?.systemRole === 'SUPER_ADMIN';
 
   const permissions = user?.permissions ?? [];
 

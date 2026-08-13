@@ -1,6 +1,6 @@
 import { Tenant } from './tenant';
 import { User } from './user';
-import { TenantStatus } from './enums';
+import { TenantStatus, SubscriptionStatus } from './enums';
 
 export interface CreatePlatformTenantRequest {
   tenantName: string;
@@ -16,4 +16,19 @@ export interface CreatePlatformTenantResponse {
 
 export interface UpdateTenantStatusRequest {
   status: TenantStatus;
+}
+
+export interface UpdateTenantRequest {
+  name: string;
+  adminFullName?: string;
+  email?: string;
+  password?: string;
+}
+
+export interface PlatformDashboardSummary {
+  totalTenants: number;
+  tenantsByStatus: Record<TenantStatus, number>;
+  totalSubscriptions: number;
+  subscriptionsByStatus: Record<SubscriptionStatus, number>;
+  recentTenants: Tenant[];
 }

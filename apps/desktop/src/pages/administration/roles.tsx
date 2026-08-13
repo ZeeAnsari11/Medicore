@@ -1,45 +1,107 @@
-import { useState } from 'react';
-import { Plus, AlertCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, AlertCircle, X } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { Button, Alert } from '@medicore/ui';
 import { useRoles } from '@/hooks/use-roles';
 import { usePermissions } from '@/hooks/use-permissions';
 import { RolesTable } from './components/roles-table';
-import { RoleDialog } from './components/role-dialog';
+import { apiFetch } from '@/lib/api-client';
 
-type DialogMode = 'create' | 'edit' | null;
+interface Module {
+  id: string;
+  label: string;
+}
 
 function RolesPage() {
-  const { roles, isLoading, error } = useRoles();
-  const { has } = usePermissions();
-  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
-  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const { roles, isLoading, error, create } = useRoles();
+  const { isAdmin } = usePermissions();
 
-  const selectedRole = selectedRoleId ? roles.find((r) => r.id === selectedRoleId) : undefined;
+  const [showDialog, setShowDialog] = useState(false);
+  const [roleName, setRoleName] = useState('');
+  const [selectedModules, setSelectedModules] = useState<string[]>([]);
+  const [availableModules, setAvailableModules] = useState<Module[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleOpenCreate = () => {
-    setSelectedRoleId(null);
-    setDialogMode('create');
+  // Fetch available modules when modal opens
+  useEffect(() => {
+    if (showDialog) {
+      fetchAvailableModules();
+    }
+  }, [showDialog]);
+
+  const fetchAvailableModules = async () => {
+    try {
+      const modules = await apiFetch<Module[]>('/roles/modules/available', { auth: false });
+      setAvailableModules(modules);
+    } catch (err) {
+      console.error('Failed to load modules:', err);
+      setSaveError('Failed to load available modules');
+    }
   };
 
-  const handleOpenEdit = (id: string) => {
-    setSelectedRoleId(id);
-    setDialogMode('edit');
+  const handleOpenCreate = () => {
+    setRoleName('');
+    setSelectedModules([]);
+    setSaveError(null);
+    setShowDialog(true);
   };
 
   const handleCloseDialog = () => {
-    setDialogMode(null);
-    setSelectedRoleId(null);
+    setShowDialog(false);
+    setRoleName('');
+    setSelectedModules([]);
+    setSaveError(null);
+  };
+
+  const handleModuleToggle = (moduleId: string) => {
+    setSelectedModules((prev) =>
+      prev.includes(moduleId)
+        ? prev.filter((id) => id !== moduleId)
+        : [...prev, moduleId]
+    );
+  };
+
+  const handleSaveRole = async () => {
+    if (!roleName.trim()) {
+      setSaveError('Role name is required');
+      return;
+    }
+
+    if (selectedModules.length === 0) {
+      setSaveError('Please select at least one module');
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveError(null);
+
+    try {
+      await create({
+        name: roleName.trim(),
+        description: '',
+        allowedModules: selectedModules,
+      });
+      handleCloseDialog();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to create role');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
-    <>
+    <div className="relative">
       <PageHeader
         title="Roles"
         description="Create and manage roles with permissions"
         actions={
-          <Button onClick={handleOpenCreate} disabled={!has('roles:create')}>
+          <Button
+            type="button"
+            onClick={handleOpenCreate}
+            disabled={!isAdmin}
+          >
             <Plus className="mr-2 h-4 w-4" />
             New Role
           </Button>
@@ -64,16 +126,123 @@ function RolesPage() {
           description="Create your first role to assign permissions to users"
         />
       ) : (
-        <RolesTable roles={roles} onEdit={handleOpenEdit} />
+        <RolesTable
+          roles={roles}
+          onEdit={() => {}}
+        />
       )}
 
-      <RoleDialog
-        open={dialogMode !== null}
-        mode={dialogMode as Exclude<DialogMode, null>}
-        role={selectedRole}
-        onOpenChange={(open) => !open && handleCloseDialog()}
-      />
-    </>
+      {/* Create Role Modal */}
+      {showDialog && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) {
+              handleCloseDialog();
+            }
+          }}
+        >
+          <div
+            className="w-full max-w-lg rounded-xl bg-background p-6 shadow-2xl"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Create Role
+                </h2>
+
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Create a role and assign module permissions.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCloseDialog}
+                className="rounded-md p-2 text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Error message */}
+            {saveError && (
+              <Alert variant="destructive" className="mb-4">
+                <AlertCircle className="h-4 w-4" />
+                <span>{saveError}</span>
+              </Alert>
+            )}
+
+            {/* Form */}
+            <div className="space-y-4">
+              {/* Role Name */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Role Name *
+                </label>
+                <input
+                  type="text"
+                  value={roleName}
+                  onChange={(e) => setRoleName(e.target.value)}
+                  placeholder="e.g., Sales Staff, Account Manager"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                />
+              </div>
+
+              {/* Modules */}
+              <div>
+                <label className="block text-sm font-medium mb-3">
+                  Modules & Permissions *
+                </label>
+                <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-300 rounded-md p-3 dark:border-slate-700">
+                  {availableModules.length === 0 ? (
+                    <p className="text-sm text-gray-500">Loading modules...</p>
+                  ) : (
+                    availableModules.map((module) => (
+                      <label key={module.id} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedModules.includes(module.id)}
+                          onChange={() => handleModuleToggle(module.id)}
+                          className="w-4 h-4 rounded border-gray-300"
+                        />
+                        <span className="text-sm">{module.label}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  Selected: {selectedModules.length} module{selectedModules.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCloseDialog}
+                disabled={isSaving}
+              >
+                Cancel
+              </Button>
+
+              <Button
+                type="button"
+                onClick={handleSaveRole}
+                disabled={isSaving}
+              >
+                {isSaving ? 'Creating...' : 'Create Role'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

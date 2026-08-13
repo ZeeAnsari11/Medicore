@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsArray, IsMongoId, IsOptional } from 'class-validator';
+import { IsString, MinLength, IsArray, IsOptional } from 'class-validator';
 
 export class UpdateRoleDto {
   @IsString()
@@ -11,7 +11,7 @@ export class UpdateRoleDto {
   description?: string;
 
   @IsArray()
-  @IsMongoId({ each: true })
+  @IsString({ each: true })
   @IsOptional()
-  permissionIds?: string[];
+  allowedModules?: string[];
 }

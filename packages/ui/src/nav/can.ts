@@ -11,5 +11,9 @@ export function can(subjectRoles: string[], requirement?: NavVisibilityRequireme
   if (!requirement?.anyOf?.length) {
     return true;
   }
+  // Wildcard '*' grants access to everything
+  if (subjectRoles.includes('*')) {
+    return true;
+  }
   return requirement.anyOf.some((role) => subjectRoles.includes(role));
 }

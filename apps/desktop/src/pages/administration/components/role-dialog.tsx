@@ -1,4 +1,4 @@
-import { Controller, useForm } from 'react-hook-form';
+import { useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import {
   Dialog,
@@ -11,12 +11,10 @@ import {
   Label,
   Alert,
   Checkbox,
-  Badge,
 } from '@medicore/ui';
 import { useRoles } from '@/hooks/use-roles';
-import { usePermissionCatalog } from '@/hooks/use-permission-catalog';
 import { ApiError } from '@/lib/api-client';
-import type { Role, UpdateRoleRequest } from '@medicore/shared-types';
+import type { Role } from '@medicore/shared-types';
 
 interface RoleDialogProps {
   open: boolean;
@@ -25,62 +23,70 @@ interface RoleDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-interface RoleFormValues {
-  name: string;
-  description?: string;
-  permissionIds: string[];
-}
+const MODULES = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'manufacturers', label: 'Manufacturers' },
+  { id: 'vendors', label: 'Vendors' },
+  { id: 'products', label: 'Products' },
+  { id: 'purchases', label: 'Purchases' },
+  { id: 'inventory', label: 'Inventory' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'reports', label: 'Reports' },
+];
 
 export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) {
+  console.log('RoleDialog rendered with open:', open, 'mode:', mode);
   const { create, update, isCreating, isUpdating, createError, updateError } = useRoles();
-  const { permissions } = usePermissionCatalog();
 
-  const {
-    register,
-    handleSubmit,
-    reset,
-    control,
-    formState: { errors },
-  } = useForm<RoleFormValues>({
-    defaultValues: {
-      name: role?.name ?? '',
-      description: role?.description ?? '',
-      permissionIds: role?.permissions.map((p) => p.id) ?? [],
-    },
-  });
-
-  const onSubmit = async (values: RoleFormValues) => {
-    if (mode === 'create') {
-      await create({
-        name: values.name,
-        description: values.description,
-        permissionIds: values.permissionIds,
-      });
-    } else if (mode === 'edit' && role) {
-      const dto: UpdateRoleRequest = {};
-      if (values.name !== role.name) dto.name = values.name;
-      if (values.description !== role.description) dto.description = values.description;
-      dto.permissionIds = values.permissionIds;
-
-      await update(role.id, dto);
-    }
-    onOpenChange(false);
-    reset();
-  };
+  const [name, setName] = useState(role?.name ?? '');
+  const [description, setDescription] = useState(role?.description ?? '');
+  const [allowedModules, setAllowedModules] = useState<string[]>(role?.allowedModules ?? []);
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
   const isLoading = isCreating || isUpdating;
   const error = createError || updateError;
 
-  // Group permissions by module
-  const permissionsByModule = permissions.reduce(
-    (acc, perm) => {
-      if (!acc[perm.module]) acc[perm.module] = [];
-      acc[perm.module].push(perm);
-      return acc;
-    },
-    {} as Record<string, typeof permissions>,
-  );
+  const handleSave = async () => {
+    setErrors({});
 
+    if (!name.trim()) {
+      setErrors({ name: 'Name is required' });
+      return;
+    }
+
+    try {
+      if (mode === 'create') {
+        await create({
+          name: name.trim(),
+          description: description.trim() || undefined,
+          allowedModules,
+        });
+      } else if (mode === 'edit' && role) {
+        await update(role.id, {
+          name: name.trim(),
+          description: description.trim() || undefined,
+          allowedModules,
+        });
+      }
+      onOpenChange(false);
+      setName('');
+      setDescription('');
+      setAllowedModules([]);
+    } catch (err) {
+      console.error('Error saving role:', err);
+    }
+  };
+
+  const handleModuleToggle = (moduleId: string) => {
+    setAllowedModules((prev) =>
+      prev.includes(moduleId)
+        ? prev.filter((id) => id !== moduleId)
+        : [...prev, moduleId]
+    );
+  };
+
+  console.log('About to render Dialog with open:', open);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -97,16 +103,16 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
           </Alert>
         )}
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <div className="space-y-6">
           <div className="space-y-1.5">
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              placeholder="e.g., Inventory Manager"
-              aria-invalid={!!errors.name}
-              {...register('name', { required: 'Name is required', minLength: { value: 2, message: 'Name must be at least 2 characters' } })}
+              placeholder="e.g., Salesman"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
             />
-            {errors.name && <p className="text-xs text-destructive">{errors.name.message}</p>}
+            {errors.name && <p className="text-xs text-destructive">{errors.name}</p>}
           </div>
 
           <div className="space-y-1.5">
@@ -114,61 +120,35 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
             <Input
               id="description"
               placeholder="Optional description"
-              {...register('description')}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
           </div>
 
           <div className="space-y-4">
-            <Label>Permissions</Label>
-            <Controller
-              control={control}
-              name="permissionIds"
-              render={({ field: { value, onChange } }) => (
-                <div className="space-y-4 border rounded-lg p-4 bg-muted/30 max-h-64 overflow-y-auto">
-                  {Object.entries(permissionsByModule).map(([module, perms]) => (
-                    <div key={module}>
-                      <h4 className="font-medium mb-3 sticky top-0 bg-background/80 p-1">{module}</h4>
-                      <div className="space-y-2 ml-2">
-                        {perms.map((perm) => (
-                          <div key={perm.id} className="flex items-start space-x-2">
-                            <Checkbox
-                              id={perm.id}
-                              checked={value.includes(perm.id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  onChange([...value, perm.id]);
-                                } else {
-                                  onChange(value.filter((id) => id !== perm.id));
-                                }
-                              }}
-                              disabled={!perm.isActive}
-                            />
-                            <div className="flex-1 flex items-center justify-between">
-                              <label htmlFor={perm.id} className="text-sm cursor-pointer">
-                                {perm.name}
-                              </label>
-                              {!perm.isActive && (
-                                <Badge variant="outline" className="text-[10px]">
-                                  Inactive
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
+            <Label>Allowed Modules</Label>
+            <div className="space-y-3 border rounded-lg p-4 bg-muted/30">
+              {MODULES.map((module) => (
+                <div key={module.id} className="flex items-center space-x-2">
+                  <Checkbox
+                    id={module.id}
+                    checked={allowedModules.includes(module.id)}
+                    onCheckedChange={() => handleModuleToggle(module.id)}
+                  />
+                  <label htmlFor={module.id} className="text-sm cursor-pointer flex-1">
+                    {module.label}
+                  </label>
                 </div>
-              )}
-            />
+              ))}
+            </div>
           </div>
-        </form>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit(onSubmit)} disabled={isLoading}>
+          <Button onClick={handleSave} disabled={isLoading}>
             {isLoading ? 'Saving...' : 'Save'}
           </Button>
         </DialogFooter>

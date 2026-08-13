@@ -14,8 +14,8 @@ export class Role {
   @Prop({ trim: true })
   description?: string;
 
-  @Prop({ type: [{ type: Types.ObjectId, ref: 'Permission' }], default: [] })
-  permissions: Types.ObjectId[];
+  @Prop({ type: [String], default: [] })
+  allowedModules: string[];
 
   @Prop({ required: true, default: true })
   isActive: boolean;

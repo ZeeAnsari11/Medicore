@@ -27,3 +27,32 @@ export enum TenantStatus {
   SUSPENDED = 'SUSPENDED',
   TRIAL = 'TRIAL',
 }
+
+export enum PlanStatus {
+  ACTIVE = 'ACTIVE',
+  ARCHIVED = 'ARCHIVED',
+}
+
+export enum BillingInterval {
+  MONTHLY = 'MONTHLY',
+  YEARLY = 'YEARLY',
+}
+
+export enum SubscriptionStatus {
+  TRIALING = 'TRIALING',
+  ACTIVE = 'ACTIVE',
+  PAST_DUE = 'PAST_DUE',
+  CANCELED = 'CANCELED',
+}
+
+export const AVAILABLE_MODULES = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'manufacturers', label: 'Manufacturers' },
+  { id: 'vendors', label: 'Vendors' },
+  { id: 'products', label: 'Products' },
+  { id: 'purchases', label: 'Purchases' },
+  { id: 'inventory', label: 'Inventory' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'customers', label: 'Customers' },
+  { id: 'reports', label: 'Reports' },
+] as const;

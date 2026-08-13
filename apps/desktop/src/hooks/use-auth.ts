@@ -25,14 +25,19 @@ export function useAuth() {
   });
 
   const loginMutation = useMutation({
-    mutationFn: (input: LoginRequest) => apiFetch<AuthResponse>('/auth/login', {
-      method: 'POST',
-      body: input,
-      auth: false,
-    }),
-    onSuccess: (data) => {
-      setStoredToken(data.accessToken);
-      queryClient.setQueryData(AUTH_QUERY_KEY, data.user);
+    mutationFn: async (input: LoginRequest) => {
+      const authResponse = await apiFetch<AuthResponse>('/auth/login', {
+        method: 'POST',
+        body: input,
+        auth: false,
+      });
+      setStoredToken(authResponse.accessToken);
+      // Fetch full user data with permissions from /auth/me
+      const fullUser = await apiFetch<AuthMeResponse>('/auth/me');
+      return fullUser;
+    },
+    onSuccess: (fullUser) => {
+      queryClient.setQueryData(AUTH_QUERY_KEY, fullUser);
     },
   });
 

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { AuthenticatedUser, SystemRole, TenantRole, UserStatus } from '@medicore/shared-types';
 import { UsersService } from '../users/users.service';
 import { RolesService } from './roles.service';
-import { PermissionDocument } from '../permissions/schemas/permission.schema';
 
 @Injectable()
 export class PermissionResolverService {
@@ -31,23 +30,21 @@ export class PermissionResolverService {
       return { isAdmin: true, isActive: true, permissions: [] };
     }
 
-    // TENANT_USER with no role: no permissions
+    // TENANT_USER with no role: no modules accessible
     if (!dbUser.roleId) {
       return { isAdmin: false, isActive: true, permissions: [] };
     }
 
-    // Fetch role with active permissions only (Mongoose match filters the populate)
-    const role = await this.rolesService.findActiveByIdPopulated(
+    // Fetch role and return its allowed modules
+    const role = await this.rolesService.findById(
       dbUser.tenantId.toString(),
       dbUser.roleId.toString(),
     );
 
-    if (!role) {
+    if (!role || !role.isActive) {
       return { isAdmin: false, isActive: true, permissions: [] };
     }
 
-    const permissions = (role.permissions as unknown as PermissionDocument[]).map((p) => p.key);
-
-    return { isAdmin: false, isActive: true, permissions };
+    return { isAdmin: false, isActive: true, permissions: role.allowedModules };
   }
 }

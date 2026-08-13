@@ -15,11 +15,17 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateRoleStatusDto } from './dto/update-role-status.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { AVAILABLE_MODULES } from '@medicore/shared-types';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
 @Controller('roles')
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
+
+  @Get('modules/available')
+  getAvailableModules() {
+    return AVAILABLE_MODULES;
+  }
 
   @RequirePermission('roles:read')
   @Get()

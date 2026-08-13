@@ -11,7 +11,6 @@ import {
   Settings,
   LockKeyhole,
   Shield,
-  Key,
 } from 'lucide-react';
 import type { NavSection } from '@medicore/ui';
 
@@ -44,9 +43,8 @@ export const navSections: NavSection[] = [
   {
     title: 'Administration',
     items: [
-      { label: 'Permissions', href: '/administration/permissions', icon: Key, requires: { anyOf: ['permissions:read'] } },
-      { label: 'Roles', href: '/administration/roles', icon: Shield, requires: { anyOf: ['roles:read'] } },
-      { label: 'Users', href: '/administration/users', icon: LockKeyhole, requires: { anyOf: ['users:read'] } },
+      { label: 'Roles', href: '/administration/roles', icon: Shield },
+      { label: 'Users', href: '/administration/users', icon: LockKeyhole },
     ],
   },
   {

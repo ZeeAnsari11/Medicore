@@ -31,6 +31,7 @@ interface CreateTenantFormValues {
 export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogProps) {
   const { create, isCreating, createError } = usePlatformTenants();
   const [tempPassword, setTempPassword] = useState<string | null>(null);
+  const [createdAdminEmail, setCreatedAdminEmail] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const {
@@ -44,6 +45,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
     const result = await create(values);
     if (result && 'temporaryPassword' in result) {
       setTempPassword(result.temporaryPassword);
+      setCreatedAdminEmail(result.adminUser.email);
       reset();
     }
   };
@@ -61,6 +63,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
       onOpenChange(false);
       reset();
       setTempPassword(null);
+      setCreatedAdminEmail(null);
     }
   };
 
@@ -82,7 +85,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
 
             <div className="space-y-1.5">
               <Label htmlFor="admin-email">Admin Email</Label>
-              <Input id="admin-email" readOnly value={tempPassword.split(':')[0] || ''} />
+              <Input id="admin-email" readOnly value={createdAdminEmail ?? ''} />
             </div>
 
             <div className="space-y-1.5">
@@ -120,6 +123,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
                 onClick={() => {
                   onOpenChange(false);
                   setTempPassword(null);
+                  setCreatedAdminEmail(null);
                   reset();
                 }}
               >

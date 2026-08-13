@@ -12,7 +12,7 @@ type DialogMode = 'create' | 'edit' | null;
 
 function UsersPage() {
   const { users, isLoading, error } = useUsers();
-  const { has } = usePermissions();
+  const { isAdmin } = usePermissions();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
@@ -57,7 +57,7 @@ function UsersPage() {
         title="Users"
         description="Manage users and assign roles"
         actions={
-          <Button onClick={handleOpenCreate} disabled={!has('users:create')}>
+          <Button onClick={handleOpenCreate} disabled={!isAdmin}>
             <Plus className="mr-2 h-4 w-4" />
             New User
           </Button>

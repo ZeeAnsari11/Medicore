@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { Pill, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
