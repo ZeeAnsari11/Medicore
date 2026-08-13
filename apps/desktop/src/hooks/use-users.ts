@@ -30,6 +30,12 @@ async function setUserStatus(id: string, dto: UpdateUserStatusRequest): Promise<
   });
 }
 
+async function deleteUser(id: string): Promise<void> {
+  return apiFetch<void>(`/users/${id}`, {
+    method: 'DELETE',
+  });
+}
+
 export function useUsers() {
   const queryClient = useQueryClient();
 
@@ -81,6 +87,19 @@ export function useUsers() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: deleteUser,
+    onSuccess: (_data, id) => {
+      queryClient.setQueryData(USERS_QUERY_KEY, (old: User[] | undefined) =>
+        old ? old.filter((u) => u.id !== id) : [],
+      );
+      toast.success('User deleted successfully');
+    },
+    onError: (error) => {
+      toast.error(error instanceof ApiError ? error.message : 'Failed to delete user');
+    },
+  });
+
   return {
     users: usersQuery.data ?? [],
     isLoading: usersQuery.isLoading,
@@ -100,5 +119,10 @@ export function useUsers() {
     },
     isSettingStatus: setStatusMutation.isPending,
     setStatusError: setStatusMutation.error,
+    delete: async (id: string) => {
+      return deleteMutation.mutateAsync(id);
+    },
+    isDeleting: deleteMutation.isPending,
+    deleteError: deleteMutation.error,
   };
 }

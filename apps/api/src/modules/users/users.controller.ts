@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -71,5 +72,15 @@ export class UsersController {
   ) {
     const updatedUser = await this.usersService.setStatus(user.tenantId, id, dto.status);
     return this.usersService.toUserResponse(updatedUser);
+  }
+
+  @RequirePermission('users:delete')
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async delete(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+  ) {
+    await this.usersService.deleteForTenant(user.tenantId, id);
   }
 }

@@ -193,6 +193,22 @@ export class UsersService {
     return user.save();
   }
 
+  async deleteForTenant(tenantId: string, id: string) {
+    const user = await this.userModel.findOne({
+      _id: new Types.ObjectId(id),
+      tenantId: new Types.ObjectId(tenantId),
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return this.userModel.deleteOne({
+      _id: new Types.ObjectId(id),
+      tenantId: new Types.ObjectId(tenantId),
+    });
+  }
+
   async countByRoleId(tenantId: string, roleId: string): Promise<number> {
     return this.userModel.countDocuments({
       tenantId: new Types.ObjectId(tenantId),
