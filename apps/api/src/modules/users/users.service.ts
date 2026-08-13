@@ -223,8 +223,19 @@ export class UsersService {
   toUserResponse(user: UserDocument): UserType {
     const obj = user.toObject() as any;
     let roleId: string | undefined;
+    let role: { id: string; name: string } | undefined;
     if (obj.roleId) {
-      roleId = typeof obj.roleId === 'string' ? obj.roleId : (obj.roleId._id?.toString?.() || obj.roleId.toString?.());
+      if (typeof obj.roleId === 'string') {
+        roleId = obj.roleId;
+      } else {
+        roleId = obj.roleId._id?.toString?.() || obj.roleId.toString?.();
+        if (obj.roleId.name) {
+          role = {
+            id: roleId,
+            name: obj.roleId.name,
+          };
+        }
+      }
     }
     return {
       id: obj._id.toString(),
@@ -235,6 +246,7 @@ export class UsersService {
       systemRole: obj.systemRole,
       tenantRole: obj.tenantRole,
       roleId,
+      role,
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt,
     };

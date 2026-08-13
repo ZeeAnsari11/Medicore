@@ -258,7 +258,13 @@ function UsersPage() {
                 <label className="block text-sm font-medium mb-2">Tenant Role *</label>
                 <select
                   value={tenantRole}
-                  onChange={(e) => setTenantRole(e.target.value as TenantRole)}
+                  onChange={(e) => {
+                    const role = e.target.value as TenantRole;
+                    setTenantRole(role);
+                    if (role === TenantRole.TENANT_SUPER_ADMIN) {
+                      setSelectedRoleId(null);
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 >
                   <option value="TENANT_USER">User</option>
@@ -268,29 +274,36 @@ function UsersPage() {
 
               {/* Role Assignment */}
               <div>
-                <label className="block text-sm font-medium mb-2">Assigned Role (Optional)</label>
-                <select
-                  value={selectedRoleId || ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    console.log('Selected role value:', value);
-                    setSelectedRoleId(value || null);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
-                >
-                  <option value="">-- No Role --</option>
-                  {roles
-                    .filter((r) => r.isActive)
-                    .map((role) => {
-                      const roleId = role.id || (role as any)._id;
-                      console.log('Role:', role.name, 'ID:', roleId);
-                      return (
-                        <option key={roleId} value={roleId}>
-                          {role.name}
-                        </option>
-                      );
-                    })}
-                </select>
+                <label className="block text-sm font-medium mb-2">
+                  Assigned Role {tenantRole === TenantRole.TENANT_USER ? '(Optional)' : ''}
+                </label>
+                {tenantRole === TenantRole.TENANT_SUPER_ADMIN ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600 dark:bg-slate-800 dark:border-slate-700">
+                    <p className="text-sm">Not applicable - Admin has full access</p>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedRoleId || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      console.log('Selected role value:', value);
+                      setSelectedRoleId(value || null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                  >
+                    <option value="">-- No Role --</option>
+                    {roles
+                      .filter((r) => r.isActive)
+                      .map((role) => {
+                        const roleId = role.id || (role as any)._id;
+                        return (
+                          <option key={roleId} value={roleId}>
+                            {role.name}
+                          </option>
+                        );
+                      })}
+                  </select>
+                )}
               </div>
             </div>
 
@@ -445,7 +458,13 @@ function UsersPage() {
                 <label className="block text-sm font-medium mb-2">Tenant Role *</label>
                 <select
                   value={tenantRole}
-                  onChange={(e) => setTenantRole(e.target.value as TenantRole)}
+                  onChange={(e) => {
+                    const role = e.target.value as TenantRole;
+                    setTenantRole(role);
+                    if (role === TenantRole.TENANT_SUPER_ADMIN) {
+                      setSelectedRoleId(null);
+                    }
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 >
                   <option value="TENANT_USER">User</option>
@@ -455,28 +474,36 @@ function UsersPage() {
 
               {/* Role Assignment */}
               <div>
-                <label className="block text-sm font-medium mb-2">Assigned Role (Optional)</label>
-                <select
-                  value={selectedRoleId || ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    console.log('Selected role value:', value);
-                    setSelectedRoleId(value || null);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
-                >
-                  <option value="">-- No Role --</option>
-                  {roles
-                    .filter((r) => r.isActive)
-                    .map((role) => {
-                      const roleId = role.id || (role as any)._id;
-                      return (
-                        <option key={roleId} value={roleId}>
-                          {role.name}
-                        </option>
-                      );
-                    })}
-                </select>
+                <label className="block text-sm font-medium mb-2">
+                  Assigned Role {tenantRole === TenantRole.TENANT_USER ? '(Optional)' : ''}
+                </label>
+                {tenantRole === TenantRole.TENANT_SUPER_ADMIN ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600 dark:bg-slate-800 dark:border-slate-700">
+                    <p className="text-sm">Not applicable - Admin has full access</p>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedRoleId || ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      console.log('Selected role value:', value);
+                      setSelectedRoleId(value || null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                  >
+                    <option value="">-- No Role --</option>
+                    {roles
+                      .filter((r) => r.isActive)
+                      .map((role) => {
+                        const roleId = role.id || (role as any)._id;
+                        return (
+                          <option key={roleId} value={roleId}>
+                            {role.name}
+                          </option>
+                        );
+                      })}
+                  </select>
+                )}
               </div>
             </div>
 
