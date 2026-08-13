@@ -150,8 +150,11 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
           </TableHeader>
           <TableBody>
             {users.map((user) => (
-              <TableRow key={user.id} className={selectedIds.has(user.id) ? 'bg-blue-50 dark:bg-blue-900/10' : ''}>
-                <TableCell>
+              <TableRow
+                key={user.id}
+                className={`${selectedIds.has(user.id) ? 'bg-blue-50 dark:bg-blue-900/10' : ''} cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors`}
+              >
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={selectedIds.has(user.id)}
@@ -160,27 +163,31 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
                     disabled={!has('users:delete')}
                   />
                 </TableCell>
-                <TableCell className="font-medium">{user.fullName}</TableCell>
-                <TableCell className="text-sm">{user.email}</TableCell>
-                <TableCell>
+                <TableCell className="font-medium cursor-pointer" onClick={() => onEdit(user.id)}>
+                  {user.fullName}
+                </TableCell>
+                <TableCell className="text-sm cursor-pointer" onClick={() => onEdit(user.id)}>
+                  {user.email}
+                </TableCell>
+                <TableCell className="cursor-pointer" onClick={() => onEdit(user.id)}>
                   <Badge variant="secondary">{user.tenantRole}</Badge>
                 </TableCell>
-                <TableCell className="text-sm">
+                <TableCell className="text-sm cursor-pointer" onClick={() => onEdit(user.id)}>
                   {user.role?.name || '—'}
                 </TableCell>
-                <TableCell>
+                <TableCell className="cursor-pointer" onClick={() => onEdit(user.id)}>
                   <Badge variant={statusVariants[user.status]}>
                     {user.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <Switch
                     checked={user.status === UserStatus.ACTIVE}
                     onCheckedChange={() => handleToggleStatus(user)}
                     disabled={!has('users:deactivate')}
                   />
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="p-1 hover:bg-muted rounded">
