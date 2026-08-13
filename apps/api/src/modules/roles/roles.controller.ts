@@ -15,6 +15,7 @@ import { UpdateRoleDto } from './dto/update-role.dto';
 import { UpdateRoleStatusDto } from './dto/update-role-status.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 import { AVAILABLE_MODULES } from '@medicore/shared-types';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
@@ -22,6 +23,7 @@ import type { AuthenticatedUser } from '@medicore/shared-types';
 export class RolesController {
   constructor(private readonly rolesService: RolesService) {}
 
+  @Public()
   @Get('modules/available')
   getAvailableModules() {
     return AVAILABLE_MODULES;

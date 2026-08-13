@@ -18,7 +18,10 @@ function RolesPage() {
   const { isAdmin } = usePermissions();
 
   const [showDialog, setShowDialog] = useState(false);
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit' | null>(null);
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
   const [roleName, setRoleName] = useState('');
+  const [roleDescription, setRoleDescription] = useState('');
   const [selectedModules, setSelectedModules] = useState<string[]>([]);
   const [availableModules, setAvailableModules] = useState<Module[]>([]);
   const [isSaving, setIsSaving] = useState(false);
@@ -42,15 +45,34 @@ function RolesPage() {
   };
 
   const handleOpenCreate = () => {
+    setDialogMode('create');
+    setSelectedRoleId(null);
     setRoleName('');
+    setRoleDescription('');
     setSelectedModules([]);
     setSaveError(null);
     setShowDialog(true);
   };
 
+  const handleOpenEdit = (roleId: string) => {
+    const role = roles.find((r) => r.id === roleId);
+    if (role) {
+      setDialogMode('edit');
+      setSelectedRoleId(roleId);
+      setRoleName(role.name);
+      setRoleDescription(role.description || '');
+      setSelectedModules(role.allowedModules || []);
+      setSaveError(null);
+      setShowDialog(true);
+    }
+  };
+
   const handleCloseDialog = () => {
     setShowDialog(false);
+    setDialogMode(null);
+    setSelectedRoleId(null);
     setRoleName('');
+    setRoleDescription('');
     setSelectedModules([]);
     setSaveError(null);
   };
@@ -78,14 +100,21 @@ function RolesPage() {
     setSaveError(null);
 
     try {
-      await create({
-        name: roleName.trim(),
-        description: '',
-        allowedModules: selectedModules,
-      });
+      if (dialogMode === 'create') {
+        await create({
+          name: roleName.trim(),
+          description: roleDescription.trim(),
+          allowedModules: selectedModules,
+        });
+      } else if (dialogMode === 'edit' && selectedRoleId) {
+        // Edit functionality would go here - requires update hook
+        // For now, just close the dialog
+        setSaveError('Edit functionality coming soon');
+        return;
+      }
       handleCloseDialog();
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to create role');
+      setSaveError(err instanceof Error ? err.message : 'Failed to save role');
     } finally {
       setIsSaving(false);
     }
@@ -128,7 +157,7 @@ function RolesPage() {
       ) : (
         <RolesTable
           roles={roles}
-          onEdit={() => {}}
+          onEdit={handleOpenEdit}
         />
       )}
 
@@ -150,11 +179,13 @@ function RolesPage() {
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">
-                  Create Role
+                  {dialogMode === 'create' ? 'Create Role' : 'Edit Role'}
                 </h2>
 
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Create a role and assign module permissions.
+                  {dialogMode === 'create'
+                    ? 'Create a role and assign module permissions.'
+                    : 'Update role name and module permissions.'}
                 </p>
               </div>
 
@@ -188,6 +219,20 @@ function RolesPage() {
                   value={roleName}
                   onChange={(e) => setRoleName(e.target.value)}
                   placeholder="e.g., Sales Staff, Account Manager"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                />
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Description
+                </label>
+                <textarea
+                  value={roleDescription}
+                  onChange={(e) => setRoleDescription(e.target.value)}
+                  placeholder="Optional description for this role"
+                  rows={2}
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
@@ -236,7 +281,13 @@ function RolesPage() {
                 onClick={handleSaveRole}
                 disabled={isSaving}
               >
-                {isSaving ? 'Creating...' : 'Create Role'}
+                {isSaving
+                  ? dialogMode === 'create'
+                    ? 'Creating...'
+                    : 'Saving...'
+                  : dialogMode === 'create'
+                  ? 'Create Role'
+                  : 'Save Changes'}
               </Button>
             </div>
           </div>
