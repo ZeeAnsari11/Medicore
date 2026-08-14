@@ -193,7 +193,7 @@ export class UsersService {
     return user.save();
   }
 
-  async deleteForTenant(tenantId: string, id: string) {
+  async deleteForTenant(tenantId: string, id: string): Promise<{ deletedCount?: number }> {
     const user = await this.userModel.findOne({
       _id: new Types.ObjectId(id),
       tenantId: new Types.ObjectId(tenantId),
@@ -229,7 +229,7 @@ export class UsersService {
         roleId = obj.roleId;
       } else {
         roleId = obj.roleId._id?.toString?.() || obj.roleId.toString?.();
-        if (obj.roleId.name) {
+        if (roleId && obj.roleId.name) {
           role = {
             id: roleId,
             name: obj.roleId.name,
