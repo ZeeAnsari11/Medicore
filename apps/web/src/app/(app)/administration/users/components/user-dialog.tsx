@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { useForm } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import {
@@ -69,10 +70,12 @@ export function UserDialog({
   const currentTenantRole = watch('tenantRole');
   const isAdminRole = currentTenantRole === TenantRole.TENANT_SUPER_ADMIN;
 
-  // Clear roleId when tenant role is set to admin
-  if (isAdminRole && currentRoleId) {
-    setValue('roleId', null);
-  }
+  // Clear roleId when tenant role changes to admin
+  React.useEffect(() => {
+    if (isAdminRole && currentRoleId) {
+      setValue('roleId', null);
+    }
+  }, [isAdminRole, currentRoleId, setValue]);
 
   const onSubmit = async (values: UserFormValues) => {
     if (mode === 'create') {
@@ -161,25 +164,30 @@ export function UserDialog({
             <Label htmlFor="roleId" className={isAdminRole ? 'text-muted-foreground' : ''}>
               Assigned Role {isAdminRole ? '(Not applicable for Admin)' : '(Optional)'}
             </Label>
-            <Select
-              value={currentRoleId || ''}
-              onValueChange={(value) => setValue('roleId', value || null)}
-              disabled={isAdminRole}
-            >
-              <SelectTrigger id="roleId" disabled={isAdminRole}>
-                <SelectValue placeholder={isAdminRole ? 'Admin has access to all menus' : 'Select a role...'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="">None</SelectItem>
-                {roles
-                  .filter((r) => r.isActive)
-                  .map((role) => (
-                    <SelectItem key={role.id} value={role.id}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-              </SelectContent>
-            </Select>
+            <div className={isAdminRole ? 'pointer-events-none opacity-50' : ''}>
+              <Select
+                value={currentRoleId || ''}
+                onValueChange={(value) => {
+                  if (!isAdminRole) {
+                    setValue('roleId', value || null);
+                  }
+                }}
+              >
+                <SelectTrigger id="roleId" disabled={isAdminRole}>
+                  <SelectValue placeholder={isAdminRole ? 'Admin has access to all menus' : 'Select a role...'} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">None</SelectItem>
+                  {roles
+                    .filter((r) => r.isActive)
+                    .map((role) => (
+                      <SelectItem key={role.id} value={role.id}>
+                        {role.name}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </form>
 
