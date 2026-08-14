@@ -66,6 +66,13 @@ export function UserDialog({
   });
 
   const currentRoleId = watch('roleId');
+  const currentTenantRole = watch('tenantRole');
+  const isAdminRole = currentTenantRole === TenantRole.TENANT_SUPER_ADMIN;
+
+  // Clear roleId when tenant role is set to admin
+  if (isAdminRole && currentRoleId) {
+    setValue('roleId', null);
+  }
 
   const onSubmit = async (values: UserFormValues) => {
     if (mode === 'create') {
@@ -151,10 +158,16 @@ export function UserDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="roleId">Assigned Role (Optional)</Label>
-            <Select value={currentRoleId || ''} onValueChange={(value) => setValue('roleId', value || null)}>
-              <SelectTrigger id="roleId">
-                <SelectValue placeholder="Select a role..." />
+            <Label htmlFor="roleId" className={isAdminRole ? 'text-muted-foreground' : ''}>
+              Assigned Role {isAdminRole ? '(Not applicable for Admin)' : '(Optional)'}
+            </Label>
+            <Select
+              value={currentRoleId || ''}
+              onValueChange={(value) => setValue('roleId', value || null)}
+              disabled={isAdminRole}
+            >
+              <SelectTrigger id="roleId" disabled={isAdminRole}>
+                <SelectValue placeholder={isAdminRole ? 'Admin has access to all menus' : 'Select a role...'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="">None</SelectItem>
