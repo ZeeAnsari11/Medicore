@@ -11,3 +11,12 @@ export interface BaseEntity {
 export interface TenantOwnedEntity extends BaseEntity {
   tenantId: string;
 }
+
+/**
+ * A tenant-owned document additionally scoped to one branch/location.
+ * branchId is server-derived/validated (see resolveBranchScope on the API side) —
+ * a non-admin user's requests are always pinned to their own assigned branch.
+ */
+export interface BranchOwnedEntity extends TenantOwnedEntity {
+  branchId: string;
+}

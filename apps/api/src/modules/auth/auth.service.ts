@@ -39,12 +39,14 @@ export class AuthService {
   }
 
   private buildAuthResponse(user: UserDocument): AuthResponse {
+    const branchId = user.branchId?.toString();
     const payload = {
       sub: user._id.toString(),
       tenantId: user.tenantId.toString(),
       email: user.email,
       tenantRole: user.tenantRole,
       systemRole: user.systemRole,
+      branchId,
     };
 
     return {
@@ -55,6 +57,7 @@ export class AuthService {
         email: user.email,
         tenantRole: user.tenantRole,
         systemRole: user.systemRole,
+        branchId,
       },
     };
   }

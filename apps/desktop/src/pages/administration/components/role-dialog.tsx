@@ -13,6 +13,7 @@ import {
   Checkbox,
 } from '@medicore/ui';
 import { useRoles } from '@/hooks/use-roles';
+import { usePermissionCatalog } from '@/hooks/use-permission-catalog';
 import { ApiError } from '@/lib/api-client';
 import type { Role } from '@medicore/shared-types';
 
@@ -23,21 +24,14 @@ interface RoleDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const MODULES = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'manufacturers', label: 'Manufacturers' },
-  { id: 'vendors', label: 'Vendors' },
-  { id: 'products', label: 'Products' },
-  { id: 'purchases', label: 'Purchases' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'customers', label: 'Customers' },
-  { id: 'reports', label: 'Reports' },
-];
-
 export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) {
-  console.log('RoleDialog rendered with open:', open, 'mode:', mode);
   const { create, update, isCreating, isUpdating, createError, updateError } = useRoles();
+  const { permissions } = usePermissionCatalog();
+
+  const permissionsByModule = permissions.reduce<Record<string, typeof permissions>>((acc, permission) => {
+    (acc[permission.module] ??= []).push(permission);
+    return acc;
+  }, {});
 
   const [name, setName] = useState(role?.name ?? '');
   const [description, setDescription] = useState(role?.description ?? '');
@@ -78,15 +72,14 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
     }
   };
 
-  const handleModuleToggle = (moduleId: string) => {
+  const handlePermissionToggle = (permissionKey: string) => {
     setAllowedModules((prev) =>
-      prev.includes(moduleId)
-        ? prev.filter((id) => id !== moduleId)
-        : [...prev, moduleId]
+      prev.includes(permissionKey)
+        ? prev.filter((key) => key !== permissionKey)
+        : [...prev, permissionKey]
     );
   };
 
-  console.log('About to render Dialog with open:', open);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
@@ -126,18 +119,23 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
           </div>
 
           <div className="space-y-4">
-            <Label>Allowed Modules</Label>
-            <div className="space-y-3 border rounded-lg p-4 bg-muted/30">
-              {MODULES.map((module) => (
-                <div key={module.id} className="flex items-center space-x-2">
-                  <Checkbox
-                    id={module.id}
-                    checked={allowedModules.includes(module.id)}
-                    onCheckedChange={() => handleModuleToggle(module.id)}
-                  />
-                  <label htmlFor={module.id} className="text-sm cursor-pointer flex-1">
-                    {module.label}
-                  </label>
+            <Label>Permissions</Label>
+            <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
+              {Object.entries(permissionsByModule).map(([moduleName, modulePermissions]) => (
+                <div key={moduleName} className="space-y-2">
+                  <p className="text-xs font-medium uppercase text-muted-foreground">{moduleName}</p>
+                  {modulePermissions.map((permission) => (
+                    <div key={permission.key} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={permission.key}
+                        checked={allowedModules.includes(permission.key)}
+                        onCheckedChange={() => handlePermissionToggle(permission.key)}
+                      />
+                      <label htmlFor={permission.key} className="text-sm cursor-pointer flex-1">
+                        {permission.name}
+                      </label>
+                    </div>
+                  ))}
                 </div>
               ))}
             </div>

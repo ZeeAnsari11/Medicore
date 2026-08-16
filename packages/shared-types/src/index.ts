@@ -3,9 +3,15 @@
 // always statically resolve named exports through TypeScript's CommonJS
 // `export *` helper. The other files are type-only and erase at compile time,
 // so they're safe either way, but kept explicit here for consistency.
-export { SystemRole, TenantRole, UserStatus, TenantStatus, PlanStatus, BillingInterval, SubscriptionStatus, AVAILABLE_MODULES } from './enums';
-export type { BaseEntity, TenantOwnedEntity } from './base';
+export { SystemRole, TenantRole, UserStatus, TenantStatus, PlanStatus, BillingInterval, SubscriptionStatus, ProductStatus } from './enums';
+export type { BaseEntity, TenantOwnedEntity, BranchOwnedEntity } from './base';
 export type { Tenant } from './tenant';
+export type { Branch, CreateBranchRequest, UpdateBranchRequest, UpdateBranchStatusRequest } from './branch';
+export type { Manufacturer, CreateManufacturerRequest, UpdateManufacturerRequest, UpdateManufacturerStatusRequest } from './manufacturer';
+export type { Category, CreateCategoryRequest, UpdateCategoryRequest, UpdateCategoryStatusRequest } from './category';
+export type { Product, CreateProductRequest, UpdateProductRequest, UpdateProductStatusRequest } from './product';
+export type { Vendor, CreateVendorRequest, UpdateVendorRequest, UpdateVendorStatusRequest } from './vendor';
+export type { VendorProduct, CreateVendorProductRequest, UpdateVendorProductRequest } from './vendor-product';
 export type { Permission, CreatePermissionRequest, UpdatePermissionRequest, UpdatePermissionStatusRequest } from './permission';
 export type { Role, CreateRoleRequest, UpdateRoleRequest, UpdateRoleStatusRequest } from './role';
 export type { User, CreateUserRequest, CreateUserResponse, UpdateUserRequest, UpdateUserStatusRequest, AuthenticatedUser } from './user';

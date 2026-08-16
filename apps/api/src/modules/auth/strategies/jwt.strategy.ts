@@ -10,6 +10,7 @@ interface JwtPayload {
   email: string;
   tenantRole: AuthenticatedUser['tenantRole'];
   systemRole?: AuthenticatedUser['systemRole'];
+  branchId?: string;
 }
 
 @Injectable()
@@ -29,6 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       tenantRole: payload.tenantRole,
       systemRole: payload.systemRole,
+      branchId: payload.branchId,
     };
   }
 }

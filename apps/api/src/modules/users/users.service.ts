@@ -69,6 +69,7 @@ export class UsersService {
     fullName: string;
     tenantRole: TenantRole;
     roleId?: string;
+    branchId?: string;
     systemRole?: SystemRole;
   }) {
     const existing = await this.userModel.findOne({ email: params.email.toLowerCase() });
@@ -86,6 +87,7 @@ export class UsersService {
       passwordHash,
       tenantRole: params.tenantRole,
       roleId: params.roleId ? new Types.ObjectId(params.roleId) : undefined,
+      branchId: params.branchId ? new Types.ObjectId(params.branchId) : undefined,
       systemRole: params.systemRole,
       status: UserStatus.ACTIVE,
     });
@@ -102,6 +104,7 @@ export class UsersService {
       fullName: dto.fullName,
       tenantRole: dto.tenantRole,
       roleId: dto.roleId,
+      branchId: dto.branchId,
     });
   }
 
@@ -134,6 +137,10 @@ export class UsersService {
 
     if (dto.roleId !== undefined) {
       user.roleId = dto.roleId ? new Types.ObjectId(dto.roleId) : undefined;
+    }
+
+    if (dto.branchId !== undefined) {
+      user.branchId = dto.branchId ? new Types.ObjectId(dto.branchId) : undefined;
     }
 
     await user.save();
@@ -216,6 +223,13 @@ export class UsersService {
     });
   }
 
+  async countByBranchId(tenantId: string, branchId: string): Promise<number> {
+    return this.userModel.countDocuments({
+      tenantId: new Types.ObjectId(tenantId),
+      branchId: new Types.ObjectId(branchId),
+    });
+  }
+
   async findFirstBySystemRole(role: SystemRole) {
     return this.userModel.findOne({ systemRole: role });
   }
@@ -247,6 +261,7 @@ export class UsersService {
       tenantRole: obj.tenantRole,
       roleId,
       role,
+      branchId: obj.branchId?.toString(),
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt,
     };

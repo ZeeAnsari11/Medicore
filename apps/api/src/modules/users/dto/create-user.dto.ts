@@ -17,4 +17,9 @@ export class CreateUserDto {
   @IsOptional()
   @IsMongoId()
   roleId?: string;
+
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsMongoId()
+  branchId?: string;
 }

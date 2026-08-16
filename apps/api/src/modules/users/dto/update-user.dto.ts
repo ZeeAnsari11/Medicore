@@ -16,4 +16,9 @@ export class UpdateUserDto {
   @IsOptional()
   @IsMongoId()
   roleId?: string | null;
+
+  @Transform(({ value }) => (value === '' ? undefined : value))
+  @IsOptional()
+  @IsMongoId()
+  branchId?: string | null;
 }

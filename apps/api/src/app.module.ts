@@ -17,6 +17,11 @@ import { PlatformModule } from './modules/platform/platform.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
 import { PlatformSettingsModule } from './modules/platform-settings/platform-settings.module';
+import { BranchesModule } from './modules/branches/branches.module';
+import { ManufacturersModule } from './modules/manufacturers/manufacturers.module';
+import { CategoriesModule } from './modules/categories/categories.module';
+import { ProductsModule } from './modules/products/products.module';
+import { VendorsModule } from './modules/vendors/vendors.module';
 
 @Module({
   imports: [
@@ -38,6 +43,11 @@ import { PlatformSettingsModule } from './modules/platform-settings/platform-set
     SubscriptionsModule,
     PlatformSettingsModule,
     PlatformModule,
+    BranchesModule,
+    ManufacturersModule,
+    CategoriesModule,
+    ProductsModule,
+    VendorsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

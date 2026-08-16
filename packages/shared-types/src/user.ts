@@ -9,6 +9,7 @@ export interface User extends TenantOwnedEntity {
   tenantRole: TenantRole;
   roleId?: string;
   role?: { id: string; name: string } | null;
+  branchId?: string;
 }
 
 export interface AuthenticatedUser {
@@ -17,6 +18,8 @@ export interface AuthenticatedUser {
   email: string;
   tenantRole: TenantRole;
   systemRole?: SystemRole;
+  /** The user's assigned home branch. Absent for TENANT_SUPER_ADMIN/SUPER_ADMIN, who are implicitly all-branch. */
+  branchId?: string;
 }
 
 export interface CreateUserRequest {
@@ -24,6 +27,7 @@ export interface CreateUserRequest {
   fullName: string;
   tenantRole: TenantRole;
   roleId?: string;
+  branchId?: string;
 }
 
 export interface CreateUserResponse extends User {
@@ -34,6 +38,7 @@ export interface UpdateUserRequest {
   fullName?: string;
   tenantRole?: TenantRole;
   roleId?: string | null;
+  branchId?: string | null;
 }
 
 export interface UpdateUserStatusRequest {

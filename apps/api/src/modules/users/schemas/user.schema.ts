@@ -35,6 +35,9 @@ export class User {
 
   @Prop({ type: Types.ObjectId, ref: 'Role' })
   roleId?: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'Branch' })
+  branchId?: Types.ObjectId;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

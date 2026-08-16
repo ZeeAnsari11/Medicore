@@ -45,14 +45,8 @@ export enum SubscriptionStatus {
   CANCELED = 'CANCELED',
 }
 
-export const AVAILABLE_MODULES = [
-  { id: 'dashboard', label: 'Dashboard' },
-  { id: 'manufacturers', label: 'Manufacturers' },
-  { id: 'vendors', label: 'Vendors' },
-  { id: 'products', label: 'Products' },
-  { id: 'purchases', label: 'Purchases' },
-  { id: 'inventory', label: 'Inventory' },
-  { id: 'sales', label: 'Sales' },
-  { id: 'customers', label: 'Customers' },
-  { id: 'reports', label: 'Reports' },
-] as const;
+export enum ProductStatus {
+  ACTIVE = 'ACTIVE',
+  DISCONTINUED = 'DISCONTINUED',
+}
+

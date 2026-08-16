@@ -16,7 +16,7 @@ import {
   Checkbox,
 } from '@medicore/ui';
 import { useRoles } from '@/hooks/use-roles';
-import { useAvailableModules } from '@/hooks/use-available-modules';
+import { usePermissionCatalog } from '@/hooks/use-permission-catalog';
 import { ApiError } from '@/lib/api-client';
 import type { Role, UpdateRoleRequest } from '@medicore/shared-types';
 
@@ -35,7 +35,12 @@ interface RoleFormValues {
 
 export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) {
   const { create, update, isCreating, isUpdating, createError, updateError } = useRoles();
-  const { modules } = useAvailableModules();
+  const { permissions } = usePermissionCatalog();
+
+  const permissionsByModule = permissions.reduce<Record<string, typeof permissions>>((acc, permission) => {
+    (acc[permission.module] ??= []).push(permission);
+    return acc;
+  }, {});
 
   const {
     register,
@@ -111,28 +116,33 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
           </div>
 
           <div className="space-y-4">
-            <Label>Allowed Modules</Label>
+            <Label>Permissions</Label>
             <Controller
               control={control}
               name="allowedModules"
               render={({ field: { value, onChange } }) => (
-                <div className="space-y-2 border rounded-lg p-4 bg-muted/30">
-                  {modules.map((module) => (
-                    <div key={module.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={module.id}
-                        checked={value.includes(module.id)}
-                        onCheckedChange={(checked) => {
-                          if (checked) {
-                            onChange([...value, module.id]);
-                          } else {
-                            onChange(value.filter((id) => id !== module.id));
-                          }
-                        }}
-                      />
-                      <label htmlFor={module.id} className="text-sm cursor-pointer">
-                        {module.label}
-                      </label>
+                <div className="space-y-4 border rounded-lg p-4 bg-muted/30">
+                  {Object.entries(permissionsByModule).map(([moduleName, modulePermissions]) => (
+                    <div key={moduleName} className="space-y-2">
+                      <p className="text-xs font-medium uppercase text-muted-foreground">{moduleName}</p>
+                      {modulePermissions.map((permission) => (
+                        <div key={permission.key} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={permission.key}
+                            checked={value.includes(permission.key)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                onChange([...value, permission.key]);
+                              } else {
+                                onChange(value.filter((key) => key !== permission.key));
+                              }
+                            }}
+                          />
+                          <label htmlFor={permission.key} className="text-sm cursor-pointer">
+                            {permission.name}
+                          </label>
+                        </div>
+                      ))}
                     </div>
                   ))}
                 </div>
