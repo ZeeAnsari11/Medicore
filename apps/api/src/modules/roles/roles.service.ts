@@ -6,6 +6,7 @@ import { TenantScopedRepository } from '../../common/database/tenant-scoped.repo
 import { UsersService } from '../users/users.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
+import type { Role as RoleType } from '@medicore/shared-types';
 
 @Injectable()
 export class RolesService extends TenantScopedRepository<RoleDocument> {
@@ -101,5 +102,19 @@ export class RolesService extends TenantScopedRepository<RoleDocument> {
     }
 
     await this.deleteById(tenantId, id);
+  }
+
+  toRoleResponse(role: RoleDocument): RoleType {
+    const obj = role.toObject() as any;
+    return {
+      id: obj._id.toString(),
+      tenantId: obj.tenantId.toString(),
+      name: obj.name,
+      description: obj.description,
+      allowedModules: obj.allowedModules,
+      isActive: obj.isActive,
+      createdAt: obj.createdAt,
+      updatedAt: obj.updatedAt,
+    };
   }
 }

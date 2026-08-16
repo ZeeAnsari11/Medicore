@@ -5,7 +5,8 @@ import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, D
 import { useUsers } from '@/hooks/use-users';
 import { usePermissions } from '@/hooks/use-permissions';
 import { toast } from '@medicore/ui';
-import type { User, UserStatus } from '@medicore/shared-types';
+import type { User } from '@medicore/shared-types';
+import { UserStatus } from '@medicore/shared-types';
 
 interface UsersTableProps {
   users: User[];
@@ -24,7 +25,7 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
 
   const handleToggleStatus = async (user: User) => {
     try {
-      const newStatus = user.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE';
+      const newStatus = user.status === UserStatus.ACTIVE ? UserStatus.DISABLED : UserStatus.ACTIVE;
       await setStatus(user.id, newStatus);
     } catch (err) {
       // Error is already handled by the hook

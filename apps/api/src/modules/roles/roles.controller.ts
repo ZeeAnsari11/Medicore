@@ -32,14 +32,16 @@ export class RolesController {
   @RequirePermission('roles:read')
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser) {
-    return this.rolesService.listForTenant(user.tenantId);
+    const roles = await this.rolesService.listForTenant(user.tenantId);
+    return roles.map((role) => this.rolesService.toRoleResponse(role));
   }
 
   @RequirePermission('roles:create')
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateRoleDto) {
-    return this.rolesService.createRole(user.tenantId, dto);
+    const role = await this.rolesService.createRole(user.tenantId, dto);
+    return this.rolesService.toRoleResponse(role);
   }
 
   @RequirePermission('roles:update')
@@ -49,7 +51,8 @@ export class RolesController {
     @Param('id') id: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    return this.rolesService.updateRole(user.tenantId, id, dto);
+    const role = await this.rolesService.updateRole(user.tenantId, id, dto);
+    return this.rolesService.toRoleResponse(role);
   }
 
   @RequirePermission('roles:update')
@@ -59,7 +62,8 @@ export class RolesController {
     @Param('id') id: string,
     @Body() dto: UpdateRoleStatusDto,
   ) {
-    return this.rolesService.setStatus(user.tenantId, id, dto.isActive);
+    const role = await this.rolesService.setStatus(user.tenantId, id, dto.isActive);
+    return this.rolesService.toRoleResponse(role);
   }
 
   @RequirePermission('roles:delete')

@@ -94,7 +94,7 @@ export function UserDialog({
       if (values.tenantRole !== user.tenantRole) dto.tenantRole = values.tenantRole;
       if (values.roleId !== user.roleId) dto.roleId = values.roleId;
 
-      await update({ id: user.id, dto });
+      await update(user.id, dto);
     }
     onOpenChange(false);
     reset();

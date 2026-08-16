@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import {
@@ -13,10 +14,9 @@ import {
   Label,
   Alert,
   Checkbox,
-  Badge,
 } from '@medicore/ui';
 import { useRoles } from '@/hooks/use-roles';
-import { usePermissionCatalog } from '@/hooks/use-permission-catalog';
+import { useAvailableModules } from '@/hooks/use-available-modules';
 import { ApiError } from '@/lib/api-client';
 import type { Role, UpdateRoleRequest } from '@medicore/shared-types';
 
@@ -30,12 +30,12 @@ interface RoleDialogProps {
 interface RoleFormValues {
   name: string;
   description?: string;
-  permissionIds: string[];
+  allowedModules: string[];
 }
 
 export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) {
   const { create, update, isCreating, isUpdating, createError, updateError } = useRoles();
-  const { permissions } = usePermissionCatalog();
+  const { modules } = useAvailableModules();
 
   const {
     register,
@@ -47,7 +47,7 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
     defaultValues: {
       name: role?.name ?? '',
       description: role?.description ?? '',
-      permissionIds: role?.permissions.map((p) => p.id) ?? [],
+      allowedModules: role?.allowedModules ?? [],
     },
   });
 
@@ -56,15 +56,15 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
       await create({
         name: values.name,
         description: values.description,
-        permissionIds: values.permissionIds,
+        allowedModules: values.allowedModules,
       });
     } else if (mode === 'edit' && role) {
       const dto: UpdateRoleRequest = {};
       if (values.name !== role.name) dto.name = values.name;
       if (values.description !== role.description) dto.description = values.description;
-      dto.permissionIds = values.permissionIds;
+      dto.allowedModules = values.allowedModules;
 
-      await update({ id: role.id, dto });
+      await update(role.id, dto);
     }
     onOpenChange(false);
     reset();
@@ -72,16 +72,6 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
 
   const isLoading = isCreating || isUpdating;
   const error = createError || updateError;
-
-  // Group permissions by module
-  const permissionsByModule = permissions.reduce(
-    (acc, perm) => {
-      if (!acc[perm.module]) acc[perm.module] = [];
-      acc[perm.module].push(perm);
-      return acc;
-    },
-    {} as Record<string, typeof permissions>,
-  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -121,43 +111,28 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
           </div>
 
           <div className="space-y-4">
-            <Label>Permissions</Label>
+            <Label>Allowed Modules</Label>
             <Controller
               control={control}
-              name="permissionIds"
+              name="allowedModules"
               render={({ field: { value, onChange } }) => (
-                <div className="space-y-4 border rounded-lg p-4 bg-muted/30 max-h-64 overflow-y-auto">
-                  {Object.entries(permissionsByModule).map(([module, perms]) => (
-                    <div key={module}>
-                      <h4 className="font-medium mb-3 sticky top-0 bg-background/80 p-1">{module}</h4>
-                      <div className="space-y-2 ml-2">
-                        {perms.map((perm) => (
-                          <div key={perm.id} className="flex items-start space-x-2">
-                            <Checkbox
-                              id={perm.id}
-                              checked={value.includes(perm.id)}
-                              onCheckedChange={(checked) => {
-                                if (checked) {
-                                  onChange([...value, perm.id]);
-                                } else {
-                                  onChange(value.filter((id) => id !== perm.id));
-                                }
-                              }}
-                              disabled={!perm.isActive}
-                            />
-                            <div className="flex-1 flex items-center justify-between">
-                              <label htmlFor={perm.id} className="text-sm cursor-pointer">
-                                {perm.name}
-                              </label>
-                              {!perm.isActive && (
-                                <Badge variant="outline" className="text-[10px]">
-                                  Inactive
-                                </Badge>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                <div className="space-y-2 border rounded-lg p-4 bg-muted/30">
+                  {modules.map((module) => (
+                    <div key={module.id} className="flex items-center space-x-2">
+                      <Checkbox
+                        id={module.id}
+                        checked={value.includes(module.id)}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            onChange([...value, module.id]);
+                          } else {
+                            onChange(value.filter((id) => id !== module.id));
+                          }
+                        }}
+                      />
+                      <label htmlFor={module.id} className="text-sm cursor-pointer">
+                        {module.label}
+                      </label>
                     </div>
                   ))}
                 </div>

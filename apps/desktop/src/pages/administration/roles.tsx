@@ -14,7 +14,7 @@ interface Module {
 }
 
 function RolesPage() {
-  const { roles, isLoading, error, create } = useRoles();
+  const { roles, isLoading, error, create, update } = useRoles();
   const { isAdmin } = usePermissions();
 
   const [showDialog, setShowDialog] = useState(false);
@@ -107,10 +107,11 @@ function RolesPage() {
           allowedModules: selectedModules,
         });
       } else if (dialogMode === 'edit' && selectedRoleId) {
-        // Edit functionality would go here - requires update hook
-        // For now, just close the dialog
-        setSaveError('Edit functionality coming soon');
-        return;
+        await update(selectedRoleId, {
+          name: roleName.trim(),
+          description: roleDescription.trim(),
+          allowedModules: selectedModules,
+        });
       }
       handleCloseDialog();
     } catch (err) {
