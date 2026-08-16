@@ -30,7 +30,10 @@ export class VendorProductsController {
     @Query('vendorId') vendorId?: string,
   ) {
     if (productId) {
-      const links = await this.vendorsService.listVendorProductsForProduct(user.tenantId, productId);
+      const links = await this.vendorsService.listVendorProductsForProduct(
+        user.tenantId,
+        productId,
+      );
       return links.map((l) => this.vendorsService.toVendorProductResponse(l));
     }
     if (vendorId) {

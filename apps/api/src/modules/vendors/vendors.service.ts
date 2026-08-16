@@ -9,13 +9,17 @@ import { CreateVendorDto } from './dto/create-vendor.dto';
 import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { CreateVendorProductDto } from './dto/create-vendor-product.dto';
 import { UpdateVendorProductDto } from './dto/update-vendor-product.dto';
-import type { Vendor as VendorType, VendorProduct as VendorProductType } from '@medicore/shared-types';
+import type {
+  Vendor as VendorType,
+  VendorProduct as VendorProductType,
+} from '@medicore/shared-types';
 
 @Injectable()
 export class VendorsService extends TenantScopedRepository<VendorDocument> {
   constructor(
     @InjectModel(Vendor.name) private readonly vendorModel: Model<VendorDocument>,
-    @InjectModel(VendorProduct.name) private readonly vendorProductModel: Model<VendorProductDocument>,
+    @InjectModel(VendorProduct.name)
+    private readonly vendorProductModel: Model<VendorProductDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
   ) {
     super(vendorModel);
@@ -48,7 +52,10 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
     }
 
     const productIds = await this.productModel
-      .find({ tenantId: new Types.ObjectId(tenantId), manufacturerId: new Types.ObjectId(manufacturerId) })
+      .find({
+        tenantId: new Types.ObjectId(tenantId),
+        manufacturerId: new Types.ObjectId(manufacturerId),
+      })
       .distinct('_id');
 
     const vendorIds = await this.vendorProductModel

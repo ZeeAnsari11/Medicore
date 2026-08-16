@@ -84,7 +84,8 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
 
     if (dto.name !== undefined) product.name = dto.name;
     if (dto.genericName !== undefined) product.genericName = dto.genericName;
-    if (dto.manufacturerId !== undefined) product.manufacturerId = new Types.ObjectId(dto.manufacturerId);
+    if (dto.manufacturerId !== undefined)
+      product.manufacturerId = new Types.ObjectId(dto.manufacturerId);
     if (dto.categoryId !== undefined) {
       product.categoryId = dto.categoryId ? new Types.ObjectId(dto.categoryId) : undefined;
     }
@@ -125,7 +126,9 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     const obj = product.toObject() as any;
 
     const manufacturerId =
-      typeof obj.manufacturerId === 'object' ? obj.manufacturerId._id.toString() : obj.manufacturerId.toString();
+      typeof obj.manufacturerId === 'object'
+        ? obj.manufacturerId._id.toString()
+        : obj.manufacturerId.toString();
     const manufacturer =
       typeof obj.manufacturerId === 'object' && obj.manufacturerId.name
         ? { id: manufacturerId, name: obj.manufacturerId.name }
@@ -134,7 +137,10 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     let categoryId: string | undefined;
     let category: { id: string; name: string } | undefined;
     if (obj.categoryId) {
-      categoryId = typeof obj.categoryId === 'object' ? obj.categoryId._id.toString() : obj.categoryId.toString();
+      categoryId =
+        typeof obj.categoryId === 'object'
+          ? obj.categoryId._id.toString()
+          : obj.categoryId.toString();
       if (typeof obj.categoryId === 'object' && obj.categoryId.name) {
         category = { id: categoryId!, name: obj.categoryId.name };
       }

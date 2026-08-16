@@ -1,12 +1,80 @@
-import { Factory } from 'lucide-react';
-import { ComingSoonPage } from '@/components/layout/coming-soon-page';
+'use client';
+
+import { useState } from 'react';
+import { Plus, AlertCircle, Factory } from 'lucide-react';
+import { PageHeader } from '@/components/layout/page-header';
+import { EmptyState } from '@/components/layout/empty-state';
+import { Button, Alert } from '@medicore/ui';
+import { useManufacturers } from '@/hooks/use-manufacturers';
+import { usePermissions } from '@/hooks/use-permissions';
+import { ManufacturersTable } from './components/manufacturers-table';
+import { ManufacturerDialog } from './components/manufacturer-dialog';
+
+type DialogMode = 'create' | 'edit' | null;
 
 export default function ManufacturersPage() {
+  const { manufacturers, isLoading, error } = useManufacturers();
+  const { has } = usePermissions();
+  const [dialogMode, setDialogMode] = useState<DialogMode>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const selected = selectedId ? manufacturers.find((m) => m.id === selectedId) : undefined;
+
+  const handleOpenCreate = () => {
+    setSelectedId(null);
+    setDialogMode('create');
+  };
+
+  const handleOpenEdit = (id: string) => {
+    setSelectedId(id);
+    setDialogMode('edit');
+  };
+
+  const handleCloseDialog = () => {
+    setDialogMode(null);
+    setSelectedId(null);
+  };
+
   return (
-    <ComingSoonPage
-      title="Manufacturers"
-      description="Track the companies that manufacture the medicines you distribute."
-      icon={Factory}
-    />
+    <>
+      <PageHeader
+        title="Manufacturers"
+        description="Companies that make the products you distribute"
+        actions={
+          <Button onClick={handleOpenCreate} disabled={!has('manufacturers:create')}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Manufacturer
+          </Button>
+        }
+      />
+
+      {error && (
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <span>Failed to load manufacturers</span>
+        </Alert>
+      )}
+
+      {isLoading ? (
+        <div className="flex h-96 items-center justify-center">
+          <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
+        </div>
+      ) : manufacturers.length === 0 ? (
+        <EmptyState
+          icon={Factory}
+          title="No manufacturers yet"
+          description="Add the companies that make your products before adding products"
+        />
+      ) : (
+        <ManufacturersTable manufacturers={manufacturers} onEdit={handleOpenEdit} />
+      )}
+
+      <ManufacturerDialog
+        open={dialogMode !== null}
+        mode={dialogMode as Exclude<DialogMode, null>}
+        manufacturer={selected}
+        onOpenChange={(open) => !open && handleCloseDialog()}
+      />
+    </>
   );
 }

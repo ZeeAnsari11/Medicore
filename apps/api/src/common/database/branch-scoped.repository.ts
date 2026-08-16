@@ -14,10 +14,7 @@ import { TenantScopedRepository } from './tenant-scoped.repository';
 export abstract class BranchScopedRepository<
   TDoc extends { tenantId: Types.ObjectId; branchId: Types.ObjectId },
 > extends TenantScopedRepository<TDoc> {
-  protected withBranch(
-    branchId: string | null,
-    filter: FilterQuery<TDoc> = {},
-  ): FilterQuery<TDoc> {
+  protected withBranch(branchId: string | null, filter: FilterQuery<TDoc> = {}): FilterQuery<TDoc> {
     if (branchId === null) {
       return filter;
     }

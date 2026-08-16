@@ -36,11 +36,14 @@ export {
 
 // Table
 export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell } from './table/table';
+export { DataTable, type DataTableProps } from './table/data-table';
+export { type ColumnDef } from '@tanstack/react-table';
 
 // Forms
 export { Select, SelectGroup, SelectValue, SelectTrigger, SelectContent, SelectItem, SelectSeparator, SelectScrollUpButton, SelectScrollDownButton } from './forms/select';
 export { Checkbox } from './forms/checkbox';
 export { Switch } from './forms/switch';
+export { ComboboxWithCreate, type ComboboxOption, type ComboboxWithCreateProps } from './forms/combobox';
 
 // Feedback & Layout
 export {
@@ -56,3 +59,4 @@ export {
   DialogDescription,
 } from './feedback/dialog';
 export { Toaster, toast } from './feedback/toast';
+export { Popover, PopoverTrigger, PopoverAnchor, PopoverContent } from './primitives/popover';

@@ -21,6 +21,7 @@ import {
 } from '@medicore/ui';
 import { useUsers } from '@/hooks/use-users';
 import { useRoles } from '@/hooks/use-roles';
+import { useBranches } from '@/hooks/use-branches';
 import { ApiError } from '@/lib/api-client';
 import { TenantRole } from '@medicore/shared-types';
 import type { User, UpdateUserRequest } from '@medicore/shared-types';
@@ -38,6 +39,7 @@ interface UserFormValues {
   fullName: string;
   tenantRole: TenantRole;
   roleId?: string | null;
+  branchId?: string | null;
 }
 
 export function UserDialog({
@@ -49,6 +51,7 @@ export function UserDialog({
 }: UserDialogProps) {
   const { create, update, isCreating, isUpdating, createError, updateError } = useUsers();
   const { roles } = useRoles();
+  const { branches } = useBranches();
 
   const {
     register,
@@ -63,6 +66,7 @@ export function UserDialog({
       fullName: user?.fullName ?? '',
       tenantRole: user?.tenantRole ?? TenantRole.TENANT_USER,
       roleId: user?.roleId ?? null,
+      branchId: user?.branchId ?? null,
     },
   });
 
@@ -84,6 +88,7 @@ export function UserDialog({
         fullName: values.fullName,
         tenantRole: values.tenantRole,
         roleId: values.roleId || undefined,
+        branchId: values.branchId || undefined,
       });
       if (result && 'temporaryPassword' in result) {
         onUserCreated?.(result.temporaryPassword);
@@ -93,6 +98,7 @@ export function UserDialog({
       if (values.fullName !== user.fullName) dto.fullName = values.fullName;
       if (values.tenantRole !== user.tenantRole) dto.tenantRole = values.tenantRole;
       if (values.roleId !== user.roleId) dto.roleId = values.roleId;
+      if (values.branchId !== user.branchId) dto.branchId = values.branchId;
 
       await update(user.id, dto);
     }
@@ -188,6 +194,28 @@ export function UserDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="branchId">Branch (Optional)</Label>
+            <Select
+              value={watch('branchId') || ''}
+              onValueChange={(value) => setValue('branchId', value || null)}
+            >
+              <SelectTrigger id="branchId">
+                <SelectValue placeholder="Select a branch..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">None</SelectItem>
+                {branches
+                  .filter((b) => b.isActive)
+                  .map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
           </div>
         </form>
 

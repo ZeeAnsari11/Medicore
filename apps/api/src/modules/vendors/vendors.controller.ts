@@ -13,7 +13,10 @@ export class VendorsController {
 
   @RequirePermission('vendors:read')
   @Get()
-  async list(@CurrentUser() user: AuthenticatedUser, @Query('manufacturerId') manufacturerId?: string) {
+  async list(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('manufacturerId') manufacturerId?: string,
+  ) {
     const vendors = await this.vendorsService.listForTenant(user.tenantId, manufacturerId);
     return vendors.map((v) => this.vendorsService.toVendorResponse(v));
   }

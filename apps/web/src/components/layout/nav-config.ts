@@ -12,6 +12,7 @@ import {
   LockKeyhole,
   Shield,
   Key,
+  Building2,
   type LucideIcon,
 } from 'lucide-react';
 import type { NavItem, NavSection } from '@medicore/ui';
@@ -24,9 +25,9 @@ export const navSections: NavSection[] = [
   {
     title: 'Catalog',
     items: [
-      { label: 'Manufacturers', href: '/manufacturers', icon: Factory, comingSoon: true },
-      { label: 'Vendors', href: '/vendors', icon: Truck, comingSoon: true },
-      { label: 'Products', href: '/products', icon: Pill, comingSoon: true },
+      { label: 'Manufacturers', href: '/manufacturers', icon: Factory, requires: { anyOf: ['manufacturers:read'] } },
+      { label: 'Vendors', href: '/vendors', icon: Truck, requires: { anyOf: ['vendors:read'] } },
+      { label: 'Products', href: '/products', icon: Pill, requires: { anyOf: ['products:read'] } },
     ],
   },
   {
@@ -45,6 +46,7 @@ export const navSections: NavSection[] = [
   {
     title: 'Administration',
     items: [
+      { label: 'Branches', href: '/administration/branches', icon: Building2, requires: { anyOf: ['branches:read'] } },
       { label: 'Permissions', href: '/administration/permissions', icon: Key, requires: { anyOf: ['permissions:read'] } },
       { label: 'Roles', href: '/administration/roles', icon: Shield, requires: { anyOf: ['roles:read'] } },
       { label: 'Users', href: '/administration/users', icon: LockKeyhole, requires: { anyOf: ['users:read'] } },
