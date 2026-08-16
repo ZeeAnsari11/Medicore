@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Pill } from 'lucide-react';
+import { Pill, ChevronRight } from 'lucide-react';
 import { cn, can } from '@medicore/ui';
 import { usePermissions } from '@/hooks/use-permissions';
 import { navSections } from './nav-config';
@@ -15,55 +15,70 @@ export function Sidebar() {
   const subjectRoles = isAdmin ? ['*'] : permissions;
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground md:flex">
-      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-5">
-        <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Pill className="size-4" />
+    <aside className="sticky top-0 left-0 h-screen w-64 bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950 border-r border-slate-200/50 dark:border-slate-800/50 flex flex-col overflow-hidden">
+      {/* Logo Section */}
+      <div className="px-6 py-6 border-b border-slate-200/50 dark:border-slate-800/50">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 flex items-center justify-center shadow-lg">
+            <Pill className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-slate-900 dark:text-white">Medicore</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Workspace</p>
+          </div>
         </div>
-        <span className="text-sm font-semibold tracking-tight">Medicore</span>
       </div>
 
-      <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-4">
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-8">
         {navSections
           .filter((section) => !section.requires || can(subjectRoles, section.requires))
           .map((section) => (
-            <div key={section.title}>
-              <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-wider text-sidebar-muted">
+            <div key={section.title} className="space-y-2">
+              <h3 className="px-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-500">
                 {section.title}
-              </p>
-              <ul className="space-y-0.5">
+              </h3>
+              <div className="space-y-1">
                 {section.items
                   .filter((item) => !item.requires || can(subjectRoles, item.requires))
                   .map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (
-                      <li key={item.href}>
-                        <Link
-                          href={item.href}
-                          className={cn(
-                            'flex items-center justify-between rounded-md px-2.5 py-1.5 text-sm transition-colors',
-                            isActive
-                              ? 'bg-sidebar-accent text-white'
-                              : 'text-sidebar-foreground/80 hover:bg-sidebar-accent/60 hover:text-white',
-                          )}
-                        >
-                          <span className="flex items-center gap-2.5">
-                            <item.icon className="size-4" />
-                            {item.label}
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn(
+                          'flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group',
+                          isActive
+                            ? 'bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-white/50 dark:hover:bg-slate-800/50 hover:text-slate-900 dark:hover:text-slate-200'
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <item.icon className={cn('w-5 h-5 transition-transform', isActive && 'text-blue-600 dark:text-blue-400')} />
+                          <span>{item.label}</span>
+                        </div>
+                        {isActive && <ChevronRight className="w-4 h-4" />}
+                        {item.comingSoon && (
+                          <span className="ml-auto text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400">
+                            Soon
                           </span>
-                          {item.comingSoon && (
-                            <span className="rounded-full bg-sidebar-border px-1.5 py-0.5 text-[10px] font-medium text-sidebar-muted">
-                              Soon
-                            </span>
-                          )}
-                        </Link>
-                      </li>
+                        )}
+                      </Link>
                     );
                   })}
-              </ul>
+              </div>
             </div>
           ))}
       </nav>
+
+      {/* Footer Section */}
+      <div className="px-4 py-4 border-t border-slate-200/50 dark:border-slate-800/50 space-y-3">
+        <div className="px-3 py-2 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/30">
+          <p className="text-xs font-semibold text-emerald-900 dark:text-emerald-200">System Active</p>
+          <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">All systems operational</p>
+        </div>
+      </div>
     </aside>
   );
 }
