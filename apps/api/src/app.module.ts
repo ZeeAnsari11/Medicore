@@ -22,6 +22,7 @@ import { ManufacturersModule } from './modules/manufacturers/manufacturers.modul
 import { CategoriesModule } from './modules/categories/categories.module';
 import { ProductsModule } from './modules/products/products.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { VendorsModule } from './modules/vendors/vendors.module';
     CategoriesModule,
     ProductsModule,
     VendorsModule,
+    InventoryModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

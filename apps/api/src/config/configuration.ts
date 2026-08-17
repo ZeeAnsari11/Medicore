@@ -1,6 +1,6 @@
 export default () => ({
   port: parseInt(process.env.PORT ?? '4000', 10),
-  mongoUri: process.env.MONGO_URI ?? 'mongodb://127.0.0.1:27017/medicore_dev',
+  mongoUri: process.env.MONGO_URI ?? 'mongodb://127.0.0.1:27017/medicore_dev?replicaSet=rs0',
   jwt: {
     secret: process.env.JWT_SECRET ?? 'dev-only-insecure-secret-change-me',
     // Default: 1 day, in seconds.

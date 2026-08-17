@@ -50,3 +50,19 @@ export enum ProductStatus {
   DISCONTINUED = 'DISCONTINUED',
 }
 
+export enum StockMovementType {
+  PURCHASE_IN = 'PURCHASE_IN',
+  SALE_OUT = 'SALE_OUT',
+  TRANSFER_OUT = 'TRANSFER_OUT',
+  TRANSFER_IN = 'TRANSFER_IN',
+  ADJUSTMENT_ADD = 'ADJUSTMENT_ADD',
+  ADJUSTMENT_SUBTRACT = 'ADJUSTMENT_SUBTRACT',
+  ADJUSTMENT_SET = 'ADJUSTMENT_SET',
+}
+
+/** Batch-allocation strategy for a sale line item — FEFO by default, MANUAL as an override. */
+export enum AllocationMode {
+  FEFO = 'FEFO',
+  MANUAL = 'MANUAL',
+}
+

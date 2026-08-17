@@ -149,4 +149,16 @@ export const SYSTEM_PERMISSION_SEED: Array<{ key: string; name: string; descript
     description: 'Edit vendor details, status, and product pricing links',
     module: 'Vendors',
   },
+  {
+    key: 'inventory:read',
+    name: 'View inventory',
+    description: 'View stock levels, batch detail, and expiry reports',
+    module: 'Inventory',
+  },
+  {
+    key: 'inventory:adjust',
+    name: 'Adjust inventory',
+    description: 'Manually add, subtract, or set batch stock quantities',
+    module: 'Inventory',
+  },
 ];

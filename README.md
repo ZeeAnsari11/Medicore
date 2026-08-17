@@ -50,7 +50,13 @@ Medicore/
 
 - Node.js ≥ 20 (tested on 22)
 - pnpm (via `corepack enable`)
-- MongoDB running locally on `27017` (or update `MONGO_URI`)
+- MongoDB running locally on `27017` as a **replica set**, not standalone (or update `MONGO_URI`) —
+  required from Phase 2 onward since batch/inventory writes use multi-document transactions, which
+  standalone `mongod` cannot provide. A single-node replica set is enough for local dev:
+  1. Add `replication.replSetName: rs0` to your `mongod.conf` (or start with `--replSet rs0`).
+  2. Restart `mongod`.
+  3. One-time only: `mongosh --eval 'rs.initiate({_id: "rs0", members: [{_id: 0, host: "127.0.0.1:27017"}]})'`
+  4. `MONGO_URI` must include `?replicaSet=rs0` (see `apps/api/.env.example`).
 - Rust + Cargo — only required for desktop (`rustup.rs`)
 
 ## Running locally
@@ -87,7 +93,7 @@ already done for you in this checkout with safe local defaults.
 | Variable | Default | Notes |
 |---|---|---|
 | `PORT` | `4000` | API port |
-| `MONGO_URI` | `mongodb://127.0.0.1:27017/medicore_dev` | Local MongoDB connection |
+| `MONGO_URI` | `mongodb://127.0.0.1:27017/medicore_dev?replicaSet=rs0` | Local MongoDB connection — must be a replica set from Phase 2 onward, see Prerequisites |
 | `JWT_SECRET` | dev-only placeholder | **Change before any shared/deployed environment** |
 | `JWT_EXPIRES_IN_SECONDS` | `86400` | Access token lifetime |
 | `CORS_ORIGINS` | `http://localhost:3000,http://localhost:1420,http://localhost:8081` | Comma-separated allow-list (web, desktop dev, Expo web) — add every new browser-based client origin here |

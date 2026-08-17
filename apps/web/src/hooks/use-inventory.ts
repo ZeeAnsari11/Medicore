@@ -1,0 +1,71 @@
+'use client';
+
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { Batch, CreateBatchAdjustmentRequest, InventoryRollup } from '@medicore/shared-types';
+import { apiFetch, ApiError } from '@/lib/api-client';
+import { toast } from '@medicore/ui';
+
+export const INVENTORY_QUERY_KEY = ['inventory'];
+export const INVENTORY_BATCHES_QUERY_KEY = ['inventory', 'batches'];
+
+async function fetchRollup(branchId: string | null, search?: string): Promise<InventoryRollup[]> {
+  const params = new URLSearchParams();
+  if (branchId) params.set('branchId', branchId);
+  if (search) params.set('search', search);
+  const query = params.toString();
+  return apiFetch<InventoryRollup[]>(`/inventory${query ? `?${query}` : ''}`);
+}
+
+async function fetchBatchesForProduct(productId: string, branchId: string | null): Promise<Batch[]> {
+  const params = new URLSearchParams();
+  if (branchId) params.set('branchId', branchId);
+  const query = params.toString();
+  return apiFetch<Batch[]>(`/inventory/${productId}/batches${query ? `?${query}` : ''}`);
+}
+
+async function createAdjustment(dto: CreateBatchAdjustmentRequest): Promise<Batch> {
+  return apiFetch<Batch>('/inventory/adjustments', { method: 'POST', body: dto });
+}
+
+export function useInventory(branchId: string | null, search?: string) {
+  const queryClient = useQueryClient();
+
+  const rollupQuery = useQuery({
+    queryKey: [...INVENTORY_QUERY_KEY, branchId, search],
+    queryFn: () => fetchRollup(branchId, search),
+    staleTime: 60 * 1000,
+  });
+
+  const adjustMutation = useMutation({
+    mutationFn: createAdjustment,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: INVENTORY_QUERY_KEY });
+      toast.success('Stock adjusted successfully');
+    },
+    onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Failed to adjust stock'),
+  });
+
+  return {
+    rollup: rollupQuery.data ?? [],
+    isLoading: rollupQuery.isLoading,
+    error: rollupQuery.error,
+    adjust: adjustMutation.mutateAsync,
+    isAdjusting: adjustMutation.isPending,
+    adjustError: adjustMutation.error,
+  };
+}
+
+export function useProductBatches(productId: string | null, branchId: string | null) {
+  const query = useQuery({
+    queryKey: [...INVENTORY_BATCHES_QUERY_KEY, productId, branchId],
+    queryFn: () => fetchBatchesForProduct(productId!, branchId),
+    enabled: !!productId,
+    staleTime: 30 * 1000,
+  });
+
+  return {
+    batches: query.data ?? [],
+    isLoading: query.isLoading,
+    error: query.error,
+  };
+}
