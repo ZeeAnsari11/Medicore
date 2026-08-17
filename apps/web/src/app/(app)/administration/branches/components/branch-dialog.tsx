@@ -54,14 +54,16 @@ export function BranchDialog({ open, mode, branch, onOpenChange }: BranchDialogP
   });
 
   React.useEffect(() => {
-    reset({
-      name: branch?.name ?? '',
-      code: branch?.code ?? '',
-      address: branch?.address ?? '',
-      phone: branch?.phone ?? '',
-      isMain: branch?.isMain ?? false,
-    });
-  }, [branch, reset]);
+    if (open) {
+      reset({
+        name: branch?.name ?? '',
+        code: branch?.code ?? '',
+        address: branch?.address ?? '',
+        phone: branch?.phone ?? '',
+        isMain: branch?.isMain ?? false,
+      });
+    }
+  }, [open, branch, reset]);
 
   const onSubmit = async (values: BranchFormValues) => {
     if (mode === 'create') {

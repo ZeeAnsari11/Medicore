@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, AlertCircle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
+import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import { Button, Alert } from '@medicore/ui';
 import { useBranches } from '@/hooks/use-branches';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -36,7 +37,7 @@ export default function BranchesPage() {
   };
 
   return (
-    <>
+    <PageAccessGuard requires="branches:read">
       <PageHeader
         title="Branches"
         description="Manage your organization's branches and warehouses"
@@ -75,6 +76,6 @@ export default function BranchesPage() {
         branch={selectedBranch}
         onOpenChange={(open) => !open && handleCloseDialog()}
       />
-    </>
+    </PageAccessGuard>
   );
 }

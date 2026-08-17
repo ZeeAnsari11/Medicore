@@ -1,7 +1,7 @@
 'use client';
 
 import { MoreHorizontal } from 'lucide-react';
-import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, Switch } from '@medicore/ui';
+import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, Switch, cn } from '@medicore/ui';
 import { useUsers } from '@/hooks/use-users';
 import { usePermissions } from '@/hooks/use-permissions';
 import { toast } from '@medicore/ui';
@@ -47,47 +47,54 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell className="font-medium">{user.fullName}</TableCell>
-              <TableCell className="text-sm">{user.email}</TableCell>
-              <TableCell>
-                <Badge variant="secondary">{user.tenantRole}</Badge>
-              </TableCell>
-              <TableCell className="text-sm">
-                {user.role?.name || '—'}
-              </TableCell>
-              <TableCell>
-                <Badge variant={statusVariants[user.status]}>
-                  {user.status}
-                </Badge>
-              </TableCell>
-              <TableCell>
-                <Switch
-                  checked={user.status === 'ACTIVE'}
-                  onCheckedChange={() => handleToggleStatus(user)}
-                  disabled={!has('users:deactivate')}
-                />
-              </TableCell>
-              <TableCell>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <button className="p-1 hover:bg-muted rounded">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => onEdit(user.id)}
-                      disabled={!has('users:update')}
-                    >
-                      Edit
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </TableCell>
-            </TableRow>
-          ))}
+          {users.map((user) => {
+            const canEdit = has('users:update');
+            return (
+              <TableRow
+                key={user.id}
+                onClick={() => canEdit && onEdit(user.id)}
+                className={cn(canEdit && 'cursor-pointer')}
+              >
+                <TableCell className="font-medium">{user.fullName}</TableCell>
+                <TableCell className="text-sm">{user.email}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary">{user.tenantRole}</Badge>
+                </TableCell>
+                <TableCell className="text-sm">
+                  {user.role?.name || '—'}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={statusVariants[user.status]}>
+                    {user.status}
+                  </Badge>
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <Switch
+                    checked={user.status === 'ACTIVE'}
+                    onCheckedChange={() => handleToggleStatus(user)}
+                    disabled={!has('users:deactivate')}
+                  />
+                </TableCell>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <button className="p-1 hover:bg-muted rounded">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        onClick={() => onEdit(user.id)}
+                        disabled={!has('users:update')}
+                      >
+                        Edit
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableCell>
+              </TableRow>
+            );
+          })}
         </TableBody>
       </Table>
     </div>

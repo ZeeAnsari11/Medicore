@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Plus, AlertCircle, Truck, MoreHorizontal } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
+import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import {
   Button,
   Alert,
@@ -100,7 +101,7 @@ export default function VendorsPage() {
   );
 
   return (
-    <>
+    <PageAccessGuard requires="vendors:read">
       <PageHeader
         title="Vendors"
         description="Distributors and suppliers you buy products from"
@@ -135,6 +136,6 @@ export default function VendorsPage() {
         vendor={selected}
         onOpenChange={(open) => !open && handleCloseDialog()}
       />
-    </>
+    </PageAccessGuard>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertCircle } from 'lucide-react';
 import {
   Dialog,
@@ -40,6 +40,15 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
 
   const isLoading = isCreating || isUpdating;
   const error = createError || updateError;
+
+  useEffect(() => {
+    if (open) {
+      setName(role?.name ?? '');
+      setDescription(role?.description ?? '');
+      setAllowedModules(role?.allowedModules ?? []);
+      setErrors({});
+    }
+  }, [open, role]);
 
   const handleSave = async () => {
     setErrors({});

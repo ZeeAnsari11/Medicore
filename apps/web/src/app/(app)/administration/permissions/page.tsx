@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, AlertCircle } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
+import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import { Button, Alert } from '@medicore/ui';
 import { usePermissionCatalog } from '@/hooks/use-permission-catalog';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -43,7 +44,7 @@ export default function PermissionsPage() {
   };
 
   return (
-    <>
+    <PageAccessGuard requires="permissions:read">
       <PageHeader
         title="Permissions"
         description="Manage permissions and assign them to roles"
@@ -86,6 +87,6 @@ export default function PermissionsPage() {
         permission={selectedPermission}
         onOpenChange={(open) => !open && handleCloseDialog()}
       />
-    </>
+    </PageAccessGuard>
   );
 }

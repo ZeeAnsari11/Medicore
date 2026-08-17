@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Plus, AlertCircle, Pill, MoreHorizontal } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
+import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import {
   Button,
   Alert,
@@ -107,7 +108,7 @@ export default function ProductsPage() {
   );
 
   return (
-    <>
+    <PageAccessGuard requires="products:read">
       <PageHeader
         title="Products"
         description="Your pharmaceutical product catalog"
@@ -142,6 +143,6 @@ export default function ProductsPage() {
         product={selected}
         onOpenChange={(open) => !open && handleCloseDialog()}
       />
-    </>
+    </PageAccessGuard>
   );
 }

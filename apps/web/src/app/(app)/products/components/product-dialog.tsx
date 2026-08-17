@@ -76,20 +76,22 @@ export function ProductDialog({ open, mode, product, onOpenChange }: ProductDial
   });
 
   React.useEffect(() => {
-    reset({
-      name: product?.name ?? '',
-      genericName: product?.genericName ?? '',
-      manufacturerId: product?.manufacturerId ?? '',
-      categoryId: product?.categoryId ?? '',
-      barcode: product?.barcode ?? '',
-      unit: product?.unit ?? '',
-      packing: product?.packing ?? '',
-      purchasePrice: product?.purchasePrice ?? 0,
-      salePrice: product?.salePrice ?? 0,
-      dealerPrice: product?.dealerPrice,
-      minStockLevel: product?.minStockLevel,
-    });
-  }, [product, reset]);
+    if (open) {
+      reset({
+        name: product?.name ?? '',
+        genericName: product?.genericName ?? '',
+        manufacturerId: product?.manufacturerId ?? '',
+        categoryId: product?.categoryId ?? '',
+        barcode: product?.barcode ?? '',
+        unit: product?.unit ?? '',
+        packing: product?.packing ?? '',
+        purchasePrice: product?.purchasePrice ?? 0,
+        salePrice: product?.salePrice ?? 0,
+        dealerPrice: product?.dealerPrice,
+        minStockLevel: product?.minStockLevel,
+      });
+    }
+  }, [open, product, reset]);
 
   const onSubmit = async (values: ProductFormValues) => {
     const payload = {

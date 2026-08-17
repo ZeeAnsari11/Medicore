@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, AlertCircle, Copy, Check } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
+import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import { Button, Alert, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, Input } from '@medicore/ui';
 import { useUsers } from '@/hooks/use-users';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -54,7 +55,7 @@ export default function UsersPage() {
   };
 
   return (
-    <>
+    <PageAccessGuard requires="users:read">
       <PageHeader
         title="Users"
         description="Manage users and assign roles"
@@ -125,6 +126,6 @@ export default function UsersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </PageAccessGuard>
   );
 }

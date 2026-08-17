@@ -43,14 +43,16 @@ export function ManufacturerDialog({ open, mode, manufacturer, onOpenChange, onC
   });
 
   React.useEffect(() => {
-    reset({
-      name: manufacturer?.name ?? '',
-      country: manufacturer?.country ?? '',
-      contactEmail: manufacturer?.contactEmail ?? '',
-      contactPhone: manufacturer?.contactPhone ?? '',
-      website: manufacturer?.website ?? '',
-    });
-  }, [manufacturer, reset]);
+    if (open) {
+      reset({
+        name: manufacturer?.name ?? '',
+        country: manufacturer?.country ?? '',
+        contactEmail: manufacturer?.contactEmail ?? '',
+        contactPhone: manufacturer?.contactPhone ?? '',
+        website: manufacturer?.website ?? '',
+      });
+    }
+  }, [open, manufacturer, reset]);
 
   const onSubmit = async (values: ManufacturerFormValues) => {
     if (mode === 'create') {

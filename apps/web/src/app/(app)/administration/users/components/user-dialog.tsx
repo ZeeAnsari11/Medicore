@@ -74,6 +74,18 @@ export function UserDialog({
   const currentTenantRole = watch('tenantRole');
   const isAdminRole = currentTenantRole === TenantRole.TENANT_SUPER_ADMIN;
 
+  React.useEffect(() => {
+    if (open) {
+      reset({
+        email: user?.email ?? '',
+        fullName: user?.fullName ?? '',
+        tenantRole: user?.tenantRole ?? TenantRole.TENANT_USER,
+        roleId: user?.roleId ?? null,
+        branchId: user?.branchId ?? null,
+      });
+    }
+  }, [open, user, reset]);
+
   // Clear roleId when tenant role changes to admin
   React.useEffect(() => {
     if (isAdminRole && currentRoleId) {

@@ -45,15 +45,17 @@ export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: Ve
   });
 
   React.useEffect(() => {
-    reset({
-      company: vendor?.company ?? '',
-      distributorType: vendor?.distributorType ?? '',
-      contactName: vendor?.contactName ?? '',
-      contactPhone: vendor?.contactPhone ?? '',
-      contactEmail: vendor?.contactEmail ?? '',
-      address: vendor?.address ?? '',
-    });
-  }, [vendor, reset]);
+    if (open) {
+      reset({
+        company: vendor?.company ?? '',
+        distributorType: vendor?.distributorType ?? '',
+        contactName: vendor?.contactName ?? '',
+        contactPhone: vendor?.contactPhone ?? '',
+        contactEmail: vendor?.contactEmail ?? '',
+        address: vendor?.address ?? '',
+      });
+    }
+  }, [open, vendor, reset]);
 
   const onSubmit = async (values: VendorFormValues) => {
     if (mode === 'create') {

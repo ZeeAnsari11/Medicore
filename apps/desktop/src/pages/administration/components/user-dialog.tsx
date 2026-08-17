@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import {
@@ -64,6 +65,17 @@ export function UserDialog({
   });
 
   const currentRoleId = watch('roleId');
+
+  useEffect(() => {
+    if (open) {
+      reset({
+        email: user?.email ?? '',
+        fullName: user?.fullName ?? '',
+        tenantRole: user?.tenantRole ?? TenantRole.TENANT_USER,
+        roleId: user?.roleId ?? null,
+      });
+    }
+  }, [open, user, reset]);
 
   const onSubmit = async (values: UserFormValues) => {
     if (mode === 'create') {

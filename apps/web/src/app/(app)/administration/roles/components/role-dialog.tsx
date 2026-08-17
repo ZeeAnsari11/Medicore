@@ -56,6 +56,16 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
     },
   });
 
+  React.useEffect(() => {
+    if (open) {
+      reset({
+        name: role?.name ?? '',
+        description: role?.description ?? '',
+        allowedModules: role?.allowedModules ?? [],
+      });
+    }
+  }, [open, role, reset]);
+
   const onSubmit = async (values: RoleFormValues) => {
     if (mode === 'create') {
       await create({

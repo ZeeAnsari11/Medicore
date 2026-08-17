@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Plus, AlertCircle, Factory } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
+import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import { Button, Alert } from '@medicore/ui';
 import { useManufacturers } from '@/hooks/use-manufacturers';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -36,7 +37,7 @@ export default function ManufacturersPage() {
   };
 
   return (
-    <>
+    <PageAccessGuard requires="manufacturers:read">
       <PageHeader
         title="Manufacturers"
         description="Companies that make the products you distribute"
@@ -75,6 +76,6 @@ export default function ManufacturersPage() {
         manufacturer={selected}
         onOpenChange={(open) => !open && handleCloseDialog()}
       />
-    </>
+    </PageAccessGuard>
   );
 }

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import {
@@ -51,6 +52,17 @@ export function PermissionDialog({
       module: permission?.module ?? '',
     },
   });
+
+  useEffect(() => {
+    if (open) {
+      reset({
+        key: permission?.key ?? '',
+        name: permission?.name ?? '',
+        description: permission?.description ?? '',
+        module: permission?.module ?? '',
+      });
+    }
+  }, [open, permission, reset]);
 
   const onSubmit = async (values: PermissionFormValues) => {
     if (mode === 'create') {
