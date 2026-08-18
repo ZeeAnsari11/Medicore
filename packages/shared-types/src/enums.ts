@@ -66,3 +66,16 @@ export enum AllocationMode {
   MANUAL = 'MANUAL',
 }
 
+export enum PurchaseStatus {
+  DRAFT = 'DRAFT',
+  RECEIVED = 'RECEIVED',
+  CANCELLED = 'CANCELLED',
+}
+
+/** Shared by Purchase and (later) Sale. */
+export enum PaymentStatus {
+  PAID = 'PAID',
+  PARTIAL = 'PARTIAL',
+  UNPAID = 'UNPAID',
+}
+

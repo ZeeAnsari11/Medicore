@@ -52,7 +52,15 @@ export class Product {
 
 export const ProductSchema = SchemaFactory.createForClass(Product);
 
-ProductSchema.index({ tenantId: 1, barcode: 1 }, { unique: true, sparse: true });
+// A plain `sparse` index on a compound key only excludes a document when
+// EVERY indexed field is absent — since tenantId is always present, sparse
+// alone never excludes barcode-less products, so a second product with no
+// barcode collides with the first. A partial index scoped to "barcode is
+// actually a string" is what sparse was meant to express here.
+ProductSchema.index(
+  { tenantId: 1, barcode: 1 },
+  { unique: true, partialFilterExpression: { barcode: { $type: 'string' } } },
+);
 ProductSchema.index({ tenantId: 1, manufacturerId: 1 });
 ProductSchema.index({ tenantId: 1, categoryId: 1 });
 ProductSchema.index({ name: 'text', genericName: 'text' });

@@ -161,4 +161,28 @@ export const SYSTEM_PERMISSION_SEED: Array<{ key: string; name: string; descript
     description: 'Manually add, subtract, or set batch stock quantities',
     module: 'Inventory',
   },
+  {
+    key: 'purchases:read',
+    name: 'View purchases',
+    description: 'View purchase invoices and receiving history',
+    module: 'Purchases',
+  },
+  {
+    key: 'purchases:create',
+    name: 'Create purchases',
+    description: 'Receive stock from a vendor by creating a purchase invoice',
+    module: 'Purchases',
+  },
+  {
+    key: 'purchases:update',
+    name: 'Edit purchases',
+    description: 'Update a purchase invoice\'s payment status',
+    module: 'Purchases',
+  },
+  {
+    key: 'purchases:delete',
+    name: 'Cancel purchases',
+    description: 'Cancel a purchase invoice and reverse the stock it added',
+    module: 'Purchases',
+  },
 ];

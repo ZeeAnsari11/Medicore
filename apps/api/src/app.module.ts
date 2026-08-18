@@ -23,6 +23,7 @@ import { CategoriesModule } from './modules/categories/categories.module';
 import { ProductsModule } from './modules/products/products.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { PurchasesModule } from './modules/purchases/purchases.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
     ProductsModule,
     VendorsModule,
     InventoryModule,
+    PurchasesModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

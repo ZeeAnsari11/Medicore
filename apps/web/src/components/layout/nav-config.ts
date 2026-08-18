@@ -33,7 +33,7 @@ export const navSections: NavSection[] = [
   {
     title: 'Operations',
     items: [
-      { label: 'Purchases', href: '/purchases', icon: ShoppingCart, comingSoon: true },
+      { label: 'Purchases', href: '/purchases', icon: ShoppingCart, requires: { anyOf: ['purchases:read'] } },
       { label: 'Inventory', href: '/inventory', icon: Boxes, requires: { anyOf: ['inventory:read'] } },
       { label: 'Sales', href: '/sales', icon: Receipt, comingSoon: true },
       { label: 'Customers', href: '/customers', icon: Users, comingSoon: true },

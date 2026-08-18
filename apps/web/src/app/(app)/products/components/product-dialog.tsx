@@ -28,6 +28,7 @@ interface ProductDialogProps {
   mode: 'create' | 'edit';
   product?: Product;
   onOpenChange: (open: boolean) => void;
+  onCreated?: (product: Product) => void;
 }
 
 interface ProductFormValues {
@@ -44,7 +45,7 @@ interface ProductFormValues {
   minStockLevel?: number;
 }
 
-export function ProductDialog({ open, mode, product, onOpenChange }: ProductDialogProps) {
+export function ProductDialog({ open, mode, product, onOpenChange, onCreated }: ProductDialogProps) {
   const { create, update, isCreating, isUpdating, createError, updateError } = useProducts();
   const { manufacturers } = useManufacturers();
   const { categories } = useCategories();
@@ -96,6 +97,7 @@ export function ProductDialog({ open, mode, product, onOpenChange }: ProductDial
   const onSubmit = async (values: ProductFormValues) => {
     const payload = {
       ...values,
+      barcode: values.barcode?.trim() || undefined,
       purchasePrice: Number(values.purchasePrice),
       salePrice: Number(values.salePrice),
       dealerPrice: values.dealerPrice !== undefined ? Number(values.dealerPrice) : undefined,
@@ -103,7 +105,8 @@ export function ProductDialog({ open, mode, product, onOpenChange }: ProductDial
     };
 
     if (mode === 'create') {
-      await create(payload);
+      const created = await create(payload);
+      onCreated?.(created);
     } else if (mode === 'edit' && product) {
       const dto: UpdateProductRequest = payload;
       await update(product.id, dto);
