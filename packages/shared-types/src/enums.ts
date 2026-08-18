@@ -72,10 +72,17 @@ export enum PurchaseStatus {
   CANCELLED = 'CANCELLED',
 }
 
-/** Shared by Purchase and (later) Sale. */
+/** Shared by Purchase and Sale. */
 export enum PaymentStatus {
   PAID = 'PAID',
   PARTIAL = 'PARTIAL',
   UNPAID = 'UNPAID',
+}
+
+export enum PaymentMethod {
+  CASH = 'CASH',
+  CARD = 'CARD',
+  CREDIT = 'CREDIT',
+  BANK_TRANSFER = 'BANK_TRANSFER',
 }
 

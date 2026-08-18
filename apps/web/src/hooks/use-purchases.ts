@@ -47,7 +47,10 @@ export function usePurchases(branchId: string | null, vendorId?: string) {
     staleTime: 30 * 1000,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: PURCHASES_QUERY_KEY });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: PURCHASES_QUERY_KEY });
+    queryClient.invalidateQueries({ queryKey: ['inventory'] });
+  };
 
   const createMutation = useMutation({
     mutationFn: createPurchase,

@@ -1,4 +1,9 @@
-export const SYSTEM_PERMISSION_SEED: Array<{ key: string; name: string; description: string; module: string }> = [
+export const SYSTEM_PERMISSION_SEED: Array<{
+  key: string;
+  name: string;
+  description: string;
+  module: string;
+}> = [
   {
     key: 'users:read',
     name: 'View users',
@@ -176,7 +181,7 @@ export const SYSTEM_PERMISSION_SEED: Array<{ key: string; name: string; descript
   {
     key: 'purchases:update',
     name: 'Edit purchases',
-    description: 'Update a purchase invoice\'s payment status',
+    description: "Update a purchase invoice's payment status",
     module: 'Purchases',
   },
   {
@@ -184,5 +189,53 @@ export const SYSTEM_PERMISSION_SEED: Array<{ key: string; name: string; descript
     name: 'Cancel purchases',
     description: 'Cancel a purchase invoice and reverse the stock it added',
     module: 'Purchases',
+  },
+  {
+    key: 'customers:read',
+    name: 'View customers',
+    description: 'View the customer list and their outstanding balance',
+    module: 'Customers',
+  },
+  {
+    key: 'customers:create',
+    name: 'Create customers',
+    description: 'Create new customers',
+    module: 'Customers',
+  },
+  {
+    key: 'customers:update',
+    name: 'Edit customers',
+    description: 'Edit customer details',
+    module: 'Customers',
+  },
+  {
+    key: 'customers:delete',
+    name: 'Delete customers',
+    description: 'Remove a customer with no outstanding balance',
+    module: 'Customers',
+  },
+  {
+    key: 'sales:read',
+    name: 'View sales',
+    description: 'View sales invoices and history',
+    module: 'Sales',
+  },
+  {
+    key: 'sales:create',
+    name: 'Create sales',
+    description: 'Sell products and generate an invoice',
+    module: 'Sales',
+  },
+  {
+    key: 'sales:update',
+    name: 'Edit sales',
+    description: "Update a sale invoice's payment status",
+    module: 'Sales',
+  },
+  {
+    key: 'sales:delete',
+    name: 'Cancel sales',
+    description: 'Void a sale invoice and restore the stock it consumed',
+    module: 'Sales',
   },
 ];

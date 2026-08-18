@@ -4,6 +4,7 @@ import { Batch, BatchSchema } from './schemas/batch.schema';
 import { StockMovement, StockMovementSchema } from './schemas/stock-movement.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { BatchesService } from './batches.service';
+import { BatchAllocationService } from './batch-allocation.service';
 import { InventoryController } from './inventory.controller';
 
 @Module({
@@ -14,8 +15,8 @@ import { InventoryController } from './inventory.controller';
       { name: Product.name, schema: ProductSchema },
     ]),
   ],
-  providers: [BatchesService],
+  providers: [BatchesService, BatchAllocationService],
   controllers: [InventoryController],
-  exports: [BatchesService],
+  exports: [BatchesService, BatchAllocationService],
 })
 export class InventoryModule {}
