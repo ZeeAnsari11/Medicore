@@ -42,4 +42,6 @@ export interface InventoryRollup {
   minStockLevel?: number;
   isLowStock: boolean;
   nearestExpiryDate?: string;
+  /** Units on hand in batches already past expiry. */
+  expiredQuantity?: number;
 }

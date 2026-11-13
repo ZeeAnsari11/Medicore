@@ -1,9 +1,13 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { LogOut, User, Moon, Sun, Settings } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useDarkMode } from '@/hooks/use-dark-mode';
+import { useBranchFilter } from '@/hooks/use-branch-filter';
+import { BranchFilter } from '@/components/branch-filter';
+import { navSections } from './nav-config';
+import { TopbarActionsTarget, TopbarSlotTarget } from './topbar-slot';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,27 +20,45 @@ import {
 export function Topbar() {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const { isDark, toggleDarkMode } = useDarkMode();
+  const branchFilter = useBranchFilter();
 
   const handleLogout = () => {
     logout();
     router.replace('/login');
   };
 
-  const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : '??';
+  // Longest matching nav href wins, so /sales/new still reads as "Sales" when no page fills the slot.
+  const defaultTitle =
+    navSections
+      .flatMap((section) => section.items)
+      .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+      .sort((a, b) => b.href.length - a.href.length)[0]?.label ?? 'Medicore';
+
+  // Create/edit document screens have their own Branch field; the viewing filter has no role there.
+  const hideBranchFilter = /^\/(purchases|sales)\/(new|[^/]+\/edit)$/.test(pathname);
+
+  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '??';
 
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-950/80 border-b border-slate-200/50 dark:border-slate-800/50">
       <div className="px-8 h-16 flex items-center justify-between">
-        {/* Left: Title */}
-        <div className="flex-1">
-          <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-slate-200 bg-clip-text text-transparent">
-            Dashboard
+        {/* Left: page-provided title (TopbarContent) or the default route title */}
+        <div className="flex min-w-0 flex-1 items-center pr-4">
+          <TopbarSlotTarget className="peer flex min-w-0 items-center gap-3" />
+          <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-slate-200 bg-clip-text text-transparent peer-[:not(:empty)]:hidden">
+            {defaultTitle}
           </h2>
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
+          {!hideBranchFilter && <BranchFilter filter={branchFilter} viewing />}
+
+          {/* Page actions (PageHeader) */}
+          <TopbarActionsTarget className="mr-2 flex items-center gap-2" />
+
           {/* Dark Mode Toggle */}
           <button
             onClick={toggleDarkMode}
@@ -59,7 +81,7 @@ export function Topbar() {
                 </div>
                 <div className="hidden sm:block text-left">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {user?.email?.split('@')[0]}
+                    {user?.username}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">{user?.tenantRole ?? ''}</p>
                 </div>

@@ -1,4 +1,13 @@
-import { IsEmail, IsInt, IsMongoId, IsOptional, IsString, IsUrl, Min, MinLength } from 'class-validator';
+import {
+  IsEmail,
+  IsInt,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Min,
+  MinLength,
+} from 'class-validator';
 
 export class UpdatePlatformSettingsDto {
   @IsOptional()

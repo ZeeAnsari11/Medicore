@@ -181,7 +181,7 @@ export const SYSTEM_PERMISSION_SEED: Array<{
   {
     key: 'purchases:update',
     name: 'Edit purchases',
-    description: "Update a purchase invoice's payment status",
+    description: 'Edit an unpaid purchase invoice (items, vendor, date, notes)',
     module: 'Purchases',
   },
   {
@@ -229,7 +229,7 @@ export const SYSTEM_PERMISSION_SEED: Array<{
   {
     key: 'sales:update',
     name: 'Edit sales',
-    description: "Update a sale invoice's payment status",
+    description: 'Edit an unpaid sale invoice (items, customer, date, notes)',
     module: 'Sales',
   },
   {
@@ -237,5 +237,71 @@ export const SYSTEM_PERMISSION_SEED: Array<{
     name: 'Cancel sales',
     description: 'Void a sale invoice and restore the stock it consumed',
     module: 'Sales',
+  },
+  {
+    key: 'sales:view_all',
+    name: 'View all sales',
+    description: 'See every sale in the branch, not only the ones you booked, and filter by Order Booker',
+    module: 'Sales',
+  },
+  {
+    key: 'sales:book_for_others',
+    name: 'Create sales for other Order Bookers',
+    description: 'Book a sale on behalf of another Order Booker',
+    module: 'Sales',
+  },
+  {
+    key: 'reports:read',
+    name: 'View reports',
+    description: 'View sales and inventory reports',
+    module: 'Reports',
+  },
+  {
+    key: 'ssr:read',
+    name: 'View SSR',
+    description: 'View the secondary sales report',
+    module: 'Reports',
+  },
+  {
+    key: 'ssr:export',
+    name: 'Export SSR',
+    description: 'Export the secondary sales report',
+    module: 'Reports',
+  },
+  {
+    key: 'ssr:view_cost',
+    name: 'View SSR cost and profit',
+    description: 'See cost of goods, profit and margin in the secondary sales report',
+    module: 'Reports',
+  },
+  {
+    key: 'accounting:read',
+    name: 'View accounting',
+    description: 'View ledgers, journal entries, and financial statements',
+    module: 'Accounting',
+  },
+  {
+    key: 'accounting:create',
+    name: 'Record accounting transactions',
+    description: 'Record payments, expenses, returns, and opening balances',
+    module: 'Accounting',
+  },
+  {
+    key: 'accounting:update',
+    name: 'Edit chart of accounts',
+    description: 'Edit account names, descriptions, and active status',
+    module: 'Accounting',
+  },
+  {
+    key: 'accounting:delete',
+    name: 'Delete accounts',
+    description: 'Deactivate a custom chart-of-accounts entry',
+    module: 'Accounting',
+  },
+  {
+    key: 'accounting:post',
+    name: 'Post manual journal entries',
+    description: 'Create manual journal entries and adjustments',
+    module: 'Accounting',
   },
 ];

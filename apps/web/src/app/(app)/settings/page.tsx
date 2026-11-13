@@ -24,7 +24,7 @@ export default function SettingsPage() {
             <CardTitle className="text-base">Profile</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <Row label="Email" value={user?.email ?? '—'} />
+            <Row label="Username" value={user?.username ?? '—'} />
             <Row label="Role" value={user?.tenantRole ?? '—'} />
             <Row label="Tenant ID" value={user?.tenantId ?? '—'} mono />
           </CardContent>

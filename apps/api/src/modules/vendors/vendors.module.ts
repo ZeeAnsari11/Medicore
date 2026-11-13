@@ -6,6 +6,7 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { VendorsService } from './vendors.service';
 import { VendorsController } from './vendors.controller';
 import { VendorProductsController } from './vendor-products.controller';
+import { ProductVendorsController } from './product-vendors.controller';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { VendorProductsController } from './vendor-products.controller';
     ]),
   ],
   providers: [VendorsService],
-  controllers: [VendorsController, VendorProductsController],
+  controllers: [VendorsController, VendorProductsController, ProductVendorsController],
   exports: [VendorsService],
 })
 export class VendorsModule {}

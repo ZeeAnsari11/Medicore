@@ -3,7 +3,7 @@
 // always statically resolve named exports through TypeScript's CommonJS
 // `export *` helper. The other files are type-only and erase at compile time,
 // so they're safe either way, but kept explicit here for consistency.
-export { SystemRole, TenantRole, UserStatus, TenantStatus, PlanStatus, BillingInterval, SubscriptionStatus, ProductStatus, StockMovementType, AllocationMode, PurchaseStatus, PaymentStatus, PaymentMethod } from './enums';
+export { SystemRole, TenantRole, UserStatus, TenantStatus, PlanStatus, BillingInterval, SubscriptionStatus, ProductStatus, StockMovementType, ReturnReasonCode, ReturnCondition, ReturnSettlementMode, ReturnStatus, AllocationMode, PurchaseStatus, SaleStatus, PaymentStatus, PaymentMethod, AccountType, NormalBalance, JournalEntrySourceType, JournalEntryStatus, PartyType, InvoiceType } from './enums';
 export type { BaseEntity, TenantOwnedEntity, BranchOwnedEntity } from './base';
 export type { Tenant } from './tenant';
 export type { Branch, CreateBranchRequest, UpdateBranchRequest, UpdateBranchStatusRequest } from './branch';
@@ -11,7 +11,13 @@ export type { Manufacturer, CreateManufacturerRequest, UpdateManufacturerRequest
 export type { Category, CreateCategoryRequest, UpdateCategoryRequest, UpdateCategoryStatusRequest } from './category';
 export type { Product, CreateProductRequest, UpdateProductRequest, UpdateProductStatusRequest } from './product';
 export type { Vendor, CreateVendorRequest, UpdateVendorRequest, UpdateVendorStatusRequest } from './vendor';
-export type { VendorProduct, CreateVendorProductRequest, UpdateVendorProductRequest } from './vendor-product';
+export type {
+  VendorProduct,
+  CreateVendorProductRequest,
+  UpdateVendorProductRequest,
+  VendorProductSearchResult,
+  ProductVendorSummary,
+} from './vendor-product';
 export type { Batch, CreateBatchAdjustmentRequest, InventoryRollup } from './batch';
 export type { StockMovement } from './stock-movement';
 export type {
@@ -19,7 +25,13 @@ export type {
   PurchaseItem,
   CreatePurchaseRequest,
   CreatePurchaseItemRequest,
+  CreatePurchaseResponse,
+  PurchasePriceChange,
+  PurchasePriceUpdateRequest,
   UpdatePurchasePaymentRequest,
+  UpdatePurchaseRequest,
+  PurchasePaymentRow,
+  PaginatedPurchases,
 } from './purchase';
 export type { Customer, CreateCustomerRequest, UpdateCustomerRequest } from './customer';
 export type {
@@ -29,6 +41,15 @@ export type {
   CreateSaleRequest,
   CreateSaleItemRequest,
   UpdateSalePaymentRequest,
+  UpdateSaleRequest,
+  SalePaymentRow,
+  PaginatedSales,
+  OrderBookerOption,
+  ReassignOrderBookerRequest,
+  PendingOrderBookerSummary,
+  PendingOrderRow,
+  ProcessOrdersRequest,
+  ProcessOrdersResult,
 } from './sale';
 export type { Permission, CreatePermissionRequest, UpdatePermissionRequest, UpdatePermissionStatusRequest } from './permission';
 export type { Role, CreateRoleRequest, UpdateRoleRequest, UpdateRoleStatusRequest } from './role';
@@ -38,3 +59,65 @@ export type { CreatePlatformTenantRequest, CreatePlatformTenantResponse, UpdateT
 export type { Plan, CreatePlanRequest, UpdatePlanRequest, UpdatePlanStatusRequest } from './plan';
 export type { Subscription, SubscriptionWithDetails, AssignSubscriptionPlanRequest, UpdateSubscriptionStatusRequest } from './subscription';
 export type { PlatformSettings, UpdatePlatformSettingsRequest } from './platform-settings';
+export type {
+  SalesReport,
+  SalesReportPoint,
+  SalesReportTopProduct,
+  SalesReportCategoryBreakdown,
+  SalesReportPaymentStatusBreakdown,
+  SalesReportSummary,
+  OrderBookerReportRow,
+  OrderBookerReport,
+  InventoryReport,
+  InventoryReportSummary,
+  InventoryReportCategoryBreakdown,
+  InventoryReportMovementPoint,
+  DashboardSummary,
+  DashboardBranchRow,
+} from './report';
+export type {
+  Account,
+  CreateAccountRequest,
+  UpdateAccountRequest,
+  JournalEntryLine,
+  JournalEntry,
+  CreateManualJournalEntryLineRequest,
+  CreateManualJournalEntryRequest,
+  CreateOpeningBalanceRequest,
+  PaymentAllocation,
+  Payment,
+  CreatePaymentAllocationRequest,
+  CreatePaymentRequest,
+  AllocatePaymentRequest,
+  Expense,
+  CreateExpenseRequest,
+  ReturnSettlement,
+  ReturnSettlementRequest,
+  SaleReturnBatchAllocation,
+  SaleReturnItem,
+  SaleReturn,
+  CreateSaleReturnItemRequest,
+  CreateSaleReturnRequest,
+  PurchaseReturnItem,
+  PurchaseReturn,
+  CreatePurchaseReturnItemRequest,
+  CreatePurchaseReturnRequest,
+  ReturnableBatchAllocation,
+  ReturnableSaleItem,
+  ReturnablePurchaseItem,
+  LedgerReference,
+  LedgerRow,
+  LedgerPage,
+  PartyLedgerSummary,
+  PartyLedgerResponse,
+  PartyBalanceRow,
+  PartyBalancesResponse,
+  GeneralLedgerResponse,
+  TrialBalanceRow,
+  TrialBalanceResponse,
+  ProfitLossRow,
+  ProfitLossResponse,
+  BalanceSheetRow,
+  BalanceSheetResponse,
+  AccountingOverviewResponse,
+} from './accounting';

@@ -20,7 +20,9 @@ export class TenantStatusGuard implements CanActivate {
 
     const tenant = await this.tenantsService.findById(user.tenantId);
     if (!tenant || tenant.status === TenantStatus.SUSPENDED) {
-      throw new ForbiddenException('Your organization has been suspended. Contact your administrator.');
+      throw new ForbiddenException(
+        'Your organization has been suspended. Contact your administrator.',
+      );
     }
 
     return true;

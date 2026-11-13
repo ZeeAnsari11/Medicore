@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Plus, AlertCircle, Pill, MoreHorizontal } from 'lucide-react';
+import { Plus, AlertCircle, Pill, MoreHorizontal, Barcode } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -14,12 +14,17 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DataTable,
+  Input,
   type ColumnDef,
 } from '@medicore/ui';
 import { useProducts } from '@/hooks/use-products';
+import { useBranches } from '@/hooks/use-branches';
+import { useVendorSummary } from '@/hooks/use-vendor-products';
+import { VendorPriceList } from '@/components/vendor-price-list';
 import { usePermissions } from '@/hooks/use-permissions';
 import { ProductStatus } from '@medicore/shared-types';
 import { ProductDialog } from './components/product-dialog';
+import { BarcodeLabelDialog } from './components/barcode-label-dialog';
 import type { Product } from '@medicore/shared-types';
 
 type DialogMode = 'create' | 'edit' | null;
@@ -27,10 +32,19 @@ type DialogMode = 'create' | 'edit' | null;
 export default function ProductsPage() {
   const { products, isLoading, error, setStatus } = useProducts();
   const { has } = usePermissions();
+  const { branches } = useBranches();
+  const vendorsByProduct = useVendorSummary();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [labelProductId, setLabelProductId] = useState<string | null>(null);
+  const [genericSearch, setGenericSearch] = useState('');
+  const visibleProducts = useMemo(() => {
+    const q = genericSearch.trim().toLowerCase();
+    return q ? products.filter((p) => p.genericName?.toLowerCase().includes(q)) : products;
+  }, [products, genericSearch]);
 
   const selected = selectedId ? products.find((p) => p.id === selectedId) : undefined;
+  const labelProduct = labelProductId ? (products.find((p) => p.id === labelProductId) ?? null) : null;
 
   const handleOpenCreate = () => {
     setSelectedId(null);
@@ -60,11 +74,31 @@ export default function ProductsPage() {
         header: 'Manufacturer',
         cell: ({ row }) => row.original.manufacturer?.name || '—',
       },
+      {
+        id: 'branch',
+        header: 'Branch',
+        cell: ({ row }) => branches.find((b) => b.id === row.original.branchId)?.name ?? '—',
+      },
       { accessorKey: 'unit', header: 'Unit' },
       {
-        accessorKey: 'salePrice',
-        header: 'Sale price',
-        cell: ({ getValue }) => (getValue() as number).toFixed(2),
+        id: 'vendors',
+        header: 'Vendors',
+        cell: ({ row }) => <VendorPriceList vendors={vendorsByProduct.get(row.original.id) ?? []} />,
+      },
+      {
+        accessorKey: 'tp',
+        header: 'TP',
+        cell: ({ getValue }) => (getValue() as number | undefined)?.toFixed(2) ?? '—',
+      },
+      {
+        accessorKey: 'cp',
+        header: 'CP',
+        cell: ({ getValue }) => (getValue() as number | undefined)?.toFixed(2) ?? '—',
+      },
+      {
+        accessorKey: 'rp',
+        header: 'RP',
+        cell: ({ getValue }) => (getValue() as number | undefined)?.toFixed(2) ?? '—',
       },
       {
         accessorKey: 'status',
@@ -88,6 +122,10 @@ export default function ProductsPage() {
               <DropdownMenuItem onClick={() => handleOpenEdit(row.original.id)} disabled={!has('products:update')}>
                 Edit
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLabelProductId(row.original.id)}>
+                <Barcode className="mr-2 h-4 w-4" />
+                Print barcode
+              </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() =>
                   setStatus(
@@ -104,7 +142,7 @@ export default function ProductsPage() {
         ),
       },
     ],
-    [has, setStatus],
+    [has, setStatus, vendorsByProduct, branches],
   );
 
   return (
@@ -134,7 +172,20 @@ export default function ProductsPage() {
       ) : products.length === 0 ? (
         <EmptyState icon={Pill} title="No products yet" description="Add your first product to the catalog" />
       ) : (
-        <DataTable columns={columns} data={products} searchPlaceholder="Search products..." />
+        <DataTable
+          columns={columns}
+          data={visibleProducts}
+          searchPlaceholder="Search products..."
+          toolbar={
+            <Input
+              placeholder="Search by generic name..."
+              value={genericSearch}
+              onChange={(e) => setGenericSearch(e.target.value)}
+              className="max-w-sm"
+            />
+          }
+          onRowClick={(row) => has('products:update') && handleOpenEdit(row.id)}
+        />
       )}
 
       <ProductDialog
@@ -142,6 +193,13 @@ export default function ProductsPage() {
         mode={dialogMode as Exclude<DialogMode, null>}
         product={selected}
         onOpenChange={(open) => !open && handleCloseDialog()}
+      />
+
+      <BarcodeLabelDialog
+        key={labelProductId ?? 'none'}
+        open={labelProductId !== null}
+        product={labelProduct}
+        onOpenChange={(open) => !open && setLabelProductId(null)}
       />
     </PageAccessGuard>
   );

@@ -29,6 +29,12 @@ export interface AllocationResult {
   allocations: AllocationLine[];
 }
 
+function startOfToday(): Date {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
 /**
  * Plans which batch(es) a line item should draw from — a pure read/plan
  * phase, no writes here. The caller (SalesService) is responsible for
@@ -68,6 +74,11 @@ export class BatchAllocationService {
             `Batch ${manual.batchId} for ${label} not found at this branch`,
           );
         }
+        if (batch.expiryDate < startOfToday()) {
+          throw new BadRequestException(
+            `Batch "${batch.batchNumber}" for ${label} expired on ${batch.expiryDate.toISOString().slice(0, 10)}`,
+          );
+        }
         if (batch.quantity < manual.quantity) {
           throw new BadRequestException(
             `Batch "${batch.batchNumber}" for ${label} only has ${batch.quantity} available, requested ${manual.quantity}`,
@@ -94,6 +105,7 @@ export class BatchAllocationService {
         productId: new Types.ObjectId(params.productId),
         deletedAt: null,
         quantity: { $gt: 0 },
+        expiryDate: { $gte: startOfToday() },
       })
       .sort({ expiryDate: 1, batchNumber: 1 })
       .session(params.session);

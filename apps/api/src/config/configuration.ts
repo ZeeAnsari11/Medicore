@@ -16,7 +16,8 @@ export default () => ({
     .filter(Boolean),
   platformAdmin: {
     tenantName: process.env.PLATFORM_TENANT_NAME ?? 'Medicore Platform',
-    email: process.env.PLATFORM_ADMIN_EMAIL,
+    // PLATFORM_ADMIN_EMAIL is still read so existing .env files keep working
+    username: process.env.PLATFORM_ADMIN_USERNAME ?? process.env.PLATFORM_ADMIN_EMAIL,
     password: process.env.PLATFORM_ADMIN_PASSWORD,
   },
 });

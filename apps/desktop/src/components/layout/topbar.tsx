@@ -19,7 +19,7 @@ export function Topbar() {
     navigate('/login');
   };
 
-  const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : '..';
+  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '..';
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-card px-6">
@@ -30,7 +30,7 @@ export function Topbar() {
             {initials}
           </span>
           <span className="hidden text-left sm:block">
-            <span className="block max-w-[10rem] truncate font-medium">{user?.email ?? 'Loading…'}</span>
+            <span className="block max-w-[10rem] truncate font-medium">{user?.username ?? 'Loading…'}</span>
             <span className="block text-xs text-muted-foreground">{user?.tenantRole ?? ''}</span>
           </span>
         </DropdownMenuTrigger>

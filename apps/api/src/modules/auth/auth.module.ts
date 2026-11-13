@@ -2,6 +2,12 @@ import { Module } from '@nestjs/common';
 import { JwtModule, JwtModuleOptions } from '@nestjs/jwt';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
+import { MongooseModule } from '@nestjs/mongoose';
+import { User, UserSchema } from '../users/schemas/user.schema';
+import {
+  ImpersonationLog,
+  ImpersonationLogSchema,
+} from '../platform/schemas/impersonation-log.schema';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -15,6 +21,10 @@ import { TenantsModule } from '../tenants/tenants.module';
     RolesModule,
     TenantsModule,
     PassportModule,
+    MongooseModule.forFeature([
+      { name: ImpersonationLog.name, schema: ImpersonationLogSchema },
+      { name: User.name, schema: UserSchema },
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -28,5 +38,6 @@ import { TenantsModule } from '../tenants/tenants.module';
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],
+  exports: [AuthService],
 })
 export class AuthModule {}

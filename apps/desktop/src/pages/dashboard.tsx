@@ -19,7 +19,7 @@ function DashboardPage() {
   return (
     <>
       <PageHeader
-        title={`Welcome back${user?.email ? `, ${user.email.split('@')[0]}` : ''}`}
+        title={`Welcome back${user?.username ? `, ${user.username}` : ''}`}
         description="Here's what's happening across your distribution business."
       />
 

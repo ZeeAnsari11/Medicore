@@ -13,10 +13,11 @@ export class User {
     required: true,
     trim: true,
     lowercase: true,
-    unique: true,
-    index: true,
   })
-  email: string;
+  username: string;
+
+  @Prop({ trim: true })
+  phone?: string;
 
   @Prop({ required: true })
   passwordHash: string;
@@ -38,6 +39,19 @@ export class User {
 
   @Prop({ type: Types.ObjectId, ref: 'Branch' })
   branchId?: Types.ObjectId;
+
+  /** Per-user tweaks on top of the role's permissions: effective = role + grant - deny. */
+  @Prop({
+    type: { grant: { type: [String], default: [] }, deny: { type: [String], default: [] } },
+    default: () => ({ grant: [], deny: [] }),
+    _id: false,
+  })
+  permissionOverrides: { grant: string[]; deny: string[] };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// A username is unique within a tenant, not across tenants.
+UserSchema.index({ tenantId: 1, username: 1 }, { unique: true });
+// Login looks users up by username before the tenant is known.
+UserSchema.index({ username: 1 }, { name: 'username_lookup' });

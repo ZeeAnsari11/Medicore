@@ -1,15 +1,18 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { Customer, CreateCustomerRequest, UpdateCustomerRequest } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const CUSTOMERS_QUERY_KEY = ['customers'];
 
-async function fetchCustomers(search?: string): Promise<Customer[]> {
+async function fetchCustomers(search?: string, branchId?: string | null): Promise<Customer[]> {
   const query = search ? `?search=${encodeURIComponent(search)}` : '';
-  return apiFetch<Customer[]>(`/customers${query}`);
+  return apiFetch<Customer[]>(`/customers${query}`, {
+    headers: branchId ? { 'X-Branch-Id': branchId } : undefined,
+  });
 }
 
 async function createCustomer(dto: CreateCustomerRequest): Promise<Customer> {
@@ -24,12 +27,13 @@ async function deleteCustomer(id: string): Promise<void> {
   await apiFetch(`/customers/${id}`, { method: 'DELETE' });
 }
 
-export function useCustomers(search?: string) {
-  const queryClient = useQueryClient();
+/** `branchId` lists that branch's customers (create forms with their own Branch field); default follows the top bar. */
+export function useCustomers(search?: string, branchId?: string | null) {
+  const queryClient = useTenantQueryClient();
 
-  const listQuery = useQuery({
-    queryKey: [...CUSTOMERS_QUERY_KEY, search],
-    queryFn: () => fetchCustomers(search),
+  const listQuery = useTenantQuery({
+    queryKey: [...CUSTOMERS_QUERY_KEY, search, branchId ?? null],
+    queryFn: () => fetchCustomers(search, branchId),
     staleTime: 60 * 1000,
   });
 

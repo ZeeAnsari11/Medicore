@@ -1,4 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Permission, PermissionDocument } from './schemas/permission.schema';
@@ -7,7 +12,9 @@ import { UpdatePermissionDto } from './dto/update-permission.dto';
 
 @Injectable()
 export class PermissionsService {
-  constructor(@InjectModel(Permission.name) private readonly permissionModel: Model<PermissionDocument>) {}
+  constructor(
+    @InjectModel(Permission.name) private readonly permissionModel: Model<PermissionDocument>,
+  ) {}
 
   async findVisibleToTenant(tenantId: string) {
     return this.permissionModel.find(
@@ -109,9 +116,5 @@ export class PermissionsService {
         `One or more permission IDs are invalid, inactive, or do not belong to your organization: ${missing.join(', ')}`,
       );
     }
-  }
-
-  async findById(id: string) {
-    return this.permissionModel.findById(id);
   }
 }

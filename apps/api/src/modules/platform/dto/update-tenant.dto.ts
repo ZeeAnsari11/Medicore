@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsEmail, IsOptional } from 'class-validator';
+import { IsString, MinLength, IsOptional, MaxLength, Matches } from 'class-validator';
 
 export class UpdateTenantDto {
   @IsString()
@@ -11,8 +11,11 @@ export class UpdateTenantDto {
   adminFullName?: string;
 
   @IsOptional()
-  @IsEmail()
-  email?: string;
+  @IsString()
+  @MinLength(3)
+  @MaxLength(50)
+  @Matches(/^[a-zA-Z0-9._-]+$/, { message: 'username may only contain letters, numbers, dots, dashes and underscores' })
+  username?: string;
 
   @IsOptional()
   @IsString()

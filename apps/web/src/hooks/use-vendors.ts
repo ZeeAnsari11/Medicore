@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type {
   Vendor,
   CreateVendorRequest,
@@ -9,12 +9,15 @@ import type {
 } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const VENDORS_QUERY_KEY = ['vendors'];
 
-async function fetchVendors(manufacturerId?: string): Promise<Vendor[]> {
+async function fetchVendors(manufacturerId?: string, branchId?: string | null): Promise<Vendor[]> {
   const query = manufacturerId ? `?manufacturerId=${manufacturerId}` : '';
-  return apiFetch<Vendor[]>(`/vendors${query}`);
+  return apiFetch<Vendor[]>(`/vendors${query}`, {
+    headers: branchId ? { 'X-Branch-Id': branchId } : undefined,
+  });
 }
 
 async function createVendor(dto: CreateVendorRequest): Promise<Vendor> {
@@ -29,12 +32,13 @@ async function setVendorStatus(id: string, dto: UpdateVendorStatusRequest): Prom
   return apiFetch<Vendor>(`/vendors/${id}/status`, { method: 'PATCH', body: dto });
 }
 
-export function useVendors(manufacturerId?: string) {
-  const queryClient = useQueryClient();
+/** `branchId` lists that branch's vendors (create forms with their own Branch field); default follows the top bar. */
+export function useVendors(manufacturerId?: string, branchId?: string | null) {
+  const queryClient = useTenantQueryClient();
 
-  const vendorsQuery = useQuery({
-    queryKey: [...VENDORS_QUERY_KEY, manufacturerId ?? null],
-    queryFn: () => fetchVendors(manufacturerId),
+  const vendorsQuery = useTenantQuery({
+    queryKey: [...VENDORS_QUERY_KEY, manufacturerId ?? null, branchId ?? null],
+    queryFn: () => fetchVendors(manufacturerId, branchId),
     staleTime: 5 * 60 * 1000,
   });
 

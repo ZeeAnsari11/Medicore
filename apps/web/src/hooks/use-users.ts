@@ -1,9 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { CreateUserRequest, CreateUserResponse, UpdateUserRequest, UpdateUserStatusRequest, User, UserStatus } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const USERS_QUERY_KEY = ['users'];
 
@@ -33,9 +34,9 @@ async function setUserStatus(id: string, dto: UpdateUserStatusRequest): Promise<
 }
 
 export function useUsers() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const usersQuery = useQuery({
+  const usersQuery = useTenantQuery({
     queryKey: USERS_QUERY_KEY,
     queryFn: fetchUsers,
     staleTime: 5 * 60 * 1000,

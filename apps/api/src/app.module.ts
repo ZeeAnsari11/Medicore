@@ -1,10 +1,20 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { APP_GUARD } from '@nestjs/core';
 import configuration from './config/configuration';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { TenantStatusGuard } from './common/guards/tenant-status.guard';
+import { TenantContextGuard } from './common/guards/tenant-context.guard';
+import { TenantContextMiddleware } from './common/tenancy/tenant-context.middleware';
+import { tenantScopePlugin } from './common/tenancy/tenant-scope.plugin';
+import { branchScopePlugin } from './common/tenancy/branch-scope.plugin';
+import { Branch, BranchSchema } from './modules/branches/schemas/branch.schema';
+import { ImpersonationGuard } from './common/guards/impersonation.guard';
+import {
+  ImpersonationLog,
+  ImpersonationLogSchema,
+} from './modules/platform/schemas/impersonation-log.schema';
 import { RolesGuard } from './common/guards/roles.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { HealthModule } from './modules/health/health.module';
@@ -26,6 +36,9 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { PurchasesModule } from './modules/purchases/purchases.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { SalesModule } from './modules/sales/sales.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { AccountingModule } from './modules/accounting/accounting.module';
 
 @Module({
   imports: [
@@ -35,8 +48,17 @@ import { SalesModule } from './modules/sales/sales.module';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
         uri: config.get<string>('mongoUri'),
+        connectionFactory: (connection: any) => {
+          connection.plugin(tenantScopePlugin);
+          connection.plugin(branchScopePlugin); // after the tenant plugin: its $match goes second
+          return connection;
+        },
       }),
     }),
+    MongooseModule.forFeature([
+      { name: ImpersonationLog.name, schema: ImpersonationLogSchema },
+      { name: Branch.name, schema: BranchSchema },
+    ]),
     HealthModule,
     TenantsModule,
     UsersModule,
@@ -56,12 +78,21 @@ import { SalesModule } from './modules/sales/sales.module';
     PurchasesModule,
     CustomersModule,
     SalesModule,
+    ReportsModule,
+    RealtimeModule,
+    AccountingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: TenantContextGuard },
+    { provide: APP_GUARD, useClass: ImpersonationGuard },
     { provide: APP_GUARD, useClass: TenantStatusGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PermissionsGuard },
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(TenantContextMiddleware).forRoutes('*');
+  }
+}

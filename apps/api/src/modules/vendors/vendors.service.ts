@@ -12,6 +12,7 @@ import { UpdateVendorProductDto } from './dto/update-vendor-product.dto';
 import type {
   Vendor as VendorType,
   VendorProduct as VendorProductType,
+  VendorProductSearchResult,
 } from '@medicore/shared-types';
 
 @Injectable()
@@ -28,6 +29,7 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
   async createVendor(tenantId: string, dto: CreateVendorDto) {
     const existing = await this.vendorModel.findOne({
       tenantId: new Types.ObjectId(tenantId),
+      branchId: new Types.ObjectId(dto.branchId), // names are unique per branch
       company: dto.company,
     });
 
@@ -38,6 +40,7 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
     return this.vendorModel.create({
       tenantId: new Types.ObjectId(tenantId),
       ...dto,
+      branchId: new Types.ObjectId(dto.branchId),
       isActive: true,
     });
   }
@@ -91,7 +94,6 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
     if (dto.distributorType !== undefined) vendor.distributorType = dto.distributorType;
     if (dto.contactName !== undefined) vendor.contactName = dto.contactName;
     if (dto.contactPhone !== undefined) vendor.contactPhone = dto.contactPhone;
-    if (dto.contactEmail !== undefined) vendor.contactEmail = dto.contactEmail;
     if (dto.address !== undefined) vendor.address = dto.address;
 
     return vendor.save();
@@ -111,6 +113,20 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
   // --- VendorProduct (vendor-specific pricing join) ---
 
   async addVendorProduct(tenantId: string, dto: CreateVendorProductDto) {
+    const tenantOid = new Types.ObjectId(tenantId);
+    const vendor = await this.vendorModel
+      .findOne({ _id: new Types.ObjectId(dto.vendorId), tenantId: tenantOid })
+      .select('branchId')
+      .lean();
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    // A vendor only sells products of its own branch.
+    const product = await this.productModel.exists({
+      _id: new Types.ObjectId(dto.productId),
+      tenantId: tenantOid,
+      branchId: vendor.branchId,
+    });
+    if (!product) throw new NotFoundException('Product not found');
+
     const existing = await this.vendorProductModel.findOne({
       tenantId: new Types.ObjectId(tenantId),
       vendorId: new Types.ObjectId(dto.vendorId),
@@ -125,15 +141,68 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
       await this.unsetExistingPreferred(tenantId, dto.productId);
     }
 
-    return this.vendorProductModel.create({
+    try {
+      return await this.vendorProductModel.create({
+        tenantId: new Types.ObjectId(tenantId),
+        branchId: vendor.branchId, // pricing links follow the vendor's branch
+        vendorId: new Types.ObjectId(dto.vendorId),
+        productId: new Types.ObjectId(dto.productId),
+        vendorSku: dto.vendorSku,
+        purchasePrice: dto.purchasePrice,
+        isPreferred: dto.isPreferred ?? false,
+        isActive: true,
+      });
+    } catch (err) {
+      // Two concurrent adds both pass the findOne above; the unique index catches the loser.
+      if ((err as { code?: number }).code === 11000) {
+        throw new ConflictException('This vendor is already linked to this product');
+      }
+      throw err;
+    }
+  }
+
+  async findVendorProductLink(tenantId: string, productId: string, vendorId: string) {
+    const link = await this.vendorProductModel.findOne({
       tenantId: new Types.ObjectId(tenantId),
-      vendorId: new Types.ObjectId(dto.vendorId),
-      productId: new Types.ObjectId(dto.productId),
-      vendorSku: dto.vendorSku,
-      purchasePrice: dto.purchasePrice,
-      isPreferred: dto.isPreferred ?? false,
-      isActive: true,
+      productId: new Types.ObjectId(productId),
+      vendorId: new Types.ObjectId(vendorId),
     });
+    if (!link) throw new NotFoundException('Vendor product link not found');
+    return link;
+  }
+
+  /** Active vendors per product with their prices, for the product list's Vendors column. */
+  async summarizeVendorsByProduct(tenantId: string) {
+    const rows = await this.vendorProductModel.aggregate<{
+      _id: Types.ObjectId;
+      vendors: Array<{ vendorId: Types.ObjectId; company: string; purchasePrice: number }>;
+    }>([
+      { $match: { tenantId: new Types.ObjectId(tenantId), isActive: true } },
+      {
+        $lookup: {
+          from: 'vendors',
+          let: { vid: '$vendorId' },
+          pipeline: [
+            { $match: { $expr: { $eq: ['$_id', '$$vid'] }, tenantId: new Types.ObjectId(tenantId) } },
+          ],
+          as: 'vendor',
+        },
+      },
+      { $unwind: '$vendor' },
+      { $sort: { purchasePrice: 1 } },
+      {
+        $group: {
+          _id: '$productId',
+          vendors: {
+            $push: { vendorId: '$vendorId', company: '$vendor.company', purchasePrice: '$purchasePrice' },
+          },
+        },
+      },
+    ]);
+    return rows.map((r) => ({
+      productId: r._id.toString(),
+      vendors: r.vendors.map((v) => ({ ...v, vendorId: v.vendorId.toString() })),
+    }));
   }
 
   async listVendorProductsForProduct(tenantId: string, productId: string) {
@@ -141,6 +210,52 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
       .find({ tenantId: new Types.ObjectId(tenantId), productId: new Types.ObjectId(productId) })
       .populate('vendorId', 'company')
       .sort({ isPreferred: -1, purchasePrice: 1 });
+  }
+
+  /** Vendors that sell a product whose name contains `term` (case-insensitive), with those products and prices. */
+  async searchVendorsByProduct(
+    tenantId: string,
+    term: string,
+    includeInactive: boolean,
+  ): Promise<VendorProductSearchResult[]> {
+    const trimmed = term.trim();
+    if (!trimmed) return [];
+
+    const tenantObjectId = new Types.ObjectId(tenantId);
+    const escaped = trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const products = await this.productModel
+      .find({ tenantId: tenantObjectId, name: { $regex: escaped, $options: 'i' } })
+      .select('name');
+    if (products.length === 0) return [];
+    const productNames = new Map(products.map((p) => [p._id.toString(), p.name]));
+
+    const links = await this.vendorProductModel.find({
+      tenantId: tenantObjectId,
+      productId: { $in: products.map((p) => p._id) },
+      ...(includeInactive ? {} : { isActive: true }),
+    });
+    if (links.length === 0) return [];
+
+    const vendors = await this.vendorModel
+      .find({ tenantId: tenantObjectId, _id: { $in: [...new Set(links.map((l) => l.vendorId.toString()))] } })
+      .select('company');
+    const results = new Map<string, VendorProductSearchResult>(
+      vendors.map((v) => [v._id.toString(), { vendorId: v._id.toString(), company: v.company, matches: [] }]),
+    );
+
+    for (const link of links) {
+      results.get(link.vendorId.toString())?.matches.push({
+        linkId: link._id.toString(),
+        productId: link.productId.toString(),
+        productName: productNames.get(link.productId.toString()) ?? '',
+        purchasePrice: link.purchasePrice,
+        isActive: link.isActive,
+      });
+    }
+
+    return [...results.values()]
+      .map((r) => ({ ...r, matches: r.matches.sort((a, b) => a.productName.localeCompare(b.productName)) }))
+      .sort((a, b) => a.company.localeCompare(b.company));
   }
 
   async listVendorProductsForVendor(tenantId: string, vendorId: string) {
@@ -204,11 +319,11 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
     return {
       id: obj._id.toString(),
       tenantId: obj.tenantId.toString(),
+      branchId: obj.branchId?.toString(),
       company: obj.company,
       distributorType: obj.distributorType,
       contactName: obj.contactName,
       contactPhone: obj.contactPhone,
-      contactEmail: obj.contactEmail,
       address: obj.address,
       isActive: obj.isActive,
       createdAt: obj.createdAt,
@@ -221,11 +336,12 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
 
     let vendorId: string;
     let vendor: { id: string; company: string } | undefined;
-    if (typeof obj.vendorId === 'object') {
+    if (obj.vendorId && typeof obj.vendorId === 'object') {
       vendorId = obj.vendorId._id.toString();
       if (obj.vendorId.company) vendor = { id: vendorId, company: obj.vendorId.company };
     } else {
-      vendorId = obj.vendorId.toString();
+      // populate() leaves null for a vendor outside the current scope; populated() still has the id.
+      vendorId = String(obj.vendorId ?? link.populated('vendorId') ?? '');
     }
 
     let productId: string;
@@ -246,6 +362,7 @@ export class VendorsService extends TenantScopedRepository<VendorDocument> {
       product,
       vendorSku: obj.vendorSku,
       purchasePrice: obj.purchasePrice,
+      lastPurchasePrice: obj.lastPurchasePrice,
       isPreferred: obj.isPreferred,
       isActive: obj.isActive,
       createdAt: obj.createdAt,

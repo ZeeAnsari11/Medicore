@@ -23,7 +23,7 @@ export function PlatformTopbar() {
     router.replace('/login');
   };
 
-  const initials = user?.email ? user.email.slice(0, 2).toUpperCase() : '??';
+  const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '??';
 
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-950/80 border-b border-slate-200/50 dark:border-slate-800/50">
@@ -65,7 +65,7 @@ export function PlatformTopbar() {
                 </div>
                 <div className="hidden sm:block text-left">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {user?.email?.split('@')[0]}
+                    {user?.username}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">Admin</p>
                 </div>

@@ -1,3 +1,4 @@
+import { escapeRegex } from '../../common/utils/escape-regex';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
@@ -30,9 +31,9 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
     const productFilter: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId) };
     if (search) {
       productFilter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { genericName: { $regex: search, $options: 'i' } },
-        { barcode: { $regex: search, $options: 'i' } },
+        { name: { $regex: escapeRegex(search), $options: 'i' } },
+        { genericName: { $regex: escapeRegex(search), $options: 'i' } },
+        { barcode: { $regex: escapeRegex(search), $options: 'i' } },
       ];
     }
 
@@ -40,17 +41,27 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
 
     const batchMatch = this.withTenantAndBranch(tenantId, branchId, { deletedAt: null });
 
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const totals = await this.batchModel.aggregate<{
       _id: Types.ObjectId;
       totalQuantity: number;
       nearestExpiryDate: Date | null;
+      expiredQuantity: number;
     }>([
       { $match: batchMatch },
       {
         $group: {
           _id: '$productId',
           totalQuantity: { $sum: '$quantity' },
-          nearestExpiryDate: { $min: '$expiryDate' },
+          // sold-out batches don't count as "nearest expiry"
+          nearestExpiryDate: {
+            $min: { $cond: [{ $gt: ['$quantity', 0] }, '$expiryDate', null] },
+          },
+          expiredQuantity: {
+            $sum: { $cond: [{ $lt: ['$expiryDate', startOfToday] }, '$quantity', 0] },
+          },
         },
       },
     ]);
@@ -70,6 +81,7 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
         minStockLevel: obj.minStockLevel,
         isLowStock: obj.minStockLevel !== undefined && totalQuantity <= obj.minStockLevel,
         nearestExpiryDate: totalsEntry?.nearestExpiryDate?.toISOString(),
+        expiredQuantity: totalsEntry?.expiredQuantity ?? 0,
       };
     });
   }
@@ -116,6 +128,7 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
           .findOne({
             _id: new Types.ObjectId(dto.productId),
             tenantId: new Types.ObjectId(tenantId),
+            branchId: new Types.ObjectId(branchId),
           })
           .session(session);
         if (!product) {
@@ -166,8 +179,8 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
                   batchNumber: dto.batchNumber,
                   expiryDate: new Date(dto.expiryDate),
                   quantity: dto.quantity,
-                  purchasePrice: dto.purchasePrice ?? product.purchasePrice,
-                  sellingPrice: dto.sellingPrice ?? product.salePrice,
+                  purchasePrice: dto.purchasePrice ?? product.cp,
+                  sellingPrice: dto.sellingPrice ?? product.tp,
                   receivedAt: new Date(),
                 },
               ],
@@ -195,8 +208,8 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
                   batchNumber: dto.batchNumber,
                   expiryDate: new Date(dto.expiryDate),
                   quantity: dto.quantity,
-                  purchasePrice: dto.purchasePrice ?? product.purchasePrice,
-                  sellingPrice: dto.sellingPrice ?? product.salePrice,
+                  purchasePrice: dto.purchasePrice ?? product.cp,
+                  sellingPrice: dto.sellingPrice ?? product.tp,
                   receivedAt: new Date(),
                 },
               ],

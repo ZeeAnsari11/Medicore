@@ -1,14 +1,18 @@
-import { IsMongoId, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsMongoId, IsNotEmpty, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateProductDto {
+  @IsMongoId()
+  @IsOptional()
+  branchId?: string;
+
   @IsString()
   @MinLength(2)
   name: string;
 
   @IsString()
-  @IsOptional()
-  genericName?: string;
+  @IsNotEmpty()
+  genericName: string;
 
   @IsMongoId()
   manufacturerId: string;
@@ -31,16 +35,15 @@ export class CreateProductDto {
 
   @IsNumber()
   @Min(0)
-  purchasePrice: number;
+  tp: number;
 
   @IsNumber()
   @Min(0)
-  salePrice: number;
+  cp: number;
 
   @IsNumber()
   @Min(0)
-  @IsOptional()
-  dealerPrice?: number;
+  rp: number;
 
   @IsNumber()
   @Min(0)

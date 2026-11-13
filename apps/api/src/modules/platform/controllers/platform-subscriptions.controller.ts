@@ -1,3 +1,4 @@
+import { CrossTenant } from '../../../common/decorators/cross-tenant.decorator';
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { TenantsService } from '../../tenants/tenants.service';
@@ -7,6 +8,7 @@ import { SystemRole, SubscriptionWithDetails } from '@medicore/shared-types';
 import { AssignSubscriptionPlanDto } from '../../subscriptions/dto/assign-subscription-plan.dto';
 import { UpdateSubscriptionStatusDto } from '../../subscriptions/dto/update-subscription-status.dto';
 
+@CrossTenant()
 @Controller('platform/subscriptions')
 export class PlatformSubscriptionsController {
   constructor(

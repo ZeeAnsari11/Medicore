@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { BRANCH_SCOPED } from '../../../common/tenancy/branch-scope.plugin';
 import { HydratedDocument, Types } from 'mongoose';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -10,7 +11,7 @@ export type BatchDocument = HydratedDocument<Batch>;
  * and soft delete, per docs/architecture-decisions.md's offline-sync
  * conventions, instead of a server-assigned ObjectId and hard delete.
  */
-@Schema({ timestamps: true, collection: 'batches' })
+@Schema({ timestamps: true, collection: 'batches', ...BRANCH_SCOPED })
 export class Batch {
   @Prop({ type: String, default: () => uuidv7() })
   _id: string;

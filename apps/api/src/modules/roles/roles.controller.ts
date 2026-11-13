@@ -43,7 +43,7 @@ export class RolesController {
     @Param('id') id: string,
     @Body() dto: UpdateRoleDto,
   ) {
-    const role = await this.rolesService.updateRole(user.tenantId, id, dto);
+    const role = await this.rolesService.updateRole(user.tenantId, id, dto, user.userId);
     return this.rolesService.toRoleResponse(role);
   }
 

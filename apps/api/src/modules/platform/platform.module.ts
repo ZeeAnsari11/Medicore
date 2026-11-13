@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TenantsModule } from '../tenants/tenants.module';
+import { AuthModule } from '../auth/auth.module';
 import { UsersModule } from '../users/users.module';
 import { PlansModule } from '../plans/plans.module';
 import { SubscriptionsModule } from '../subscriptions/subscriptions.module';
@@ -12,7 +13,7 @@ import { PlatformDashboardController } from './controllers/platform-dashboard.co
 import { PlatformAdminSeeder } from './seeders/platform-admin.seeder';
 
 @Module({
-  imports: [TenantsModule, UsersModule, PlansModule, SubscriptionsModule, PlatformSettingsModule],
+  imports: [AuthModule, TenantsModule, UsersModule, PlansModule, SubscriptionsModule, PlatformSettingsModule],
   controllers: [
     PlatformTenantsController,
     PlatformPlansController,

@@ -1,3 +1,4 @@
+import { CrossTenant } from '../../../common/decorators/cross-tenant.decorator';
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Patch, Post } from '@nestjs/common';
 import { PlansService } from '../../plans/plans.service';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -6,6 +7,7 @@ import { CreatePlanDto } from '../../plans/dto/create-plan.dto';
 import { UpdatePlanDto } from '../../plans/dto/update-plan.dto';
 import { UpdatePlanStatusDto } from '../../plans/dto/update-plan-status.dto';
 
+@CrossTenant()
 @Controller('platform/plans')
 export class PlatformPlansController {
   constructor(private readonly plansService: PlansService) {}

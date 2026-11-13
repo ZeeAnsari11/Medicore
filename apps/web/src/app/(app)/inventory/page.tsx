@@ -18,37 +18,73 @@ import {
   type ColumnDef,
 } from '@medicore/ui';
 import { useInventory } from '@/hooks/use-inventory';
-import { useBranches } from '@/hooks/use-branches';
+import { useVendorSummary } from '@/hooks/use-vendor-products';
+import { VendorPriceList } from '@/components/vendor-price-list';
+import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { usePermissions } from '@/hooks/use-permissions';
-import { useAuth } from '@/hooks/use-auth';
 import { BatchDetailDialog } from './components/batch-detail-dialog';
+import { expiryBadge } from './components/batch-detail-dialog';
 import { AdjustmentDialog } from './components/adjustment-dialog';
 import type { InventoryRollup } from '@medicore/shared-types';
 
-const ALL_BRANCHES = '__all__';
+
+type StockFilter = 'all' | 'in-stock' | 'low' | 'out' | 'expired' | 'expiring';
+
+const STOCK_FILTERS: Array<{ value: StockFilter; label: string }> = [
+  { value: 'all', label: 'All stock' },
+  { value: 'in-stock', label: 'In stock' },
+  { value: 'low', label: 'Low stock' },
+  { value: 'out', label: 'Out of stock' },
+  { value: 'expired', label: 'Has expired stock' },
+  { value: 'expiring', label: 'Expiring in 30 days' },
+];
+
+const DAY_MS = 86_400_000;
+
+const matchesStockFilter = (r: InventoryRollup, filter: StockFilter) => {
+  switch (filter) {
+    case 'in-stock':
+      return r.totalQuantity > 0;
+    case 'low':
+      return r.isLowStock;
+    case 'out':
+      return r.totalQuantity <= 0;
+    case 'expired':
+      return !!r.expiredQuantity;
+    case 'expiring': {
+      if (!r.nearestExpiryDate) return false;
+      const days = (new Date(r.nearestExpiryDate).getTime() - Date.now()) / DAY_MS;
+      return days >= 0 && days <= 30;
+    }
+    default:
+      return true;
+  }
+};
 
 export default function InventoryPage() {
-  const { user } = useAuth();
-  const { isAdmin, has } = usePermissions();
-  const { branches } = useBranches();
+  const { has } = usePermissions();
 
-  const [selectedBranchId, setSelectedBranchId] = useState<string | null>(
-    isAdmin ? null : (user?.branchId ?? null),
-  );
+  const branchFilter = useBranchFilter();
+  const selectedBranchId = branchFilter.branchId;
   const [detailProductId, setDetailProductId] = useState<string | null>(null);
   const [detailProductName, setDetailProductName] = useState<string | undefined>();
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
 
   const { rollup, isLoading, error } = useInventory(selectedBranchId);
+  const vendorsByProduct = useVendorSummary();
+  const [stockFilter, setStockFilter] = useState<StockFilter>('all');
+  const filteredRollup = useMemo(() => rollup.filter((r) => matchesStockFilter(r, stockFilter)), [rollup, stockFilter]);
 
-  const currentBranchName = isAdmin
-    ? null
-    : (branches.find((b) => b.id === user?.branchId)?.name ?? 'Unassigned branch');
 
   const columns = useMemo<ColumnDef<InventoryRollup>[]>(
     () => [
       { accessorKey: 'productName', header: 'Product' },
       { accessorKey: 'unit', header: 'Unit' },
+      {
+        id: 'vendors',
+        header: 'Vendors',
+        cell: ({ row }) => <VendorPriceList vendors={vendorsByProduct.get(row.original.productId) ?? []} />,
+      },
       {
         accessorKey: 'totalQuantity',
         header: 'On hand',
@@ -56,6 +92,9 @@ export default function InventoryPage() {
           <span className="flex items-center gap-2">
             {row.original.totalQuantity}
             {row.original.isLowStock && <Badge variant="warning">Low stock</Badge>}
+            {!!row.original.expiredQuantity && (
+              <Badge variant="destructive">{row.original.expiredQuantity} expired</Badge>
+            )}
           </span>
         ),
       },
@@ -64,11 +103,17 @@ export default function InventoryPage() {
         header: 'Nearest expiry',
         cell: ({ getValue }) => {
           const value = getValue() as string | undefined;
-          return value ? new Date(value).toLocaleDateString() : '—';
+          if (!value) return '—';
+          return (
+            <span className="flex items-center gap-2">
+              {new Date(value).toLocaleDateString()}
+              {expiryBadge(value)}
+            </span>
+          );
         },
       },
     ],
-    [],
+    [vendorsByProduct],
   );
 
   return (
@@ -78,29 +123,9 @@ export default function InventoryPage() {
         description="Batch-level stock on hand, by branch"
         actions={
           <div className="flex items-center gap-3">
-            {isAdmin ? (
-              <Select
-                value={selectedBranchId ?? ALL_BRANCHES}
-                onValueChange={(value) => setSelectedBranchId(value === ALL_BRANCHES ? null : value)}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_BRANCHES}>All branches</SelectItem>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Badge variant="outline">{currentBranchName}</Badge>
-            )}
             <Button
               onClick={() => setAdjustDialogOpen(true)}
-              disabled={!has('inventory:adjust') || !selectedBranchId}
+              disabled={!has('inventory:adjust')}
             >
               <Plus className="mr-2 h-4 w-4" />
               Adjust Stock
@@ -116,13 +141,6 @@ export default function InventoryPage() {
         </Alert>
       )}
 
-      {isAdmin && !selectedBranchId && (
-        <Alert className="mb-6">
-          <AlertCircle className="h-4 w-4" />
-          <span>Viewing all branches combined. Select a branch to adjust stock.</span>
-        </Alert>
-      )}
-
       {isLoading ? (
         <div className="flex h-96 items-center justify-center">
           <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
@@ -132,8 +150,23 @@ export default function InventoryPage() {
       ) : (
         <DataTable
           columns={columns}
-          data={rollup}
+          data={filteredRollup}
           searchPlaceholder="Search inventory..."
+          pageSizeOptions={[10, 25, 50, 100, 250, 500]}
+          toolbar={
+            <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as StockFilter)}>
+              <SelectTrigger className="w-52" aria-label="Stock status">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STOCK_FILTERS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>
+                    {f.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          }
           onRowClick={(row) => {
             setDetailProductId(row.productId);
             setDetailProductName(row.productName);

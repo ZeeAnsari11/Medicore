@@ -5,6 +5,8 @@ import { useForm } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, Button, Input, Label, Alert } from '@medicore/ui';
 import { useVendors } from '@/hooks/use-vendors';
+import { BranchField } from '@/components/branch-field';
+import { useBranchField } from '@/hooks/use-branch-field';
 import { ApiError } from '@/lib/api-client';
 import type { Vendor, UpdateVendorRequest } from '@medicore/shared-types';
 
@@ -14,6 +16,8 @@ interface VendorDialogProps {
   vendor?: Vendor;
   onOpenChange: (open: boolean) => void;
   onCreated?: (vendor: Vendor) => void;
+  /** Pre-selects the Branch field (quick-create from a branch-owned form); defaults to the locked branch. */
+  defaultBranchId?: string;
 }
 
 interface VendorFormValues {
@@ -21,17 +25,21 @@ interface VendorFormValues {
   distributorType?: string;
   contactName?: string;
   contactPhone?: string;
-  contactEmail?: string;
   address?: string;
+  branchId: string;
 }
 
-export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: VendorDialogProps) {
+export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated, defaultBranchId }: VendorDialogProps) {
   const { create, update, isCreating, isUpdating, createError, updateError } = useVendors();
+  const branchField = useBranchField();
 
   const {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
+    setError,
     formState: { errors },
   } = useForm<VendorFormValues>({
     defaultValues: {
@@ -39,8 +47,8 @@ export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: Ve
       distributorType: vendor?.distributorType ?? '',
       contactName: vendor?.contactName ?? '',
       contactPhone: vendor?.contactPhone ?? '',
-      contactEmail: vendor?.contactEmail ?? '',
       address: vendor?.address ?? '',
+      branchId: vendor?.branchId ?? defaultBranchId ?? branchField.defaultBranchId,
     },
   });
 
@@ -51,13 +59,17 @@ export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: Ve
         distributorType: vendor?.distributorType ?? '',
         contactName: vendor?.contactName ?? '',
         contactPhone: vendor?.contactPhone ?? '',
-        contactEmail: vendor?.contactEmail ?? '',
         address: vendor?.address ?? '',
+        branchId: vendor?.branchId ?? defaultBranchId ?? branchField.defaultBranchId,
       });
     }
-  }, [open, vendor, reset]);
+  }, [open, vendor, reset, branchField.defaultBranchId, defaultBranchId]);
 
   const onSubmit = async (values: VendorFormValues) => {
+    if (mode === 'create' && !values.branchId) {
+      setError('branchId', { message: 'Branch is required' });
+      return;
+    }
     if (mode === 'create') {
       const created = await create(values);
       onCreated?.(created);
@@ -67,7 +79,6 @@ export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: Ve
       if (values.distributorType !== vendor.distributorType) dto.distributorType = values.distributorType;
       if (values.contactName !== vendor.contactName) dto.contactName = values.contactName;
       if (values.contactPhone !== vendor.contactPhone) dto.contactPhone = values.contactPhone;
-      if (values.contactEmail !== vendor.contactEmail) dto.contactEmail = values.contactEmail;
       if (values.address !== vendor.address) dto.address = values.address;
       await update(vendor.id, dto);
     }
@@ -104,6 +115,15 @@ export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: Ve
             {errors.company && <p className="text-xs text-destructive">{errors.company.message}</p>}
           </div>
 
+          {mode === 'create' && (
+            <BranchField
+              field={branchField}
+              value={watch('branchId')}
+              onChange={(v) => setValue('branchId', v, { shouldValidate: true })}
+              error={errors.branchId?.message}
+            />
+          )}
+
           <div className="space-y-1.5">
             <Label htmlFor="distributorType">Type</Label>
             <Input id="distributorType" placeholder="e.g., Distributor, Wholesaler" {...register('distributorType')} />
@@ -117,11 +137,6 @@ export function VendorDialog({ open, mode, vendor, onOpenChange, onCreated }: Ve
           <div className="space-y-1.5">
             <Label htmlFor="contactPhone">Contact phone</Label>
             <Input id="contactPhone" placeholder="Optional" {...register('contactPhone')} />
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="contactEmail">Contact email</Label>
-            <Input id="contactEmail" type="email" placeholder="Optional" {...register('contactEmail')} />
           </div>
 
           <div className="space-y-1.5">

@@ -1,4 +1,4 @@
-import { IsString, MinLength, IsEmail } from 'class-validator';
+import { IsString, MinLength, MaxLength, Matches } from 'class-validator';
 
 export class CreatePlatformTenantDto {
   @IsString()
@@ -9,6 +9,9 @@ export class CreatePlatformTenantDto {
   @MinLength(2)
   adminFullName: string;
 
-  @IsEmail()
-  adminEmail: string;
+  @IsString()
+  @MinLength(3)
+  @MaxLength(50)
+  @Matches(/^[a-zA-Z0-9._-]+$/, { message: 'username may only contain letters, numbers, dots, dashes and underscores' })
+  adminUsername: string;
 }

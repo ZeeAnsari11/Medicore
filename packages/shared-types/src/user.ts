@@ -2,7 +2,8 @@ import { TenantOwnedEntity } from './base';
 import { SystemRole, TenantRole, UserStatus } from './enums';
 
 export interface User extends TenantOwnedEntity {
-  email: string;
+  username: string;
+  phone?: string;
   fullName: string;
   status: UserStatus;
   systemRole?: SystemRole;
@@ -15,15 +16,20 @@ export interface User extends TenantOwnedEntity {
 export interface AuthenticatedUser {
   userId: string;
   tenantId: string;
-  email: string;
+  username: string;
   tenantRole: TenantRole;
   systemRole?: SystemRole;
   /** The user's assigned home branch. Absent for TENANT_SUPER_ADMIN/SUPER_ADMIN, who are implicitly all-branch. */
   branchId?: string;
+  /** Set only on impersonation tokens: the super admin who issued it. */
+  impersonatedBy?: string;
+  /** Set only on impersonation tokens: the ImpersonationLog id that can be ended to revoke the token. */
+  impersonationSessionId?: string;
 }
 
 export interface CreateUserRequest {
-  email: string;
+  username: string;
+  phone?: string;
   fullName: string;
   tenantRole: TenantRole;
   roleId?: string;
@@ -36,6 +42,7 @@ export interface CreateUserResponse extends User {
 
 export interface UpdateUserRequest {
   fullName?: string;
+  phone?: string;
   tenantRole?: TenantRole;
   roleId?: string | null;
   branchId?: string | null;

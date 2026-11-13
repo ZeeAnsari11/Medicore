@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsMongoId,
@@ -50,6 +51,14 @@ export class CreatePurchaseItemDto {
   taxPercent?: number;
 }
 
+export class PurchasePriceUpdateDto {
+  @IsMongoId()
+  productId: string;
+
+  @IsBoolean()
+  updatePrices: boolean;
+}
+
 export class CreatePurchaseDto {
   @IsMongoId()
   @IsOptional()
@@ -66,6 +75,14 @@ export class CreatePurchaseDto {
   @IsOptional()
   purchaseDate?: string;
 
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentTerms?: string;
+
   @IsEnum(PaymentStatus)
   @IsOptional()
   paymentStatus?: PaymentStatus;
@@ -80,4 +97,10 @@ export class CreatePurchaseDto {
   @ValidateNested({ each: true })
   @Type(() => CreatePurchaseItemDto)
   items: CreatePurchaseItemDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PurchasePriceUpdateDto)
+  @IsOptional()
+  priceUpdates?: PurchasePriceUpdateDto[];
 }

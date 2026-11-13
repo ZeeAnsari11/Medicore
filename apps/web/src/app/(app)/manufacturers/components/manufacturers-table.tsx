@@ -17,6 +17,7 @@ import {
 } from '@medicore/ui';
 import { useManufacturers } from '@/hooks/use-manufacturers';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useBranches } from '@/hooks/use-branches';
 import type { Manufacturer } from '@medicore/shared-types';
 
 interface ManufacturersTableProps {
@@ -27,6 +28,8 @@ interface ManufacturersTableProps {
 export function ManufacturersTable({ manufacturers, onEdit }: ManufacturersTableProps) {
   const { has } = usePermissions();
   const { setStatus } = useManufacturers();
+  const { branches } = useBranches();
+  const branchName = (id?: string) => (id ? (branches.find((b) => b.id === id)?.name ?? '—') : 'All branches');
 
   const handleToggleStatus = async (manufacturer: Manufacturer) => {
     try {
@@ -42,6 +45,7 @@ export function ManufacturersTable({ manufacturers, onEdit }: ManufacturersTable
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
+            <TableHead>Branch</TableHead>
             <TableHead>Country</TableHead>
             <TableHead>Contact</TableHead>
             <TableHead>Status</TableHead>
@@ -51,25 +55,30 @@ export function ManufacturersTable({ manufacturers, onEdit }: ManufacturersTable
         </TableHeader>
         <TableBody>
           {manufacturers.map((manufacturer) => (
-            <TableRow key={manufacturer.id}>
+            <TableRow
+              key={manufacturer.id}
+              onClick={() => has('manufacturers:update') && onEdit(manufacturer.id)}
+              className={has('manufacturers:update') ? 'cursor-pointer' : undefined}
+            >
               <TableCell className="font-medium">{manufacturer.name}</TableCell>
+              <TableCell className="text-sm text-muted-foreground">{branchName(manufacturer.branchId)}</TableCell>
               <TableCell className="text-sm text-muted-foreground">{manufacturer.country || '—'}</TableCell>
               <TableCell className="text-sm text-muted-foreground">
-                {manufacturer.contactEmail || manufacturer.contactPhone || '—'}
+                {manufacturer.contactPhone || '—'}
               </TableCell>
               <TableCell>
                 <Badge variant={manufacturer.isActive ? 'default' : 'secondary'}>
                   {manufacturer.isActive ? 'Active' : 'Inactive'}
                 </Badge>
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <Switch
                   checked={manufacturer.isActive}
                   onCheckedChange={() => handleToggleStatus(manufacturer)}
                   disabled={!has('manufacturers:update')}
                 />
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="p-1 hover:bg-muted rounded">

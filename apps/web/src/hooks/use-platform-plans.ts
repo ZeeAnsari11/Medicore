@@ -1,9 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { CreatePlanRequest, Plan, PlanStatus, UpdatePlanRequest } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const PLATFORM_PLANS_QUERY_KEY = ['platform', 'plans'];
 
@@ -24,9 +25,9 @@ async function setPlanStatus(id: string, status: PlanStatus): Promise<Plan> {
 }
 
 export function usePlatformPlans() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const plansQuery = useQuery({
+  const plansQuery = useTenantQuery({
     queryKey: PLATFORM_PLANS_QUERY_KEY,
     queryFn: fetchPlans,
     staleTime: 5 * 60 * 1000,

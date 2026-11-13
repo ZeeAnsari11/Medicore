@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type {
   Manufacturer,
   CreateManufacturerRequest,
@@ -9,6 +9,7 @@ import type {
 } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const MANUFACTURERS_QUERY_KEY = ['manufacturers'];
 
@@ -29,9 +30,9 @@ async function setManufacturerStatus(id: string, dto: UpdateManufacturerStatusRe
 }
 
 export function useManufacturers() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const manufacturersQuery = useQuery({
+  const manufacturersQuery = useTenantQuery({
     queryKey: MANUFACTURERS_QUERY_KEY,
     queryFn: fetchManufacturers,
     staleTime: 5 * 60 * 1000,
@@ -39,9 +40,15 @@ export function useManufacturers() {
 
   const createMutation = useMutation({
     mutationFn: createManufacturer,
-    onSuccess: (data) => {
+    onSuccess: (data, variables) => {
       queryClient.setQueryData(MANUFACTURERS_QUERY_KEY, (old: Manufacturer[] | undefined) => [...(old ?? []), data]);
-      toast.success('Manufacturer created successfully');
+      if (variables.alsoCreateVendor) {
+        // The matching vendor now exists too — refresh vendor lists/pickers.
+        queryClient.invalidateQueries({ queryKey: ['vendors'] });
+        toast.success('Manufacturer and vendor created successfully');
+      } else {
+        toast.success('Manufacturer created successfully');
+      }
     },
     onError: (error) => toast.error(error instanceof ApiError ? error.message : 'Failed to create manufacturer'),
   });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type {
   Branch,
   CreateBranchRequest,
@@ -9,6 +9,7 @@ import type {
 } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const BRANCHES_QUERY_KEY = ['branches'];
 
@@ -33,9 +34,9 @@ async function deleteBranch(id: string): Promise<void> {
 }
 
 export function useBranches() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const branchesQuery = useQuery({
+  const branchesQuery = useTenantQuery({
     queryKey: BRANCHES_QUERY_KEY,
     queryFn: fetchBranches,
     staleTime: 5 * 60 * 1000,

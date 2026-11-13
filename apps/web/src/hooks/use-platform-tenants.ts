@@ -1,7 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type {
+  AuthResponse,
   CreatePlatformTenantRequest,
   CreatePlatformTenantResponse,
   Tenant,
@@ -10,6 +11,7 @@ import type {
 } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const PLATFORM_TENANTS_QUERY_KEY = ['platform', 'tenants'];
 
@@ -42,10 +44,14 @@ async function setTenantStatus(id: string, status: TenantStatus): Promise<Tenant
   });
 }
 
-export function usePlatformTenants() {
-  const queryClient = useQueryClient();
+async function impersonateTenant(id: string): Promise<AuthResponse> {
+  return apiFetch<AuthResponse>(`/platform/tenants/${id}/impersonate`, { method: 'POST' });
+}
 
-  const tenantsQuery = useQuery({
+export function usePlatformTenants() {
+  const queryClient = useTenantQueryClient();
+
+  const tenantsQuery = useTenantQuery({
     queryKey: PLATFORM_TENANTS_QUERY_KEY,
     queryFn: fetchTenants,
     staleTime: 5 * 60 * 1000,
@@ -91,6 +97,13 @@ export function usePlatformTenants() {
     },
   });
 
+  const impersonateMutation = useMutation({
+    mutationFn: impersonateTenant,
+    onError: (error) => {
+      toast.error(error instanceof ApiError ? error.message : 'Failed to log in as tenant admin');
+    },
+  });
+
   return {
     tenants: tenantsQuery.data ?? [],
     isLoading: tenantsQuery.isLoading,
@@ -103,5 +116,6 @@ export function usePlatformTenants() {
     updateError: updateMutation.error,
     setStatus: (id: string, status: TenantStatus) => setStatusMutation.mutateAsync({ id, status }),
     isSettingStatus: setStatusMutation.isPending,
+    impersonate: impersonateMutation.mutateAsync,
   };
 }

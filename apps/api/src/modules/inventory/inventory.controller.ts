@@ -3,7 +3,7 @@ import { BatchesService } from './batches.service';
 import { CreateBatchAdjustmentDto } from './dto/create-batch-adjustment.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
-import { resolveBranchScope } from '../../common/branch/branch-scope.util';
+import { resolveBranchScope, resolveCreateBranch } from '../../common/branch/branch-scope.util';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
 @Controller('inventory')
@@ -34,7 +34,7 @@ export class InventoryController {
     return batches.map((b) => this.batchesService.toBatchResponse(b));
   }
 
-  @RequirePermission('inventory:read')
+  @RequirePermission('inventory:read', 'sales:create')
   @Get(':productId/batches')
   async listBatchesForProduct(
     @CurrentUser() user: AuthenticatedUser,
@@ -56,10 +56,7 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateBatchAdjustmentDto,
   ) {
-    const scope = resolveBranchScope(user, dto.branchId);
-    if (!scope) {
-      throw new BadRequestException('branchId is required for admins performing an adjustment');
-    }
+    const scope = resolveCreateBranch(user, dto.branchId);
     return this.batchesService.applyAdjustment(user.tenantId, scope, user.userId, dto);
   }
 }

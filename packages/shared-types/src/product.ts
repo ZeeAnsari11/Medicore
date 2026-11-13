@@ -1,7 +1,7 @@
-import { TenantOwnedEntity } from './base';
+import { BranchOwnedEntity } from './base';
 import { ProductStatus } from './enums';
 
-export interface Product extends TenantOwnedEntity {
+export interface Product extends BranchOwnedEntity {
   name: string;
   genericName?: string;
   manufacturerId: string;
@@ -11,24 +11,32 @@ export interface Product extends TenantOwnedEntity {
   barcode?: string;
   unit: string;
   packing?: string;
-  purchasePrice: number;
-  salePrice: number;
-  dealerPrice?: number;
+  /** Trade price: default sale price. */
+  tp: number;
+  /** Cost price: purchase price and the floor for sale prices. */
+  cp: number;
+  /** Retail price printed on the pack (reference only). */
+  rp: number;
   status: ProductStatus;
   minStockLevel?: number;
 }
 
 export interface CreateProductRequest {
+  /** Branch the product belongs to; branch users are pinned to their own. */
+  branchId?: string;
   name: string;
-  genericName?: string;
+  genericName: string;
   manufacturerId: string;
   categoryId?: string;
   barcode?: string;
   unit: string;
   packing?: string;
-  purchasePrice: number;
-  salePrice: number;
-  dealerPrice?: number;
+  /** Trade price: default sale price. */
+  tp: number;
+  /** Cost price: purchase price and the floor for sale prices. */
+  cp: number;
+  /** Retail price printed on the pack (reference only). */
+  rp: number;
   minStockLevel?: number;
 }
 
@@ -40,9 +48,9 @@ export interface UpdateProductRequest {
   barcode?: string;
   unit?: string;
   packing?: string;
-  purchasePrice?: number;
-  salePrice?: number;
-  dealerPrice?: number;
+  tp?: number;
+  cp?: number;
+  rp?: number;
   minStockLevel?: number;
 }
 

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Patch,
   Post,
@@ -33,7 +34,7 @@ export class UsersController {
   async getOne(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     const foundUser = await this.usersService.findByIdForTenant(user.tenantId, id);
     if (!foundUser) {
-      throw new Error('User not found');
+      throw new NotFoundException('User not found');
     }
     return this.usersService.toUserResponse(foundUser);
   }
@@ -59,7 +60,7 @@ export class UsersController {
     @Param('id') id: string,
     @Body() dto: UpdateUserDto,
   ) {
-    const updatedUser = await this.usersService.updateForTenant(user.tenantId, id, dto);
+    const updatedUser = await this.usersService.updateForTenant(user.tenantId, id, dto, user.userId);
     return this.usersService.toUserResponse(updatedUser);
   }
 
@@ -70,17 +71,14 @@ export class UsersController {
     @Param('id') id: string,
     @Body() dto: UpdateUserStatusDto,
   ) {
-    const updatedUser = await this.usersService.setStatus(user.tenantId, id, dto.status);
+    const updatedUser = await this.usersService.setStatus(user.tenantId, id, dto.status, user.userId);
     return this.usersService.toUserResponse(updatedUser);
   }
 
   @RequirePermission('users:delete')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(
-    @CurrentUser() user: AuthenticatedUser,
-    @Param('id') id: string,
-  ) {
-    await this.usersService.deleteForTenant(user.tenantId, id);
+  async delete(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    await this.usersService.deleteForTenant(user.tenantId, id, user.userId);
   }
 }

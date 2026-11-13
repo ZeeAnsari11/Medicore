@@ -5,10 +5,16 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
+import { ImpersonationBanner } from './impersonation-banner';
+import { TopbarSlotProvider } from './topbar-slot';
+import { EmptyState } from './empty-state';
+import { usePermissions } from '@/hooks/use-permissions';
+import { Lock } from 'lucide-react';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
+  const { hasAnyModule } = usePermissions();
 
   useEffect(() => {
     if (!isLoading) {
@@ -29,12 +35,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+    <TopbarSlotProvider>
+      <div className="flex h-screen overflow-hidden bg-background">
+        <Sidebar />
+        <div className="flex min-w-0 flex-1 flex-col">
+          {user.impersonatedBy && <ImpersonationBanner username={user.username} />}
+          <Topbar />
+          <main className="flex-1 overflow-y-auto p-6">
+            {hasAnyModule ? (
+              children
+            ) : (
+              <EmptyState
+                icon={Lock}
+                title="No modules assigned"
+                description="No modules assigned, contact your admin."
+              />
+            )}
+          </main>
+        </div>
       </div>
-    </div>
+    </TopbarSlotProvider>
   );
 }

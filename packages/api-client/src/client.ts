@@ -14,11 +14,12 @@ export interface ApiRequestOptions extends Omit<RequestInit, 'body'> {
 
 export interface ApiClient {
   apiFetch<T>(path: string, options?: ApiRequestOptions): Promise<T>;
+  apiFetchBlob(path: string, options?: ApiRequestOptions): Promise<Blob>;
   tokenStorage: TokenStorage;
 }
 
 export function createApiClient({ baseUrl, tokenStorage = createInMemoryTokenStorage() }: ApiClientOptions): ApiClient {
-  async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+  async function rawFetch(path: string, options: ApiRequestOptions = {}): Promise<Response> {
     const { body, auth = true, headers, ...rest } = options;
 
     const finalHeaders: Record<string, string> = {
@@ -41,21 +42,32 @@ export function createApiClient({ baseUrl, tokenStorage = createInMemoryTokenSto
 
     if (!response.ok) {
       let message: string = response.statusText;
+      let errorBody: unknown;
       try {
         const data = await response.json();
+        errorBody = data;
         message = data?.message ?? message;
       } catch {
         // response had no JSON body
       }
-      throw new ApiError(response.status, Array.isArray(message) ? message.join(', ') : message);
+      throw new ApiError(response.status, Array.isArray(message) ? message.join(', ') : message, errorBody);
     }
 
+    return response;
+  }
+
+  async function apiFetch<T>(path: string, options: ApiRequestOptions = {}): Promise<T> {
+    const response = await rawFetch(path, options);
     if (response.status === 204) {
       return undefined as T;
     }
-
     return response.json() as Promise<T>;
   }
 
-  return { apiFetch, tokenStorage };
+  async function apiFetchBlob(path: string, options: ApiRequestOptions = {}): Promise<Blob> {
+    const response = await rawFetch(path, options);
+    return response.blob();
+  }
+
+  return { apiFetch, apiFetchBlob, tokenStorage };
 }

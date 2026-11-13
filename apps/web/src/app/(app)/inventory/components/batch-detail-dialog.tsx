@@ -28,7 +28,7 @@ function daysUntil(dateIso: string): number {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-function expiryBadge(dateIso: string) {
+export function expiryBadge(dateIso: string) {
   const days = daysUntil(dateIso);
   if (days < 0) return <Badge variant="destructive">Expired</Badge>;
   if (days <= 30) return <Badge variant="warning">{days}d left</Badge>;
@@ -37,7 +37,9 @@ function expiryBadge(dateIso: string) {
 }
 
 export function BatchDetailDialog({ open, onOpenChange, productId, productName, branchId }: BatchDetailDialogProps) {
-  const { batches, isLoading } = useProductBatches(productId, branchId);
+  const { batches: allBatches, isLoading } = useProductBatches(productId, branchId);
+  // Emptied batches (e.g. a cancelled purchase) have nothing on hand, so they aren't listed.
+  const batches = allBatches.filter((b) => b.quantity > 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -60,6 +62,7 @@ export function BatchDetailDialog({ open, onOpenChange, productId, productName, 
                   <TableHead>Batch #</TableHead>
                   <TableHead>Expiry</TableHead>
                   <TableHead>Quantity</TableHead>
+                  <TableHead>Purchase price</TableHead>
                   <TableHead>Sale price</TableHead>
                 </TableRow>
               </TableHeader>
@@ -74,6 +77,7 @@ export function BatchDetailDialog({ open, onOpenChange, productId, productName, 
                       </div>
                     </TableCell>
                     <TableCell>{batch.quantity}</TableCell>
+                    <TableCell>{batch.purchasePrice?.toFixed(2) ?? '—'}</TableCell>
                     <TableCell>{batch.sellingPrice?.toFixed(2) ?? '—'}</TableCell>
                   </TableRow>
                 ))}

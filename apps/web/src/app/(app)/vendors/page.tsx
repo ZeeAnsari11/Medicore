@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Plus, AlertCircle, Truck, MoreHorizontal } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Plus, AlertCircle, Truck, MoreHorizontal, Tags } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -19,14 +20,17 @@ import {
 } from '@medicore/ui';
 import { useVendors } from '@/hooks/use-vendors';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useBranches } from '@/hooks/use-branches';
 import { VendorDialog } from './components/vendor-dialog';
 import type { Vendor } from '@medicore/shared-types';
 
 type DialogMode = 'create' | 'edit' | null;
 
 export default function VendorsPage() {
+  const router = useRouter();
   const { vendors, isLoading, error, setStatus } = useVendors();
   const { has } = usePermissions();
+  const { branches } = useBranches();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -51,6 +55,11 @@ export default function VendorsPage() {
     () => [
       { accessorKey: 'company', header: 'Company' },
       {
+        id: 'branch',
+        header: 'Branch',
+        cell: ({ row }) => branches.find((b) => b.id === row.original.branchId)?.name ?? '—',
+      },
+      {
         accessorKey: 'distributorType',
         header: 'Type',
         cell: ({ getValue }) => (getValue() as string) || '—',
@@ -58,7 +67,7 @@ export default function VendorsPage() {
       {
         id: 'contact',
         header: 'Contact',
-        cell: ({ row }) => row.original.contactEmail || row.original.contactPhone || '—',
+        cell: ({ row }) => row.original.contactPhone || '—',
       },
       {
         accessorKey: 'isActive',
@@ -92,12 +101,21 @@ export default function VendorsPage() {
               <DropdownMenuItem onClick={() => handleOpenEdit(row.original.id)} disabled={!has('vendors:update')}>
                 Edit
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push(`/vendors/products?vendorId=${row.original.id}`)}>
+                Manage pricing
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => router.push(`/accounting/vendor-ledger?view=ledger&party=${row.original.id}`)}
+                disabled={!has('acc_vendor_ledger:read')}
+              >
+                View ledger
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [has, setStatus],
+    [has, setStatus, router, branches],
   );
 
   return (
@@ -106,10 +124,16 @@ export default function VendorsPage() {
         title="Vendors"
         description="Distributors and suppliers you buy products from"
         actions={
-          <Button onClick={handleOpenCreate} disabled={!has('vendors:create')}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Vendor
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => router.push('/vendors/products')}>
+              <Tags className="mr-2 h-4 w-4" />
+              Manage Pricing
+            </Button>
+            <Button onClick={handleOpenCreate} disabled={!has('vendors:create')}>
+              <Plus className="mr-2 h-4 w-4" />
+              New Vendor
+            </Button>
+          </div>
         }
       />
 
@@ -127,7 +151,12 @@ export default function VendorsPage() {
       ) : vendors.length === 0 ? (
         <EmptyState icon={Truck} title="No vendors yet" description="Add a vendor to start recording purchases" />
       ) : (
-        <DataTable columns={columns} data={vendors} searchPlaceholder="Search vendors..." />
+        <DataTable
+          columns={columns}
+          data={vendors}
+          searchPlaceholder="Search vendors..."
+          onRowClick={(row) => has('vendors:update') && handleOpenEdit(row.id)}
+        />
       )}
 
       <VendorDialog

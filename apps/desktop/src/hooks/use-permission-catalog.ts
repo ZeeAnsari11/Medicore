@@ -1,6 +1,7 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { Permission, UpdatePermissionRequest } from '@medicore/shared-types';
 import { apiFetch } from '@/lib/api-client';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const PERMISSIONS_QUERY_KEY = ['permissions'];
 
@@ -34,9 +35,9 @@ async function deletePermission(id: string): Promise<void> {
 }
 
 export function usePermissionCatalog() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const permissionsQuery = useQuery({
+  const permissionsQuery = useTenantQuery({
     queryKey: PERMISSIONS_QUERY_KEY,
     queryFn: fetchPermissions,
     staleTime: 5 * 60 * 1000,

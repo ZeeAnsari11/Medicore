@@ -10,14 +10,16 @@ import { ApiError } from '@/lib/api-client';
 import { Button, Input, Label, Alert } from '@medicore/ui';
 
 interface LoginFormValues {
-  email: string;
+  username: string;
   password: string;
+  organization?: string;
 }
 
 export default function LoginPage() {
   const { login, isLoggingIn, loginError, user, isLoading } = useAuth();
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+  const needsOrganization = loginError instanceof ApiError && loginError.status === 409;
   const {
     register,
     handleSubmit,
@@ -33,7 +35,7 @@ export default function LoginPage() {
 
   const onSubmit = async (values: LoginFormValues) => {
     try {
-      const result = await login(values);
+      const result = await login({ ...values, organization: values.organization?.trim() || undefined });
       const destination = result.user.systemRole === 'SUPER_ADMIN' ? '/platform/tenants' : '/dashboard';
       router.replace(destination);
     } catch {
@@ -89,33 +91,53 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Email Field */}
+              {/* Username Field */}
               <div className="space-y-2 animate-fade-in-delay-1">
-                <Label htmlFor="email" className="text-gray-700 font-medium text-sm">
-                  Email address
+                <Label htmlFor="username" className="text-gray-700 font-medium text-sm">
+                  Username
                 </Label>
                 <div className="relative">
                   <Input
-                    id="email"
-                    type="email"
-                    autoComplete="email"
-                    placeholder="you@company.com"
-                    aria-invalid={!!errors.email}
+                    id="username"
+                    type="text"
+                    autoComplete="username"
+                    placeholder="your.username"
+                    aria-invalid={!!errors.username}
                     className={`w-full px-4 py-3 bg-white/50 backdrop-blur-sm border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all duration-200 ${
-                      errors.email
+                      errors.username
                         ? 'border-red-300 bg-red-50/50'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
-                    {...register('email', { required: 'Email is required' })}
+                    {...register('username', { required: 'Username is required' })}
                   />
                 </div>
-                {errors.email && (
+                {errors.username && (
                   <p className="text-xs text-red-600 flex items-center gap-1">
                     <AlertCircle className="w-3 h-3" />
-                    {errors.email.message}
+                    {errors.username.message}
                   </p>
                 )}
               </div>
+
+              {/* Organization code: only shown when the server says this account exists in several organizations */}
+              {needsOrganization && (
+                <div className="space-y-2">
+                  <Label htmlFor="organization" className="text-gray-700 font-medium text-sm">
+                    Organization code
+                  </Label>
+                  <Input
+                    id="organization"
+                    type="text"
+                    autoComplete="organization"
+                    placeholder="your-organization"
+                    className="w-full px-4 py-3 bg-white/50 backdrop-blur-sm border border-gray-200 rounded-xl"
+                    {...register('organization', { required: 'Organization code is required' })}
+                  />
+                  {errors.organization && (
+                    <p className="text-xs text-red-600">{errors.organization.message}</p>
+                  )}
+                </div>
+              )}
 
               {/* Password Field */}
               <div className="space-y-2 animate-fade-in-delay-2">

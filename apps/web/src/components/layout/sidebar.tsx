@@ -33,6 +33,8 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-4 py-6 space-y-8">
         {navSections
           .filter((section) => !section.requires || can(subjectRoles, section.requires))
+          // Hide group headings with no visible items
+          .filter((section) => section.items.some((item) => can(subjectRoles, item.requires)))
           .map((section) => (
             <div key={section.title} className="space-y-2">
               <h3 className="px-3 text-xs font-bold uppercase tracking-widest text-slate-500 dark:text-slate-500">

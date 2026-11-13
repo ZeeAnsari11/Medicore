@@ -55,7 +55,7 @@ export function PlansTable({ plans, onEdit }: PlansTableProps) {
         </TableHeader>
         <TableBody>
           {plans.map((plan) => (
-            <TableRow key={plan.id}>
+            <TableRow key={plan.id} onClick={() => onEdit(plan.id)} className="cursor-pointer">
               <TableCell className="font-medium">{plan.name}</TableCell>
               <TableCell className="text-sm">{formatPrice(plan.priceCents, plan.currency)}</TableCell>
               <TableCell className="text-sm capitalize">{plan.billingInterval.toLowerCase()}</TableCell>
@@ -63,7 +63,7 @@ export function PlansTable({ plans, onEdit }: PlansTableProps) {
               <TableCell>
                 <Badge variant={statusVariants[plan.status]}>{plan.status}</Badge>
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="p-1 hover:bg-muted rounded">

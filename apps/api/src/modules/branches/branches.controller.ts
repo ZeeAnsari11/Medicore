@@ -21,7 +21,7 @@ import type { AuthenticatedUser } from '@medicore/shared-types';
 export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
 
-  @RequirePermission('branches:read')
+  @RequirePermission('branches:read', 'purchases:create', 'sales:create', 'inventory:adjust')
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser) {
     const branches = await this.branchesService.listForTenant(user.tenantId);

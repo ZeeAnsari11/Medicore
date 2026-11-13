@@ -1,8 +1,14 @@
+import { CrossTenant } from '../../../common/decorators/cross-tenant.decorator';
 import { Controller, Get } from '@nestjs/common';
 import { TenantsService } from '../../tenants/tenants.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { Roles } from '../../../common/decorators/roles.decorator';
-import { SystemRole, TenantStatus, SubscriptionStatus, PlatformDashboardSummary } from '@medicore/shared-types';
+import {
+  SystemRole,
+  TenantStatus,
+  SubscriptionStatus,
+  PlatformDashboardSummary,
+} from '@medicore/shared-types';
 
 function countBy<T extends string>(values: T[], possibleValues: readonly T[]): Record<T, number> {
   const counts = Object.fromEntries(possibleValues.map((value) => [value, 0])) as Record<T, number>;
@@ -12,6 +18,7 @@ function countBy<T extends string>(values: T[], possibleValues: readonly T[]): R
   return counts;
 }
 
+@CrossTenant()
 @Controller('platform/dashboard')
 export class PlatformDashboardController {
   constructor(
@@ -38,7 +45,9 @@ export class PlatformDashboardController {
         subscriptions.map((subscription) => subscription.status),
         Object.values(SubscriptionStatus),
       ),
-      recentTenants: tenants.slice(0, 5).map((tenant) => this.tenantsService.toTenantResponse(tenant)),
+      recentTenants: tenants
+        .slice(0, 5)
+        .map((tenant) => this.tenantsService.toTenantResponse(tenant)),
     };
   }
 }

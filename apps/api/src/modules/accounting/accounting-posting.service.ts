@@ -1,0 +1,701 @@
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
+import { Account, AccountDocument } from './schemas/account.schema';
+import { JournalEntry, JournalEntryDocument } from './schemas/journal-entry.schema';
+import { Batch, BatchDocument } from '../inventory/schemas/batch.schema';
+import { SequenceService } from '../../common/sequence/sequence.service';
+import {
+  AccountType,
+  JournalEntrySourceType,
+  JournalEntryStatus,
+  NormalBalance,
+  PartyType,
+  PaymentMethod,
+} from '@medicore/shared-types';
+
+export type SystemAccountKey =
+  | 'CASH'
+  | 'BANK'
+  | 'ACCOUNTS_RECEIVABLE'
+  | 'INVENTORY'
+  | 'VENDOR_ADVANCES'
+  | 'ACCOUNTS_PAYABLE'
+  | 'CUSTOMER_ADVANCES'
+  | 'TAX_PAYABLE'
+  | 'OWNER_CAPITAL'
+  | 'OPENING_BALANCE_EQUITY'
+  | 'SALES_REVENUE'
+  | 'COGS'
+  | 'OPERATING_EXPENSES'
+  | 'BANK_CHARGES'
+  | 'OTHER_EXPENSES';
+
+interface DefaultAccountSpec {
+  systemKey: SystemAccountKey;
+  code: string;
+  name: string;
+  type: AccountType;
+}
+
+/**
+ * Default Chart of Accounts for a medicine-distribution business. Seeded
+ * lazily, idempotently, per tenant — see ensureDefaultAccounts. Tax is
+ * intentionally split out (TAX_PAYABLE) since Sale/Purchase taxTotal is a
+ * real, honestly-computed figure, not folded into Sales Revenue.
+ */
+const DEFAULT_ACCOUNTS: DefaultAccountSpec[] = [
+  { systemKey: 'CASH', code: '1000', name: 'Cash', type: AccountType.ASSET },
+  { systemKey: 'BANK', code: '1010', name: 'Bank', type: AccountType.ASSET },
+  {
+    systemKey: 'ACCOUNTS_RECEIVABLE',
+    code: '1100',
+    name: 'Accounts Receivable',
+    type: AccountType.ASSET,
+  },
+  { systemKey: 'INVENTORY', code: '1200', name: 'Inventory', type: AccountType.ASSET },
+  { systemKey: 'VENDOR_ADVANCES', code: '1300', name: 'Vendor Advances', type: AccountType.ASSET },
+  {
+    systemKey: 'ACCOUNTS_PAYABLE',
+    code: '2000',
+    name: 'Accounts Payable',
+    type: AccountType.LIABILITY,
+  },
+  {
+    systemKey: 'CUSTOMER_ADVANCES',
+    code: '2100',
+    name: 'Customer Advances',
+    type: AccountType.LIABILITY,
+  },
+  { systemKey: 'TAX_PAYABLE', code: '2200', name: 'Tax Payable', type: AccountType.LIABILITY },
+  { systemKey: 'OWNER_CAPITAL', code: '3000', name: 'Owner Capital', type: AccountType.EQUITY },
+  {
+    systemKey: 'OPENING_BALANCE_EQUITY',
+    code: '3100',
+    name: 'Opening Balance Equity',
+    type: AccountType.EQUITY,
+  },
+  { systemKey: 'SALES_REVENUE', code: '4000', name: 'Sales Revenue', type: AccountType.REVENUE },
+  { systemKey: 'COGS', code: '5000', name: 'Cost of Goods Sold', type: AccountType.EXPENSE },
+  {
+    systemKey: 'OPERATING_EXPENSES',
+    code: '5100',
+    name: 'Operating Expenses',
+    type: AccountType.EXPENSE,
+  },
+  { systemKey: 'BANK_CHARGES', code: '5200', name: 'Bank Charges', type: AccountType.EXPENSE },
+  { systemKey: 'OTHER_EXPENSES', code: '5900', name: 'Other Expenses', type: AccountType.EXPENSE },
+];
+
+function normalBalanceFor(type: AccountType): NormalBalance {
+  return type === AccountType.ASSET || type === AccountType.EXPENSE
+    ? NormalBalance.DEBIT
+    : NormalBalance.CREDIT;
+}
+
+export interface PostLineInput {
+  accountId: string;
+  debit: number;
+  credit: number;
+  partyType?: PartyType;
+  partyId?: string;
+  description?: string;
+}
+
+export interface PostJournalEntryParams {
+  tenantId: string;
+  branchId: string | null;
+  entryDate: Date;
+  sourceType: JournalEntrySourceType;
+  sourceId?: string;
+  description: string;
+  lines: PostLineInput[];
+  createdBy: string;
+  session: ClientSession;
+}
+
+interface SaleAllocationInput {
+  batchId: string;
+  quantity: number;
+}
+
+interface SaleItemInput {
+  productId: string;
+  batchAllocations: SaleAllocationInput[];
+}
+
+export interface PostSaleEntryParams {
+  tenantId: string;
+  branchId: string;
+  saleId: string;
+  saleDate: Date;
+  customerId?: string;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  grandTotal: number;
+  amountPaid: number;
+  items: SaleItemInput[];
+  createdBy: string;
+  session: ClientSession;
+}
+
+interface PurchaseItemInput {
+  quantity: number;
+  purchasePrice: number;
+}
+
+export interface PostPurchaseEntryParams {
+  tenantId: string;
+  branchId: string;
+  purchaseId: string;
+  purchaseDate: Date;
+  vendorId: string;
+  grandTotal: number;
+  amountPaid: number;
+  createdBy: string;
+  session: ClientSession;
+}
+
+const BALANCE_EPSILON = 0.01;
+
+@Injectable()
+export class AccountingPostingService {
+  constructor(
+    @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
+    @InjectModel(JournalEntry.name) private readonly journalEntryModel: Model<JournalEntryDocument>,
+    @InjectModel(Batch.name) private readonly batchModel: Model<BatchDocument>,
+    private readonly sequenceService: SequenceService,
+  ) {}
+
+  /**
+   * Idempotent: creates any DEFAULT_ACCOUNTS not yet present for this
+   * tenant, resolved by systemKey (never by display name). Called at the
+   * top of every posting method so Sales/Purchases never fail because
+   * accounting hasn't been manually configured yet.
+   */
+  async ensureDefaultAccounts(
+    tenantId: string,
+    session: ClientSession,
+  ): Promise<Map<SystemAccountKey, AccountDocument>> {
+    const existing = await this.accountModel
+      .find({ tenantId: new Types.ObjectId(tenantId), systemKey: { $ne: null } })
+      .session(session);
+    const byKey = new Map<SystemAccountKey, AccountDocument>(
+      existing.map((a) => [a.systemKey as SystemAccountKey, a]),
+    );
+
+    const missing = DEFAULT_ACCOUNTS.filter((spec) => !byKey.has(spec.systemKey));
+    if (missing.length > 0) {
+      const created = await this.accountModel.create(
+        missing.map((spec) => ({
+          tenantId: new Types.ObjectId(tenantId),
+          code: spec.code,
+          name: spec.name,
+          type: spec.type,
+          normalBalance: normalBalanceFor(spec.type),
+          systemKey: spec.systemKey,
+          isSystemAccount: true,
+          isActive: true,
+        })),
+        { session, ordered: true },
+      );
+      for (const doc of created) byKey.set(doc.systemKey as SystemAccountKey, doc);
+    }
+
+    return byKey;
+  }
+
+  async resolveSystemAccount(
+    tenantId: string,
+    systemKey: SystemAccountKey,
+    session: ClientSession,
+  ): Promise<AccountDocument> {
+    const accounts = await this.ensureDefaultAccounts(tenantId, session);
+    const account = accounts.get(systemKey);
+    if (!account)
+      throw new BadRequestException(`System account ${systemKey} could not be resolved`);
+    return account;
+  }
+
+  /** Low-level primitive — every other post* method builds `lines` and calls this. */
+  async postJournalEntry(params: PostJournalEntryParams): Promise<JournalEntryDocument> {
+    const totalDebit = round2(params.lines.reduce((sum, l) => sum + l.debit, 0));
+    const totalCredit = round2(params.lines.reduce((sum, l) => sum + l.credit, 0));
+
+    if (Math.abs(totalDebit - totalCredit) > BALANCE_EPSILON) {
+      throw new BadRequestException(
+        `Journal entry is not balanced: total debit ${totalDebit} does not equal total credit ${totalCredit}`,
+      );
+    }
+
+    // Every entry belongs to a branch and is numbered per branch: JE-{branch code}-000001. The branch
+    // always comes from the document being posted; the top-bar branch is never used.
+    const branchId = params.branchId;
+    if (!branchId) throw new BadRequestException({ statusCode: 400, message: ['branchId should not be empty'], error: 'Bad Request' });
+    const branch = await this.journalEntryModel.db
+      .model('Branch')
+      .findOne({ _id: branchId, tenantId: new Types.ObjectId(params.tenantId) })
+      .select('code')
+      .session(params.session ?? null)
+      .lean<{ code: string }>()
+      .exec();
+    if (!branch) throw new NotFoundException('Branch not found');
+    const seq = await this.sequenceService.next(params.tenantId, branchId, 'journal', params.session);
+    const entryNumber = `JE-${branch.code}-${String(seq).padStart(6, '0')}`;
+
+    const [created] = await this.journalEntryModel.create(
+      [
+        {
+          tenantId: new Types.ObjectId(params.tenantId),
+          branchId: new Types.ObjectId(branchId),
+          entryNumber,
+          entryDate: params.entryDate,
+          sourceType: params.sourceType,
+          sourceId: params.sourceId,
+          description: params.description,
+          lines: params.lines,
+          totalDebit,
+          totalCredit,
+          status: JournalEntryStatus.POSTED,
+          createdBy: new Types.ObjectId(params.createdBy),
+        },
+      ],
+      { session: params.session },
+    );
+
+    return created;
+  }
+
+  /**
+   * Dr AR(arPortion)/Cash(cashPortion) + Cr Sales Revenue + Cr Tax Payable,
+   * Dr COGS + Cr Inventory. Cost basis is read from Batch.purchasePrice at
+   * posting time and baked into the immutable line — never re-derived later.
+   */
+  async postSaleEntry(params: PostSaleEntryParams): Promise<JournalEntryDocument> {
+    const accounts = await this.ensureDefaultAccounts(params.tenantId, params.session);
+    const arPortion = round2(Math.max(params.grandTotal - params.amountPaid, 0));
+    const cashPortion = round2(Math.min(params.amountPaid, params.grandTotal));
+    const revenue = round2(params.subtotal - params.discountTotal);
+
+    const lines: PostLineInput[] = [];
+    if (arPortion > 0) {
+      lines.push({
+        accountId: accounts.get('ACCOUNTS_RECEIVABLE')!.id,
+        debit: arPortion,
+        credit: 0,
+        partyType: params.customerId ? PartyType.CUSTOMER : undefined,
+        partyId: params.customerId,
+        description: 'Sale on account',
+      });
+    }
+    if (cashPortion > 0) {
+      lines.push({
+        accountId: accounts.get('CASH')!.id,
+        debit: cashPortion,
+        credit: 0,
+        description: 'Sale paid at POS',
+      });
+    }
+    lines.push({
+      accountId: accounts.get('SALES_REVENUE')!.id,
+      debit: 0,
+      credit: revenue,
+      description: 'Sales revenue',
+    });
+    if (params.taxTotal > 0) {
+      lines.push({
+        accountId: accounts.get('TAX_PAYABLE')!.id,
+        debit: 0,
+        credit: round2(params.taxTotal),
+        description: 'Tax collected',
+      });
+    }
+
+    const cost = await this.computeSaleCost(params.items, params.session);
+    if (cost > 0) {
+      lines.push({
+        accountId: accounts.get('COGS')!.id,
+        debit: cost,
+        credit: 0,
+        description: 'Cost of goods sold',
+      });
+      lines.push({
+        accountId: accounts.get('INVENTORY')!.id,
+        debit: 0,
+        credit: cost,
+        description: 'Inventory reduction',
+      });
+    }
+
+    return this.postJournalEntry({
+      tenantId: params.tenantId,
+      branchId: params.branchId,
+      entryDate: params.saleDate,
+      sourceType: JournalEntrySourceType.SALE,
+      sourceId: params.saleId,
+      description: `Sale ${params.saleId}`,
+      lines,
+      createdBy: params.createdBy,
+      session: params.session,
+    });
+  }
+
+  /** Exact equal-and-opposite reversal of the sale's own entry lines. */
+  async postSaleCancellationEntry(
+    tenantId: string,
+    branchId: string,
+    saleId: string,
+    createdBy: string,
+    session: ClientSession,
+  ): Promise<JournalEntryDocument | null> {
+    return this.reverseEntry(
+      tenantId,
+      branchId,
+      JournalEntrySourceType.SALE,
+      saleId,
+      JournalEntrySourceType.SALE_CANCELLATION,
+      `Cancellation of sale ${saleId}`,
+      createdBy,
+      session,
+    );
+  }
+
+  /** Reverses the sale's entry for an edit; the caller then posts a fresh sale entry. */
+  async postSaleEditReversal(
+    tenantId: string,
+    branchId: string,
+    saleId: string,
+    createdBy: string,
+    session: ClientSession,
+  ): Promise<JournalEntryDocument | null> {
+    return this.reverseEntry(
+      tenantId,
+      branchId,
+      JournalEntrySourceType.SALE,
+      saleId,
+      JournalEntrySourceType.SALE_EDIT,
+      `Edit of sale ${saleId}`,
+      createdBy,
+      session,
+    );
+  }
+
+  /** Reverses the purchase's entry for an edit; the caller then posts a fresh purchase entry. */
+  async postPurchaseEditReversal(
+    tenantId: string,
+    branchId: string,
+    purchaseId: string,
+    createdBy: string,
+    session: ClientSession,
+  ): Promise<JournalEntryDocument | null> {
+    return this.reverseEntry(
+      tenantId,
+      branchId,
+      JournalEntrySourceType.PURCHASE,
+      purchaseId,
+      JournalEntrySourceType.PURCHASE_EDIT,
+      `Edit of purchase ${purchaseId}`,
+      createdBy,
+      session,
+    );
+  }
+
+  /**
+   * Reverses every POSTED entry of a payment (its own entry plus any later advance-allocation entries,
+   * which share its sourceId). Used when a payment is voided.
+   */
+  async postPaymentVoidEntries(
+    tenantId: string,
+    branchId: string | null,
+    paymentId: string,
+    sourceType: JournalEntrySourceType,
+    createdBy: string,
+    session: ClientSession,
+  ): Promise<number> {
+    let count = 0;
+    // reverseEntry handles one POSTED entry per call; loop until none are left.
+    while (
+      await this.reverseEntry(
+        tenantId,
+        branchId,
+        sourceType,
+        paymentId,
+        JournalEntrySourceType.PAYMENT_VOID,
+        `Void of payment ${paymentId}`,
+        createdBy,
+        session,
+      )
+    ) {
+      count += 1;
+    }
+    return count;
+  }
+
+  /** Dr Inventory(grandTotal, tax folded in) / Cr AP(apPortion) + Cr Cash(cashPortion). */
+  async postPurchaseEntry(params: PostPurchaseEntryParams): Promise<JournalEntryDocument> {
+    const accounts = await this.ensureDefaultAccounts(params.tenantId, params.session);
+    const apPortion = round2(Math.max(params.grandTotal - params.amountPaid, 0));
+    const cashPortion = round2(Math.min(params.amountPaid, params.grandTotal));
+
+    const lines: PostLineInput[] = [
+      {
+        accountId: accounts.get('INVENTORY')!.id,
+        debit: round2(params.grandTotal),
+        credit: 0,
+        description: 'Stock received',
+      },
+    ];
+    if (apPortion > 0) {
+      lines.push({
+        accountId: accounts.get('ACCOUNTS_PAYABLE')!.id,
+        debit: 0,
+        credit: apPortion,
+        partyType: PartyType.VENDOR,
+        partyId: params.vendorId,
+        description: 'Purchase on account',
+      });
+    }
+    if (cashPortion > 0) {
+      lines.push({
+        accountId: accounts.get('CASH')!.id,
+        debit: 0,
+        credit: cashPortion,
+        description: 'Purchase paid immediately',
+      });
+    }
+
+    return this.postJournalEntry({
+      tenantId: params.tenantId,
+      branchId: params.branchId,
+      entryDate: params.purchaseDate,
+      sourceType: JournalEntrySourceType.PURCHASE,
+      sourceId: params.purchaseId,
+      description: `Purchase ${params.purchaseId}`,
+      lines,
+      createdBy: params.createdBy,
+      session: params.session,
+    });
+  }
+
+  async postPurchaseCancellationEntry(
+    tenantId: string,
+    branchId: string,
+    purchaseId: string,
+    createdBy: string,
+    session: ClientSession,
+  ): Promise<JournalEntryDocument | null> {
+    return this.reverseEntry(
+      tenantId,
+      branchId,
+      JournalEntrySourceType.PURCHASE,
+      purchaseId,
+      JournalEntrySourceType.PURCHASE_CANCELLATION,
+      `Cancellation of purchase ${purchaseId}`,
+      createdBy,
+      session,
+    );
+  }
+
+  /** Reads Batch.purchasePrice fresh, at posting time, for each allocation. */
+  private async computeSaleCost(items: SaleItemInput[], session?: ClientSession): Promise<number> {
+    const batchIds = Array.from(
+      new Set(items.flatMap((i) => i.batchAllocations.map((a) => a.batchId))),
+    );
+    if (batchIds.length === 0) return 0;
+    const batches = await this.batchModel.find({ _id: { $in: batchIds } }).session(session ?? null);
+    const priceByBatch = new Map(batches.map((b) => [b._id, b.purchasePrice]));
+    let cost = 0;
+    for (const item of items) {
+      for (const allocation of item.batchAllocations) {
+        cost += (priceByBatch.get(allocation.batchId) ?? 0) * allocation.quantity;
+      }
+    }
+    return round2(cost);
+  }
+
+  /**
+   * Finds the original POSTED entry for (sourceType, sourceId), builds an
+   * entry with every line's debit/credit swapped, posts it as
+   * `reversalSourceType`, and marks the original REVERSED. The original's
+   * own lines are never touched. Returns null if no original entry exists
+   * (e.g. cancelling a sale that predates this system) — callers should
+   * treat that as "nothing to reverse," not an error.
+   */
+  /**
+   * Sale return (or the remainder reversed by Void invoice after earlier returns).
+   * Dr Sales Revenue + Tax Payable; the credit side is settled against the invoice's
+   * outstanding balance (AR), then paid out (Cash/Bank) or kept as Customer Advances.
+   * Goods back in sellable stock: Dr Inventory; damaged/expired goods: Dr Other Expenses
+   * (a write-off). COGS is credited for the full cost either way.
+   */
+  async postSaleReturnEntry(params: {
+    tenantId: string;
+    branchId: string;
+    saleId: string;
+    customerId?: string;
+    entryDate: Date;
+    description: string;
+    isCancellation: boolean;
+    revenue: number;
+    tax: number;
+    restockCost: number;
+    writeOffCost: number;
+    applied: number;
+    refund: number;
+    refundMethod?: PaymentMethod;
+    credit: number;
+    createdBy: string;
+    session: ClientSession;
+  }): Promise<JournalEntryDocument> {
+    const accounts = await this.ensureDefaultAccounts(params.tenantId, params.session);
+    const party = params.customerId
+      ? { partyType: PartyType.CUSTOMER, partyId: params.customerId }
+      : {};
+    const lines: PostLineInput[] = [];
+    if (params.revenue > 0)
+      lines.push({ accountId: accounts.get('SALES_REVENUE')!.id, debit: params.revenue, credit: 0, description: 'Sale return' });
+    if (params.tax > 0)
+      lines.push({ accountId: accounts.get('TAX_PAYABLE')!.id, debit: params.tax, credit: 0, description: 'Tax reversed on return' });
+    if (params.applied > 0)
+      lines.push({ accountId: accounts.get('ACCOUNTS_RECEIVABLE')!.id, debit: 0, credit: params.applied, ...party, description: 'Credit for returned goods' });
+    if (params.refund > 0)
+      lines.push({
+        accountId: accounts.get(params.refundMethod && params.refundMethod !== PaymentMethod.CASH ? 'BANK' : 'CASH')!.id,
+        debit: 0,
+        credit: params.refund,
+        description: 'Refund paid for returned goods',
+      });
+    if (params.credit > 0)
+      lines.push({ accountId: accounts.get('CUSTOMER_ADVANCES')!.id, debit: 0, credit: params.credit, ...party, description: 'Credit kept for returned goods' });
+    if (params.restockCost > 0)
+      lines.push({ accountId: accounts.get('INVENTORY')!.id, debit: params.restockCost, credit: 0, description: 'Inventory restored' });
+    if (params.writeOffCost > 0)
+      lines.push({ accountId: accounts.get('OTHER_EXPENSES')!.id, debit: params.writeOffCost, credit: 0, description: 'Returned goods written off' });
+    const cost = round2(params.restockCost + params.writeOffCost);
+    if (cost > 0)
+      lines.push({ accountId: accounts.get('COGS')!.id, debit: 0, credit: cost, description: 'COGS reversed on return' });
+
+    return this.postJournalEntry({
+      tenantId: params.tenantId,
+      branchId: params.branchId,
+      entryDate: params.entryDate,
+      sourceType: params.isCancellation
+        ? JournalEntrySourceType.SALE_CANCELLATION
+        : JournalEntrySourceType.SALE_RETURN,
+      sourceId: params.saleId,
+      description: params.description,
+      lines,
+      createdBy: params.createdBy,
+      session: params.session,
+    });
+  }
+
+  /**
+   * Purchase return (or the remainder reversed by Cancel purchase after earlier returns).
+   * Cr Inventory for the returned value; the debit side is settled against what is owed
+   * to the vendor (AP), then refunded by the vendor (Cash/Bank) or kept as Vendor Advances.
+   */
+  async postPurchaseReturnEntry(params: {
+    tenantId: string;
+    branchId: string;
+    purchaseId: string;
+    vendorId: string;
+    entryDate: Date;
+    description: string;
+    isCancellation: boolean;
+    amount: number;
+    applied: number;
+    refund: number;
+    refundMethod?: PaymentMethod;
+    credit: number;
+    createdBy: string;
+    session: ClientSession;
+  }): Promise<JournalEntryDocument> {
+    const accounts = await this.ensureDefaultAccounts(params.tenantId, params.session);
+    const party = { partyType: PartyType.VENDOR, partyId: params.vendorId };
+    const lines: PostLineInput[] = [];
+    if (params.applied > 0)
+      lines.push({ accountId: accounts.get('ACCOUNTS_PAYABLE')!.id, debit: params.applied, credit: 0, ...party, description: 'Debit for returned goods' });
+    if (params.refund > 0)
+      lines.push({
+        accountId: accounts.get(params.refundMethod && params.refundMethod !== PaymentMethod.CASH ? 'BANK' : 'CASH')!.id,
+        debit: params.refund,
+        credit: 0,
+        description: 'Refund received for returned goods',
+      });
+    if (params.credit > 0)
+      lines.push({ accountId: accounts.get('VENDOR_ADVANCES')!.id, debit: params.credit, credit: 0, ...party, description: 'Credit kept with vendor for returned goods' });
+    if (params.amount > 0)
+      lines.push({ accountId: accounts.get('INVENTORY')!.id, debit: 0, credit: params.amount, description: 'Inventory reduced on return' });
+
+    return this.postJournalEntry({
+      tenantId: params.tenantId,
+      branchId: params.branchId,
+      entryDate: params.entryDate,
+      sourceType: params.isCancellation
+        ? JournalEntrySourceType.PURCHASE_CANCELLATION
+        : JournalEntrySourceType.PURCHASE_RETURN,
+      sourceId: params.purchaseId,
+      description: params.description,
+      lines,
+      createdBy: params.createdBy,
+      session: params.session,
+    });
+  }
+
+  private async reverseEntry(
+    tenantId: string,
+    branchId: string | null,
+    originalSourceType: JournalEntrySourceType,
+    sourceId: string,
+    reversalSourceType: JournalEntrySourceType,
+    description: string,
+    createdBy: string,
+    session: ClientSession,
+  ): Promise<JournalEntryDocument | null> {
+    const original = await this.journalEntryModel
+      .findOne({
+        tenantId: new Types.ObjectId(tenantId),
+        sourceType: originalSourceType,
+        sourceId,
+        status: JournalEntryStatus.POSTED,
+      })
+      .session(session);
+    if (!original) return null;
+
+    const reversedLines: PostLineInput[] = original.lines.map((line) => ({
+      accountId: line.accountId,
+      debit: line.credit,
+      credit: line.debit,
+      partyType: line.partyType,
+      partyId: line.partyId,
+      description: line.description,
+    }));
+
+    const reversal = await this.postJournalEntry({
+      tenantId,
+      branchId,
+      entryDate: new Date(),
+      sourceType: reversalSourceType,
+      sourceId,
+      description,
+      lines: reversedLines,
+      createdBy,
+      session,
+    });
+
+    original.status = JournalEntryStatus.REVERSED;
+    original.reversedByEntryId = reversal.id;
+    await original.save({ session });
+
+    reversal.reversalOfEntryId = original.id;
+    await reversal.save({ session });
+
+    return reversal;
+  }
+}
+
+export function round2(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}

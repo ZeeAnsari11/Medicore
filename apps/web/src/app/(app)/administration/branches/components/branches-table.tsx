@@ -65,7 +65,11 @@ export function BranchesTable({ branches, onEdit }: BranchesTableProps) {
         </TableHeader>
         <TableBody>
           {branches.map((branch) => (
-            <TableRow key={branch.id}>
+            <TableRow
+              key={branch.id}
+              onClick={() => has('branches:update') && onEdit(branch.id)}
+              className={has('branches:update') ? 'cursor-pointer' : undefined}
+            >
               <TableCell className="font-medium">
                 {branch.name}
                 {branch.isMain && (
@@ -81,14 +85,14 @@ export function BranchesTable({ branches, onEdit }: BranchesTableProps) {
                   {branch.isActive ? 'Active' : 'Inactive'}
                 </Badge>
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <Switch
                   checked={branch.isActive}
                   onCheckedChange={() => handleToggleStatus(branch)}
                   disabled={!has('branches:update') || branch.isMain}
                 />
               </TableCell>
-              <TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button className="p-1 hover:bg-muted rounded">

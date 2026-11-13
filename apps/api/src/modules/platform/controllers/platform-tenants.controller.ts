@@ -1,17 +1,23 @@
+import { CrossTenant } from '../../../common/decorators/cross-tenant.decorator';
 import { Body, Controller, Get, HttpCode, HttpStatus, Patch, Post, Param } from '@nestjs/common';
+import { AuthService } from '../../auth/auth.service';
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import { TenantsService } from '../../tenants/tenants.service';
 import { UsersService } from '../../users/users.service';
 import { SubscriptionsService } from '../../subscriptions/subscriptions.service';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { SystemRole, CreatePlatformTenantResponse } from '@medicore/shared-types';
+import type { AuthenticatedUser } from '@medicore/shared-types';
 import { CreatePlatformTenantDto } from '../dto/create-platform-tenant.dto';
 import { UpdateTenantStatusDto } from '../dto/update-tenant-status.dto';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
 
+@CrossTenant()
 @Controller('platform/tenants')
 export class PlatformTenantsController {
   constructor(
+    private readonly authService: AuthService,
     private readonly tenantsService: TenantsService,
     private readonly usersService: UsersService,
     private readonly subscriptionsService: SubscriptionsService,
@@ -49,7 +55,7 @@ export class PlatformTenantsController {
     const { user, temporaryPassword } = await this.usersService.createTenantAdmin(
       tenant._id.toString(),
       {
-        email: dto.adminEmail,
+        username: dto.adminUsername,
         fullName: dto.adminFullName,
       },
     );
@@ -71,11 +77,15 @@ export class PlatformTenantsController {
   }
 
   @Roles(SystemRole.SUPER_ADMIN)
+  @Post(':id/impersonate')
+  @HttpCode(HttpStatus.OK)
+  impersonate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.authService.impersonateTenantAdmin(user.userId, id);
+  }
+
+  @Roles(SystemRole.SUPER_ADMIN)
   @Patch(':id/status')
-  async setStatus(
-    @Param('id') id: string,
-    @Body() dto: UpdateTenantStatusDto,
-  ) {
+  async setStatus(@Param('id') id: string, @Body() dto: UpdateTenantStatusDto) {
     const tenant = await this.tenantsService.setStatus(id, dto.status);
     return this.tenantsService.toTenantResponse(tenant);
   }
@@ -85,9 +95,9 @@ export class PlatformTenantsController {
   async update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
     const tenant = await this.tenantsService.update(id, dto.name);
 
-    if (dto.email || dto.password || dto.adminFullName) {
+    if (dto.username || dto.password || dto.adminFullName) {
       await this.usersService.updateAdminForTenant(id, {
-        email: dto.email,
+        username: dto.username,
         password: dto.password,
         fullName: dto.adminFullName,
       });

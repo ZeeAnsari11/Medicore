@@ -140,7 +140,8 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
                 />
               </TableHead>
               <TableHead>Name</TableHead>
-              <TableHead>Email</TableHead>
+              <TableHead>Username</TableHead>
+              <TableHead>Phone</TableHead>
               <TableHead>Tenant Role</TableHead>
               <TableHead>Assigned Role</TableHead>
               <TableHead>Status</TableHead>
@@ -167,7 +168,10 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
                   {user.fullName}
                 </TableCell>
                 <TableCell className="text-sm cursor-pointer" onClick={() => onEdit(user.id)}>
-                  {user.email}
+                  {user.username}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground cursor-pointer" onClick={() => onEdit(user.id)}>
+                  {user.phone || '—'}
                 </TableCell>
                 <TableCell className="cursor-pointer" onClick={() => onEdit(user.id)}>
                   <Badge variant="secondary">{user.tenantRole}</Badge>

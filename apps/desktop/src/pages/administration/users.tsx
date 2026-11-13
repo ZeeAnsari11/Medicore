@@ -22,7 +22,8 @@ function UsersPage() {
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
 
   // Form state
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [phone, setPhone] = useState('');
   const [fullName, setFullName] = useState('');
   const [tenantRole, setTenantRole] = useState<TenantRole>(TenantRole.TENANT_USER);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
@@ -31,7 +32,8 @@ function UsersPage() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   const handleOpenCreate = () => {
-    setEmail('');
+    setUsername('');
+    setPhone('');
     setFullName('');
     setTenantRole(TenantRole.TENANT_USER);
     setSelectedRoleId(null);
@@ -41,7 +43,8 @@ function UsersPage() {
 
   const handleCloseCreate = () => {
     setShowCreateModal(false);
-    setEmail('');
+    setUsername('');
+    setPhone('');
     setFullName('');
     setTenantRole(TenantRole.TENANT_USER);
     setSelectedRoleId(null);
@@ -52,7 +55,8 @@ function UsersPage() {
     const user = users.find((u) => u.id === userId);
     if (user) {
       setEditingUserId(userId);
-      setEmail(user.email);
+      setUsername(user.username);
+      setPhone(user.phone ?? '');
       setFullName(user.fullName);
       setTenantRole(user.tenantRole);
       setSelectedRoleId(user.roleId || null);
@@ -64,7 +68,8 @@ function UsersPage() {
   const handleCloseEdit = () => {
     setShowEditModal(false);
     setEditingUserId(null);
-    setEmail('');
+    setUsername('');
+    setPhone('');
     setFullName('');
     setTenantRole(TenantRole.TENANT_USER);
     setSelectedRoleId(null);
@@ -83,6 +88,7 @@ function UsersPage() {
     try {
       const payload: any = {
         fullName: fullName.trim(),
+        phone: phone.trim(),
         tenantRole,
       };
 
@@ -104,8 +110,8 @@ function UsersPage() {
   };
 
   const handleCreateUser = async () => {
-    if (!email.trim()) {
-      setCreateError('Email is required');
+    if (!/^[a-zA-Z0-9._-]{3,}$/.test(username.trim())) {
+      setCreateError('Username must be at least 3 characters: letters, numbers, dots, dashes, underscores');
       return;
     }
 
@@ -119,10 +125,11 @@ function UsersPage() {
 
     try {
       const payload: any = {
-        email: email.trim(),
+        username: username.trim(),
         fullName: fullName.trim(),
         tenantRole,
       };
+      if (phone.trim()) payload.phone = phone.trim();
 
       if (selectedRoleId && selectedRoleId.trim()) {
         payload.roleId = selectedRoleId;
@@ -229,14 +236,14 @@ function UsersPage() {
 
             {/* Form */}
             <div className="space-y-4">
-              {/* Email */}
+              {/* Username */}
               <div>
-                <label className="block text-sm font-medium mb-2">Email *</label>
+                <label className="block text-sm font-medium mb-2">Username *</label>
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="user@example.com"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="e.g. ali.hamza"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
@@ -249,6 +256,18 @@ function UsersPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="John Doe"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Phone</label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Optional"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
@@ -429,16 +448,16 @@ function UsersPage() {
 
             {/* Form */}
             <div className="space-y-4">
-              {/* Email (read-only) */}
+              {/* Username (read-only) */}
               <div>
-                <label className="block text-sm font-medium mb-2">Email</label>
+                <label className="block text-sm font-medium mb-2">Username</label>
                 <input
-                  type="email"
-                  value={email}
+                  type="text"
+                  value={username}
                   disabled
                   className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-600 dark:bg-slate-800 dark:border-slate-700"
                 />
-                <p className="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+                <p className="text-xs text-gray-500 mt-1">Username cannot be changed</p>
               </div>
 
               {/* Full Name */}
@@ -449,6 +468,18 @@ function UsersPage() {
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                   placeholder="John Doe"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Phone</label>
+                <input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Optional"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>

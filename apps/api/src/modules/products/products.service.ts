@@ -1,7 +1,10 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { escapeRegex } from '../../common/utils/escape-regex';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { Product, ProductDocument } from './schemas/product.schema';
+import { Manufacturer, ManufacturerDocument } from '../manufacturers/schemas/manufacturer.schema';
+import { Category, CategoryDocument } from '../categories/schemas/category.schema';
 import { TenantScopedRepository } from '../../common/database/tenant-scoped.repository';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -16,17 +19,61 @@ export interface ProductListFilters {
 
 @Injectable()
 export class ProductsService extends TenantScopedRepository<ProductDocument> {
-  constructor(@InjectModel(Product.name) private readonly productModel: Model<ProductDocument>) {
+  constructor(
+    @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Manufacturer.name) private readonly manufacturerModel: Model<ManufacturerDocument>,
+    @InjectModel(Category.name) private readonly categoryModel: Model<CategoryDocument>,
+  ) {
     super(productModel);
   }
 
-  async createProduct(tenantId: string, dto: CreateProductDto) {
-    if (dto.barcode) {
-      await this.assertBarcodeAvailable(tenantId, dto.barcode);
+  /**
+   * manufacturerId / categoryId come from the client: they must belong to the caller's tenant, and a
+   * manufacturer must be shared (no branch) or belong to the product's branch.
+   */
+  private async assertReferencesInTenant(
+    tenantId: string,
+    branchId: string,
+    manufacturerId?: string,
+    categoryId?: string,
+  ) {
+    const tenantOid = new Types.ObjectId(tenantId);
+    if (manufacturerId) {
+      const ok = await this.manufacturerModel.exists({
+        _id: new Types.ObjectId(manufacturerId),
+        tenantId: tenantOid,
+        $or: [{ branchId: { $exists: false } }, { branchId: null }, { branchId: new Types.ObjectId(branchId) }],
+      });
+      if (!ok) throw new BadRequestException('Manufacturer not found in this branch');
     }
+    if (categoryId) {
+      const ok = await this.categoryModel.exists({ _id: new Types.ObjectId(categoryId), tenantId: tenantOid });
+      if (!ok) throw new BadRequestException('Category not found');
+    }
+  }
+
+  /** TP must cover the cost price, and the printed retail price must not undercut TP. */
+  private assertPriceRules({ tp, cp, rp }: { tp: number; cp: number; rp: number }) {
+    if (tp < cp) {
+      throw new BadRequestException(`Trade price (TP ${tp}) must be at least the cost price (CP ${cp})`);
+    }
+    if (rp < tp) {
+      throw new BadRequestException(`Retail price (RP ${rp}) must be at least the trade price (TP ${tp})`);
+    }
+  }
+
+  /** `dto.branchId` is already resolved by the controller (`resolveCreateBranch`). */
+  async createProduct(tenantId: string, dto: CreateProductDto & { branchId: string }) {
+    await this.assertReferencesInTenant(tenantId, dto.branchId, dto.manufacturerId, dto.categoryId);
+    if (dto.barcode) {
+      await this.assertBarcodeAvailable(tenantId, dto.branchId, dto.barcode);
+    }
+
+    this.assertPriceRules(dto);
 
     return this.productModel.create({
       tenantId: new Types.ObjectId(tenantId),
+      branchId: new Types.ObjectId(dto.branchId),
       name: dto.name,
       genericName: dto.genericName,
       manufacturerId: new Types.ObjectId(dto.manufacturerId),
@@ -34,9 +81,9 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
       barcode: dto.barcode,
       unit: dto.unit,
       packing: dto.packing,
-      purchasePrice: dto.purchasePrice,
-      salePrice: dto.salePrice,
-      dealerPrice: dto.dealerPrice,
+      tp: dto.tp,
+      cp: dto.cp,
+      rp: dto.rp,
       minStockLevel: dto.minStockLevel,
       status: ProductStatus.ACTIVE,
     });
@@ -53,9 +100,9 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     }
     if (filters.search) {
       filter.$or = [
-        { name: { $regex: filters.search, $options: 'i' } },
-        { genericName: { $regex: filters.search, $options: 'i' } },
-        { barcode: { $regex: filters.search, $options: 'i' } },
+        { name: { $regex: escapeRegex(filters.search), $options: 'i' } },
+        { genericName: { $regex: escapeRegex(filters.search), $options: 'i' } },
+        { barcode: { $regex: escapeRegex(filters.search), $options: 'i' } },
       ];
     }
 
@@ -77,9 +124,15 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
       throw new NotFoundException('Product not found');
     }
 
+    // A product never moves between branches; `dto.branchId` is ignored.
+    const branchId = product.branchId.toString();
+
     if (dto.barcode !== undefined && dto.barcode !== product.barcode) {
-      await this.assertBarcodeAvailable(tenantId, dto.barcode, id);
+      await this.assertBarcodeAvailable(tenantId, branchId, dto.barcode, id);
       product.barcode = dto.barcode;
+    }
+    if (dto.manufacturerId !== undefined && dto.manufacturerId !== product.manufacturerId.toString()) {
+      await this.assertReferencesInTenant(tenantId, branchId, dto.manufacturerId);
     }
 
     if (dto.name !== undefined) product.name = dto.name;
@@ -91,9 +144,10 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     }
     if (dto.unit !== undefined) product.unit = dto.unit;
     if (dto.packing !== undefined) product.packing = dto.packing;
-    if (dto.purchasePrice !== undefined) product.purchasePrice = dto.purchasePrice;
-    if (dto.salePrice !== undefined) product.salePrice = dto.salePrice;
-    if (dto.dealerPrice !== undefined) product.dealerPrice = dto.dealerPrice;
+    if (dto.tp !== undefined) product.tp = dto.tp;
+    if (dto.cp !== undefined) product.cp = dto.cp;
+    if (dto.rp !== undefined) product.rp = dto.rp;
+    this.assertPriceRules(product);
     if (dto.minStockLevel !== undefined) product.minStockLevel = dto.minStockLevel;
 
     return product.save();
@@ -110,9 +164,10 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     return product.save();
   }
 
-  private async assertBarcodeAvailable(tenantId: string, barcode: string, excludeId?: string) {
+  private async assertBarcodeAvailable(tenantId: string, branchId: string, barcode: string, excludeId?: string) {
     const existing = await this.productModel.findOne({
       tenantId: new Types.ObjectId(tenantId),
+      branchId: new Types.ObjectId(branchId),
       barcode,
       ...(excludeId ? { _id: { $ne: new Types.ObjectId(excludeId) } } : {}),
     });
@@ -149,6 +204,7 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     return {
       id: obj._id.toString(),
       tenantId: obj.tenantId.toString(),
+      branchId: obj.branchId?.toString(),
       name: obj.name,
       genericName: obj.genericName,
       manufacturerId,
@@ -158,9 +214,9 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
       barcode: obj.barcode,
       unit: obj.unit,
       packing: obj.packing,
-      purchasePrice: obj.purchasePrice,
-      salePrice: obj.salePrice,
-      dealerPrice: obj.dealerPrice,
+      tp: obj.tp,
+      cp: obj.cp,
+      rp: obj.rp,
       status: obj.status,
       minStockLevel: obj.minStockLevel,
       createdAt: obj.createdAt,

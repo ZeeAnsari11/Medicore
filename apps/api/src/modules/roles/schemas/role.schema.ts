@@ -17,6 +17,10 @@ export class Role {
   @Prop({ type: [String], default: [] })
   allowedModules: string[];
 
+  /** 2 = saved through the module matrix. Lower/absent = legacy keys, expanded at resolve time. */
+  @Prop({ default: 1 })
+  permissionsVersion: number;
+
   @Prop({ required: true, default: true })
   isActive: boolean;
 }

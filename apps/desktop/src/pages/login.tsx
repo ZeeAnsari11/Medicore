@@ -7,13 +7,15 @@ import { ApiError } from '@/lib/api-client';
 import { Button, Input, Label, Alert, Card, CardContent, CardHeader } from '@medicore/ui';
 
 interface LoginFormValues {
-  email: string;
+  username: string;
   password: string;
+  organization?: string;
 }
 
 function LoginPage() {
   const { login, isLoggingIn, loginError, user, isLoading } = useAuth();
   const navigate = useNavigate();
+  const needsOrganization = loginError instanceof ApiError && loginError.status === 409;
   const {
     register,
     handleSubmit,
@@ -28,7 +30,7 @@ function LoginPage() {
 
   const onSubmit = async (values: LoginFormValues) => {
     try {
-      await login(values);
+      await login({ ...values, organization: values.organization?.trim() || undefined });
       navigate('/dashboard', { replace: true });
     } catch {
       // surfaced via loginError below
@@ -62,17 +64,33 @@ function LoginPage() {
               )}
 
               <div className="space-y-1.5">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="username">Username</Label>
                 <Input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="you@company.com"
-                  aria-invalid={!!errors.email}
-                  {...register('email', { required: 'Email is required' })}
+                  id="username"
+                  type="text"
+                  autoComplete="username"
+                  placeholder="your.username"
+                  aria-invalid={!!errors.username}
+                  {...register('username', { required: 'Username is required' })}
                 />
-                {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+                {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
               </div>
+
+              {needsOrganization && (
+                <div className="space-y-1.5">
+                  <Label htmlFor="organization">Organization code</Label>
+                  <Input
+                    id="organization"
+                    type="text"
+                    placeholder="your-organization"
+                    aria-invalid={!!errors.organization}
+                    {...register('organization', { required: 'Organization code is required' })}
+                  />
+                  {errors.organization && (
+                    <p className="text-xs text-destructive">{errors.organization.message}</p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label htmlFor="password">Password</Label>

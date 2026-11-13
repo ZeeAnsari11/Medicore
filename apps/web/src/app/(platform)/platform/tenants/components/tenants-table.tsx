@@ -1,6 +1,6 @@
 'use client';
 
-import { Badge, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@medicore/ui';
+import { Badge, Button, Switch, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@medicore/ui';
 import { usePlatformTenants } from '@/hooks/use-platform-tenants';
 import { TenantStatus, Tenant } from '@medicore/shared-types';
 
@@ -17,11 +17,22 @@ const statusColors: Record<TenantStatus, 'default' | 'secondary' | 'destructive'
 };
 
 export function TenantsTable({ tenants, isLoading, onEdit }: TenantsTableProps) {
-  const { setStatus } = usePlatformTenants();
+  const { setStatus, impersonate } = usePlatformTenants();
 
   const handleToggleActive = async (tenant: Tenant) => {
     const nextStatus = tenant.status === TenantStatus.ACTIVE ? TenantStatus.SUSPENDED : TenantStatus.ACTIVE;
     await setStatus(tenant.id, nextStatus);
+  };
+
+  const handleLogin = async (tenant: Tenant) => {
+    // Open the tab synchronously (inside the click) so popup blockers allow it, then point it at the token hand-off.
+    const tab = window.open('about:blank', '_blank');
+    try {
+      const { accessToken } = await impersonate(tenant.id);
+      if (tab) tab.location.href = `/impersonate#token=${encodeURIComponent(accessToken)}`;
+    } catch {
+      tab?.close();
+    }
   };
 
   if (isLoading) {
@@ -42,6 +53,7 @@ export function TenantsTable({ tenants, isLoading, onEdit }: TenantsTableProps) 
             <TableHead>Status</TableHead>
             <TableHead className="w-20">Active</TableHead>
             <TableHead>Created</TableHead>
+            <TableHead className="w-24" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -64,6 +76,16 @@ export function TenantsTable({ tenants, isLoading, onEdit }: TenantsTableProps) 
               </TableCell>
               <TableCell className="text-sm text-muted-foreground">
                 {new Date(tenant.createdAt).toLocaleDateString()}
+              </TableCell>
+              <TableCell onClick={(event) => event.stopPropagation()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={tenant.status === TenantStatus.SUSPENDED}
+                  onClick={() => handleLogin(tenant)}
+                >
+                  Login
+                </Button>
               </TableCell>
             </TableRow>
           ))}

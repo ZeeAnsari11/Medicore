@@ -5,13 +5,14 @@ import { UpdateVendorDto } from './dto/update-vendor.dto';
 import { UpdateVendorStatusDto } from './dto/update-vendor-status.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { resolveCreateBranch } from '../../common/branch/branch-scope.util';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
 @Controller('vendors')
 export class VendorsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
-  @RequirePermission('vendors:read')
+  @RequirePermission('vendors:read', 'purchases:create')
   @Get()
   async list(
     @CurrentUser() user: AuthenticatedUser,
@@ -21,10 +22,18 @@ export class VendorsController {
     return vendors.map((v) => this.vendorsService.toVendorResponse(v));
   }
 
+  @RequirePermission('vendors:read', 'purchases:create')
+  @Get(':id/products')
+  async listProducts(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const links = await this.vendorsService.listVendorProductsForVendor(user.tenantId, id);
+    return links.map((l) => this.vendorsService.toVendorProductResponse(l));
+  }
+
   @RequirePermission('vendors:create')
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateVendorDto) {
-    const vendor = await this.vendorsService.createVendor(user.tenantId, dto);
+    const branchId = resolveCreateBranch(user, dto.branchId);
+    const vendor = await this.vendorsService.createVendor(user.tenantId, { ...dto, branchId });
     return this.vendorsService.toVendorResponse(vendor);
   }
 

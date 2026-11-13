@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { BRANCH_SCOPED } from '../../../common/tenancy/branch-scope.plugin';
 import { HydratedDocument, Types } from 'mongoose';
 
 export type VendorDocument = HydratedDocument<Vendor>;
@@ -9,10 +10,13 @@ export type VendorDocument = HydratedDocument<Vendor>;
  * (see docs/domain-model.md). "Filterable by manufacturer" is served by a
  * query-time join through VendorProduct -> Product.manufacturerId instead.
  */
-@Schema({ timestamps: true, collection: 'vendors' })
+@Schema({ timestamps: true, collection: 'vendors', ...BRANCH_SCOPED })
 export class Vendor {
   @Prop({ required: true, type: Types.ObjectId, ref: 'Tenant', index: true })
   tenantId: Types.ObjectId;
+
+  @Prop({ required: true, type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
   company: string;
@@ -26,9 +30,6 @@ export class Vendor {
   @Prop({ trim: true })
   contactPhone?: string;
 
-  @Prop({ trim: true, lowercase: true })
-  contactEmail?: string;
-
   @Prop({ trim: true })
   address?: string;
 
@@ -38,4 +39,4 @@ export class Vendor {
 
 export const VendorSchema = SchemaFactory.createForClass(Vendor);
 
-VendorSchema.index({ tenantId: 1, company: 1 }, { unique: true });
+VendorSchema.index({ tenantId: 1, branchId: 1, company: 1 }, { unique: true });

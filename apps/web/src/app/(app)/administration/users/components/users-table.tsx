@@ -38,7 +38,8 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>
-            <TableHead>Email</TableHead>
+            <TableHead>Username</TableHead>
+            <TableHead>Phone</TableHead>
             <TableHead>Tenant Role</TableHead>
             <TableHead>Assigned Role</TableHead>
             <TableHead>Status</TableHead>
@@ -56,7 +57,8 @@ export function UsersTable({ users, onEdit }: UsersTableProps) {
                 className={cn(canEdit && 'cursor-pointer')}
               >
                 <TableCell className="font-medium">{user.fullName}</TableCell>
-                <TableCell className="text-sm">{user.email}</TableCell>
+                <TableCell className="text-sm">{user.username}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">{user.phone || '—'}</TableCell>
                 <TableCell>
                   <Badge variant="secondary">{user.tenantRole}</Badge>
                 </TableCell>

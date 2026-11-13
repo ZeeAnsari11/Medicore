@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument, Types } from 'mongoose';
+import { HydratedDocument, Schema as MongooseSchema, Types } from 'mongoose';
 
 export type ManufacturerDocument = HydratedDocument<Manufacturer>;
 
@@ -11,11 +11,12 @@ export class Manufacturer {
   @Prop({ required: true, trim: true })
   name: string;
 
+  /** Branch the manufacturer belongs to; unset means shared across all branches. */
+  @Prop({ type: MongooseSchema.Types.ObjectId, ref: 'Branch', index: true })
+  branchId?: Types.ObjectId;
+
   @Prop({ trim: true })
   country?: string;
-
-  @Prop({ trim: true, lowercase: true })
-  contactEmail?: string;
 
   @Prop({ trim: true })
   contactPhone?: string;

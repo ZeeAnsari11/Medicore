@@ -1,9 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { Category, CreateCategoryRequest } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const CATEGORIES_QUERY_KEY = ['categories'];
 
@@ -16,9 +17,9 @@ async function createCategory(dto: CreateCategoryRequest): Promise<Category> {
 }
 
 export function useCategories() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const categoriesQuery = useQuery({
+  const categoriesQuery = useTenantQuery({
     queryKey: CATEGORIES_QUERY_KEY,
     queryFn: fetchCategories,
     staleTime: 5 * 60 * 1000,

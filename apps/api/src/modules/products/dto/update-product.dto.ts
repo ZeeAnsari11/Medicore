@@ -2,6 +2,10 @@ import { IsMongoId, IsNumber, IsOptional, IsString, Min, MinLength } from 'class
 import { Transform } from 'class-transformer';
 
 export class UpdateProductDto {
+  @IsMongoId()
+  @IsOptional()
+  branchId?: string;
+
   @IsString()
   @MinLength(2)
   @IsOptional()
@@ -35,17 +39,17 @@ export class UpdateProductDto {
   @IsNumber()
   @Min(0)
   @IsOptional()
-  purchasePrice?: number;
+  tp?: number;
 
   @IsNumber()
   @Min(0)
   @IsOptional()
-  salePrice?: number;
+  cp?: number;
 
   @IsNumber()
   @Min(0)
   @IsOptional()
-  dealerPrice?: number;
+  rp?: number;
 
   @IsNumber()
   @Min(0)

@@ -1,9 +1,11 @@
+import { CrossTenant } from '../../../common/decorators/cross-tenant.decorator';
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import { PlatformSettingsService } from '../../platform-settings/platform-settings.service';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import { SystemRole } from '@medicore/shared-types';
 import { UpdatePlatformSettingsDto } from '../../platform-settings/dto/update-platform-settings.dto';
 
+@CrossTenant()
 @Controller('platform/settings')
 export class PlatformSettingsController {
   constructor(private readonly platformSettingsService: PlatformSettingsService) {}

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AuthResponse, AuthMeResponse, LoginRequest } from '@medicore/shared-types';
 import { apiFetch, getStoredToken, setStoredToken } from '@/lib/api-client';
+import { resetClientState } from '@/lib/session-reset';
 
 export const AUTH_QUERY_KEY = ['auth', 'me'];
 
@@ -31,6 +32,8 @@ export function useAuth() {
         body: input,
         auth: false,
       });
+      // A new identity must never see the previous one's cached data or stored state.
+      resetClientState(queryClient);
       setStoredToken(authResponse.accessToken);
       // Fetch full user data with permissions from /auth/me
       const fullUser = await apiFetch<AuthMeResponse>('/auth/me');
@@ -42,9 +45,8 @@ export function useAuth() {
   });
 
   const logout = () => {
-    setStoredToken(null);
+    resetClientState(queryClient);
     queryClient.setQueryData(AUTH_QUERY_KEY, null);
-    queryClient.clear();
   };
 
   return {

@@ -1,7 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { BRANCH_SCOPED } from '../../../common/tenancy/branch-scope.plugin';
 import { HydratedDocument, Types } from 'mongoose';
 import { v7 as uuidv7 } from 'uuid';
-import { AllocationMode, PaymentMethod, PaymentStatus } from '@medicore/shared-types';
+import { AllocationMode, PaymentMethod, PaymentStatus, ReturnStatus, SaleStatus } from '@medicore/shared-types';
 
 @Schema({ _id: false })
 export class SaleBatchAllocation {
@@ -61,7 +62,7 @@ export type SaleDocument = HydratedDocument<Sale>;
  * branch may sell without connectivity), so it uses a client-generatable
  * UUIDv7 id and soft delete, same profile as Batch/StockMovement/Purchase.
  */
-@Schema({ timestamps: true, collection: 'sales' })
+@Schema({ timestamps: true, collection: 'sales', ...BRANCH_SCOPED })
 export class Sale {
   @Prop({ type: String, default: () => uuidv7() })
   _id: string;
@@ -75,8 +76,17 @@ export class Sale {
   @Prop({ type: String, ref: 'Customer', index: true })
   customerId?: string;
 
-  @Prop({ required: true, trim: true })
-  invoiceNumber: string;
+  /** Issued on confirmation, so a PENDING order has none. */
+  @Prop({ trim: true })
+  invoiceNumber?: string;
+
+  /** Absent means CONFIRMED, so sales that predate order processing need no migration. */
+  @Prop({ enum: SaleStatus })
+  status?: SaleStatus;
+
+  /** PO-{branch code}-000001, set on orders booked as PENDING. */
+  @Prop({ trim: true })
+  orderNumber?: string;
 
   @Prop({ type: [SaleItemSchema], required: true })
   items: SaleItem[];
@@ -105,8 +115,41 @@ export class Sale {
   @Prop({ required: true, default: Date.now })
   saleDate: Date;
 
+  @Prop({ trim: true })
+  notes?: string;
+
+  @Prop({ trim: true })
+  paymentTerms?: string;
+
+  // Bumped by every edit and every amountPaid change: the write conflict serializes a payment against an edit.
+  @Prop({ required: true, default: 0 })
+  editVersion: number;
+
+  // Return counters. The lines/prices above are never edited by a return;
+  // these only track how much has come back so net/outstanding can be derived.
+  @Prop({ required: true, min: 0, default: 0 })
+  returnedTotal: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  refundedTotal: number;
+
+  @Prop({ required: true, enum: ReturnStatus, default: ReturnStatus.NONE })
+  returnStatus: ReturnStatus;
+
+  // Bumped first in every return transaction: the write conflict serializes concurrent returns.
+  @Prop({ required: true, default: 0 })
+  returnVersion: number;
+
   @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
   createdBy: Types.ObjectId;
+
+  /** The user who placed the sale. The id is for integrity and filtering; the UI shows the name. */
+  @Prop({ required: true, type: Types.ObjectId, ref: 'User', index: true })
+  orderBookerId: Types.ObjectId;
+
+  /** The booker's name when the sale was booked: later renames do not rewrite old sales. */
+  @Prop({ required: true, trim: true })
+  orderBookerName: string;
 
   @Prop({ type: Date, default: null })
   deletedAt: Date | null;
@@ -114,6 +157,14 @@ export class Sale {
 
 export const SaleSchema = SchemaFactory.createForClass(Sale);
 
-SaleSchema.index({ tenantId: 1, branchId: 1, invoiceNumber: 1 }, { unique: true });
+// Partial: a PENDING order has no invoice number yet, and absent values would otherwise collide.
+SaleSchema.index(
+  { tenantId: 1, branchId: 1, invoiceNumber: 1 },
+  { unique: true, partialFilterExpression: { invoiceNumber: { $type: 'string' } } },
+);
+SaleSchema.index({ tenantId: 1, branchId: 1, status: 1, saleDate: -1 });
 SaleSchema.index({ tenantId: 1, customerId: 1, saleDate: -1 });
+SaleSchema.index({ tenantId: 1, orderBookerId: 1, saleDate: -1 });
+SaleSchema.index({ tenantId: 1, branchId: 1, saleDate: -1 });
 SaleSchema.index({ tenantId: 1, 'items.batchAllocations.batchId': 1 });
+SaleSchema.index({ tenantId: 1, 'items.productId': 1, saleDate: -1 });

@@ -110,7 +110,7 @@ export function RoleDialog({ open, mode, role, onOpenChange }: RoleDialogProps) 
             <Label htmlFor="name">Name</Label>
             <Input
               id="name"
-              placeholder="e.g., Salesman"
+              placeholder="e.g., Order Booker"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />

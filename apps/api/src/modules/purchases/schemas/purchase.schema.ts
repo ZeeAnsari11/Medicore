@@ -1,7 +1,8 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { BRANCH_SCOPED } from '../../../common/tenancy/branch-scope.plugin';
 import { HydratedDocument, Types } from 'mongoose';
 import { v7 as uuidv7 } from 'uuid';
-import { PurchaseStatus, PaymentStatus } from '@medicore/shared-types';
+import { PurchaseStatus, PaymentStatus, ReturnStatus } from '@medicore/shared-types';
 
 @Schema({ _id: false })
 export class PurchaseItem {
@@ -45,7 +46,7 @@ export type PurchaseDocument = HydratedDocument<Purchase>;
  * Offline-creatable (a branch may receive stock without connectivity) —
  * UUIDv7 _id and soft delete, same profile as Batch/StockMovement.
  */
-@Schema({ timestamps: true, collection: 'purchases' })
+@Schema({ timestamps: true, collection: 'purchases', ...BRANCH_SCOPED })
 export class Purchase {
   @Prop({ type: String, default: () => uuidv7() })
   _id: string;
@@ -92,6 +93,31 @@ export class Purchase {
   @Prop({ required: true, default: Date.now })
   purchaseDate: Date;
 
+  @Prop({ trim: true })
+  notes?: string;
+
+  @Prop({ trim: true })
+  paymentTerms?: string;
+
+  // Bumped by every edit and every amountPaid change: the write conflict serializes a payment against an edit.
+  @Prop({ required: true, default: 0 })
+  editVersion: number;
+
+  // Return counters. The lines/prices above are never edited by a return;
+  // these only track how much has come back so net/outstanding can be derived.
+  @Prop({ required: true, min: 0, default: 0 })
+  returnedTotal: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  refundedTotal: number;
+
+  @Prop({ required: true, enum: ReturnStatus, default: ReturnStatus.NONE })
+  returnStatus: ReturnStatus;
+
+  // Bumped first in every return transaction: the write conflict serializes concurrent returns.
+  @Prop({ required: true, default: 0 })
+  returnVersion: number;
+
   @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
   createdBy: Types.ObjectId;
 
@@ -103,3 +129,5 @@ export const PurchaseSchema = SchemaFactory.createForClass(Purchase);
 
 PurchaseSchema.index({ tenantId: 1, branchId: 1, purchaseNumber: 1 }, { unique: true });
 PurchaseSchema.index({ tenantId: 1, vendorId: 1, purchaseDate: -1 });
+PurchaseSchema.index({ tenantId: 1, branchId: 1, purchaseDate: -1 });
+PurchaseSchema.index({ tenantId: 1, 'items.batchId': 1 });

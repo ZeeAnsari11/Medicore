@@ -6,6 +6,11 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { BatchesService } from './batches.service';
 import { BatchAllocationService } from './batch-allocation.service';
 import { InventoryController } from './inventory.controller';
+import { StockTransfer, StockTransferSchema } from './schemas/stock-transfer.schema';
+import { StockTransfersService } from './stock-transfers.service';
+import { StockTransfersController } from './stock-transfers.controller';
+import { Branch, BranchSchema } from '../branches/schemas/branch.schema';
+import { SequenceModule } from '../../common/sequence/sequence.module';
 
 @Module({
   imports: [
@@ -13,10 +18,13 @@ import { InventoryController } from './inventory.controller';
       { name: Batch.name, schema: BatchSchema },
       { name: StockMovement.name, schema: StockMovementSchema },
       { name: Product.name, schema: ProductSchema },
+      { name: StockTransfer.name, schema: StockTransferSchema },
+      { name: Branch.name, schema: BranchSchema },
     ]),
+    SequenceModule,
   ],
-  providers: [BatchesService, BatchAllocationService],
-  controllers: [InventoryController],
+  providers: [BatchesService, BatchAllocationService, StockTransfersService],
+  controllers: [InventoryController, StockTransfersController],
   exports: [BatchesService, BatchAllocationService],
 })
 export class InventoryModule {}

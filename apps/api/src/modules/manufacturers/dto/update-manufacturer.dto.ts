@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsMongoId, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateManufacturerDto {
   @IsString()
@@ -6,13 +6,13 @@ export class UpdateManufacturerDto {
   @IsOptional()
   name?: string;
 
+  @IsMongoId()
+  @IsOptional()
+  branchId?: string;
+
   @IsString()
   @IsOptional()
   country?: string;
-
-  @IsEmail()
-  @IsOptional()
-  contactEmail?: string;
 
   @IsString()
   @IsOptional()

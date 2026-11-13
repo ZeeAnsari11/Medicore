@@ -25,13 +25,13 @@ interface CreateTenantDialogProps {
 interface CreateTenantFormValues {
   tenantName: string;
   adminFullName: string;
-  adminEmail: string;
+  adminUsername: string;
 }
 
 export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogProps) {
   const { create, isCreating, createError } = usePlatformTenants();
   const [tempPassword, setTempPassword] = useState<string | null>(null);
-  const [createdAdminEmail, setCreatedAdminEmail] = useState<string | null>(null);
+  const [createdAdminUsername, setCreatedAdminUsername] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const {
@@ -45,7 +45,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
     const result = await create(values);
     if (result && 'temporaryPassword' in result) {
       setTempPassword(result.temporaryPassword);
-      setCreatedAdminEmail(result.adminUser.email);
+      setCreatedAdminUsername(result.adminUser.username);
       reset();
     }
   };
@@ -63,7 +63,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
       onOpenChange(false);
       reset();
       setTempPassword(null);
-      setCreatedAdminEmail(null);
+      setCreatedAdminUsername(null);
     }
   };
 
@@ -84,8 +84,8 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
             </Alert>
 
             <div className="space-y-1.5">
-              <Label htmlFor="admin-email">Admin Email</Label>
-              <Input id="admin-email" readOnly value={createdAdminEmail ?? ''} />
+              <Label htmlFor="admin-username">Admin Username</Label>
+              <Input id="admin-username" readOnly value={createdAdminUsername ?? ''} />
             </div>
 
             <div className="space-y-1.5">
@@ -123,7 +123,7 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
                 onClick={() => {
                   onOpenChange(false);
                   setTempPassword(null);
-                  setCreatedAdminEmail(null);
+                  setCreatedAdminUsername(null);
                   reset();
                 }}
               >
@@ -166,15 +166,18 @@ export function CreateTenantDialog({ open, onOpenChange }: CreateTenantDialogPro
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="adminEmail">Admin Email</Label>
+                <Label htmlFor="adminUsername">Admin Username</Label>
                 <Input
-                  id="adminEmail"
-                  type="email"
+                  id="adminUsername"
+                  type="text"
                   placeholder="admin@example.com"
-                  aria-invalid={!!errors.adminEmail}
-                  {...register('adminEmail', { required: 'Email is required' })}
+                  aria-invalid={!!errors.adminUsername}
+                  {...register('adminUsername', {
+                    required: 'Username is required',
+                    pattern: { value: /^[a-zA-Z0-9._-]{3,}$/, message: 'At least 3 characters: letters, numbers, dots, dashes, underscores' },
+                  })}
                 />
-                {errors.adminEmail && <p className="text-xs text-destructive">{errors.adminEmail.message}</p>}
+                {errors.adminUsername && <p className="text-xs text-destructive">{errors.adminUsername.message}</p>}
               </div>
 
               <DialogFooter>

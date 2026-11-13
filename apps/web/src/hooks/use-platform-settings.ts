@@ -1,9 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { PlatformSettings, UpdatePlatformSettingsRequest } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const PLATFORM_SETTINGS_QUERY_KEY = ['platform', 'settings'];
 
@@ -16,9 +17,9 @@ async function updateSettings(dto: UpdatePlatformSettingsRequest): Promise<Platf
 }
 
 export function usePlatformSettings() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const settingsQuery = useQuery({
+  const settingsQuery = useTenantQuery({
     queryKey: PLATFORM_SETTINGS_QUERY_KEY,
     queryFn: fetchSettings,
     staleTime: 5 * 60 * 1000,

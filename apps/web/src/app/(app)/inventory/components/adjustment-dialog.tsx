@@ -19,6 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@medicore/ui';
+import { BranchField } from '@/components/branch-field';
+import { useBranchFieldValue } from '@/hooks/use-branch-field';
 import { useInventory } from '@/hooks/use-inventory';
 import { useProducts } from '@/hooks/use-products';
 import { ApiError } from '@/lib/api-client';
@@ -42,7 +44,9 @@ interface AdjustmentFormValues {
 
 export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDialogProps) {
   const { adjust, isAdjusting, adjustError } = useInventory(branchId);
-  const { products } = useProducts();
+  const branch = useBranchFieldValue(open);
+  // Products are per branch: the picker lists the adjustment's own branch.
+  const { products } = useProducts({ branchId: branch.value });
 
   const {
     register,
@@ -55,9 +59,10 @@ export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDia
   });
 
   const onSubmit = async (values: AdjustmentFormValues) => {
+    if (!branch.require()) return;
     await adjust({
       productId: values.productId,
-      branchId: branchId ?? undefined,
+      branchId: branch.value,
       batchNumber: values.batchNumber,
       expiryDate: values.expiryDate,
       operation: values.operation,
@@ -85,6 +90,7 @@ export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDia
         )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <BranchField field={branch.field} value={branch.value} onChange={branch.setValue} error={branch.error} />
           <div className="space-y-1.5">
             <Label>Product</Label>
             <Controller

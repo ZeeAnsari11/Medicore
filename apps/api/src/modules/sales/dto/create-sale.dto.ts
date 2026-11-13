@@ -61,6 +61,11 @@ export class CreateSaleDto {
   @IsOptional()
   branchId?: string;
 
+  /** Book the sale for another Order Booker (needs sales:book_for_others); defaults to the caller. */
+  @IsMongoId()
+  @IsOptional()
+  orderBookerId?: string;
+
   @IsString()
   @IsOptional()
   customerId?: string;
@@ -80,6 +85,14 @@ export class CreateSaleDto {
   @IsDateString()
   @IsOptional()
   saleDate?: string;
+
+  @IsString()
+  @IsOptional()
+  notes?: string;
+
+  @IsString()
+  @IsOptional()
+  paymentTerms?: string;
 
   @IsArray()
   @ArrayMinSize(1)

@@ -8,6 +8,7 @@
   },
   "packageManager": "pnpm@11.21.0",
   "scripts": {
+    "local": "bash scripts/local.sh",
     "dev": "turbo run dev --filter=@medicore/api --filter=@medicore/web",
     "dev:api": "turbo run dev --filter=@medicore/api",
     "dev:web": "turbo run dev --filter=@medicore/web",

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type {
   Product,
   CreateProductRequest,
@@ -9,10 +9,13 @@ import type {
 } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const PRODUCTS_QUERY_KEY = ['products'];
 
 export interface ProductFilters {
+  /** Branch whose products to list, for pickers inside a branch-owned form; defaults to the top-bar branch. */
+  branchId?: string | null;
   manufacturerId?: string;
   categoryId?: string;
   search?: string;
@@ -24,7 +27,9 @@ async function fetchProducts(filters: ProductFilters): Promise<Product[]> {
   if (filters.categoryId) params.set('categoryId', filters.categoryId);
   if (filters.search) params.set('search', filters.search);
   const query = params.toString();
-  return apiFetch<Product[]>(`/products${query ? `?${query}` : ''}`);
+  return apiFetch<Product[]>(`/products${query ? `?${query}` : ''}`, {
+    headers: filters.branchId ? { 'X-Branch-Id': filters.branchId } : undefined,
+  });
 }
 
 async function createProduct(dto: CreateProductRequest): Promise<Product> {
@@ -40,9 +45,9 @@ async function setProductStatus(id: string, dto: UpdateProductStatusRequest): Pr
 }
 
 export function useProducts(filters: ProductFilters = {}) {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const productsQuery = useQuery({
+  const productsQuery = useTenantQuery({
     queryKey: [...PRODUCTS_QUERY_KEY, filters],
     queryFn: () => fetchProducts(filters),
     staleTime: 5 * 60 * 1000,

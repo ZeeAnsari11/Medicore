@@ -36,7 +36,12 @@ export {
 
 // Table
 export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell } from './table/table';
-export { DataTable, type DataTableProps } from './table/data-table';
+export {
+  DataTable,
+  type DataTableProps,
+  type DataTableServerPagination,
+  type DataTableServerSearch,
+} from './table/data-table';
 export { type ColumnDef } from '@tanstack/react-table';
 
 // Forms

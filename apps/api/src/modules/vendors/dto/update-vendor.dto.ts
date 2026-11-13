@@ -1,4 +1,4 @@
-import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsOptional, IsString, MinLength } from 'class-validator';
 
 export class UpdateVendorDto {
   @IsString()
@@ -17,10 +17,6 @@ export class UpdateVendorDto {
   @IsString()
   @IsOptional()
   contactPhone?: string;
-
-  @IsEmail()
-  @IsOptional()
-  contactEmail?: string;
 
   @IsString()
   @IsOptional()

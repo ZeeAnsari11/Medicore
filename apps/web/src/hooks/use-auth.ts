@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { AuthResponse, AuthMeResponse, LoginRequest } from '@medicore/shared-types';
 import { apiFetch, getStoredToken, setStoredToken } from '@/lib/api-client';
+import { resetClientState } from '@/lib/session-reset';
 
 export const AUTH_QUERY_KEY = ['auth', 'me'];
 
@@ -22,7 +23,9 @@ export function useAuth() {
   const meQuery = useQuery({
     queryKey: AUTH_QUERY_KEY,
     queryFn: fetchCurrentUser,
-    staleTime: 5 * 60 * 1000,
+    // Short: backend checks permissions per request; this keeps the UI close behind admin changes.
+    staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
     retry: false,
   });
 
@@ -33,15 +36,16 @@ export function useAuth() {
       auth: false,
     }),
     onSuccess: (data) => {
+      // A new identity must never see the previous one's cached data or stored state.
+      resetClientState(queryClient);
       setStoredToken(data.accessToken);
       queryClient.setQueryData(AUTH_QUERY_KEY, data.user);
     },
   });
 
   const logout = () => {
-    setStoredToken(null);
+    resetClientState(queryClient);
     queryClient.setQueryData(AUTH_QUERY_KEY, null);
-    queryClient.clear();
   };
 
   return {

@@ -1,4 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
+import { BRANCH_SCOPED } from '../../../common/tenancy/branch-scope.plugin';
 import { HydratedDocument, Types } from 'mongoose';
 import { v7 as uuidv7 } from 'uuid';
 import { StockMovementType } from '@medicore/shared-types';
@@ -11,7 +12,7 @@ export type StockMovementDocument = HydratedDocument<StockMovement>;
  * Batch — UUIDv7 _id, soft delete (corrections are reversing entries, not
  * edits, so deletedAt is present for schema consistency but rarely used).
  */
-@Schema({ timestamps: true, collection: 'stock_movements' })
+@Schema({ timestamps: true, collection: 'stock_movements', ...BRANCH_SCOPED })
 export class StockMovement {
   @Prop({ type: String, default: () => uuidv7() })
   _id: string;

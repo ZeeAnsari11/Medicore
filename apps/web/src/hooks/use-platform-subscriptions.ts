@@ -1,9 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { Subscription, SubscriptionStatus, SubscriptionWithDetails } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const PLATFORM_SUBSCRIPTIONS_QUERY_KEY = ['platform', 'subscriptions'];
 
@@ -26,9 +27,9 @@ async function setStatus(tenantId: string, status: SubscriptionStatus) {
 }
 
 export function usePlatformSubscriptions() {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const subscriptionsQuery = useQuery({
+  const subscriptionsQuery = useTenantQuery({
     queryKey: PLATFORM_SUBSCRIPTIONS_QUERY_KEY,
     queryFn: fetchSubscriptions,
     staleTime: 5 * 60 * 1000,

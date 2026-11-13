@@ -10,3 +10,27 @@ code,
 pre {
   font-family: var(--font-geist-mono);
 }
+
+/*
+ * Scoped print isolation: any element (e.g. a barcode label grid) marked
+ * with data-print-area="true" is the only thing that survives printing —
+ * everything else on the page, including surrounding dialog chrome, is
+ * hidden rather than printed alongside it.
+ */
+@media print {
+  body:has([data-print-area="true"]) * {
+    visibility: hidden;
+  }
+
+  body:has([data-print-area="true"]) [data-print-area="true"],
+  body:has([data-print-area="true"]) [data-print-area="true"] * {
+    visibility: visible;
+  }
+
+  [data-print-area="true"] {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+  }
+}

@@ -32,7 +32,8 @@ interface UserDialogProps {
 }
 
 interface UserFormValues {
-  email: string;
+  username: string;
+  phone?: string;
   fullName: string;
   tenantRole: TenantRole;
   roleId?: string | null;
@@ -57,7 +58,8 @@ export function UserDialog({
     formState: { errors },
   } = useForm<UserFormValues>({
     defaultValues: {
-      email: user?.email ?? '',
+      username: user?.username ?? '',
+      phone: user?.phone ?? '',
       fullName: user?.fullName ?? '',
       tenantRole: user?.tenantRole ?? TenantRole.TENANT_USER,
       roleId: user?.roleId ?? null,
@@ -69,7 +71,8 @@ export function UserDialog({
   useEffect(() => {
     if (open) {
       reset({
-        email: user?.email ?? '',
+        username: user?.username ?? '',
+        phone: user?.phone ?? '',
         fullName: user?.fullName ?? '',
         tenantRole: user?.tenantRole ?? TenantRole.TENANT_USER,
         roleId: user?.roleId ?? null,
@@ -80,8 +83,9 @@ export function UserDialog({
   const onSubmit = async (values: UserFormValues) => {
     if (mode === 'create') {
       const result = await create({
-        email: values.email,
+        username: values.username,
         fullName: values.fullName,
+        phone: values.phone || undefined,
         tenantRole: values.tenantRole,
         roleId: values.roleId || undefined,
       });
@@ -91,6 +95,7 @@ export function UserDialog({
     } else if (mode === 'edit' && user) {
       const dto: UpdateUserRequest = {};
       if (values.fullName !== user.fullName) dto.fullName = values.fullName;
+      if ((values.phone ?? '') !== (user.phone ?? '')) dto.phone = values.phone ?? '';
       if (values.tenantRole !== user.tenantRole) dto.tenantRole = values.tenantRole;
       if (values.roleId !== user.roleId) dto.roleId = values.roleId;
 
@@ -121,16 +126,23 @@ export function UserDialog({
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="username">Username</Label>
             <Input
-              id="email"
-              type="email"
-              placeholder="user@example.com"
-              aria-invalid={!!errors.email}
+              id="username"
+              autoComplete="off"
+              placeholder="e.g. ali.hamza"
+              aria-invalid={!!errors.username}
               disabled={mode === 'edit'}
-              {...register('email', { required: 'Email is required' })}
+              {...register('username', {
+                required: 'Username is required',
+                minLength: { value: 3, message: 'Username must be at least 3 characters' },
+                pattern: {
+                  value: /^[a-zA-Z0-9._-]+$/,
+                  message: 'Only letters, numbers, dots, dashes and underscores',
+                },
+              })}
             />
-            {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+            {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
           </div>
 
           <div className="space-y-1.5">
@@ -142,6 +154,11 @@ export function UserDialog({
               {...register('fullName', { required: 'Full name is required', minLength: { value: 2, message: 'Name must be at least 2 characters' } })}
             />
             {errors.fullName && <p className="text-xs text-destructive">{errors.fullName.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="phone">Phone</Label>
+            <Input id="phone" placeholder="Optional" {...register('phone')} />
           </div>
 
           <div className="space-y-1.5">

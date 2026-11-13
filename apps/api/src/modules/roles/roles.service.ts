@@ -7,12 +7,18 @@ import { UsersService } from '../users/users.service';
 import { CreateRoleDto } from './dto/create-role.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import type { Role as RoleType } from '@medicore/shared-types';
+import { PermissionAuditService } from '../users/permission-audit.service';
+import {
+  expandLegacyPermissions,
+  normalizePermissions,
+} from '../permissions/permission-definitions';
 
 @Injectable()
 export class RolesService extends TenantScopedRepository<RoleDocument> {
   constructor(
     @InjectModel(Role.name) private readonly roleModel: Model<RoleDocument>,
     private readonly usersService: UsersService,
+    private readonly auditService: PermissionAuditService,
   ) {
     super(roleModel);
   }
@@ -31,26 +37,28 @@ export class RolesService extends TenantScopedRepository<RoleDocument> {
       tenantId: new Types.ObjectId(tenantId),
       name: dto.name,
       description: dto.description,
-      allowedModules: dto.allowedModules || [],
+      allowedModules: normalizePermissions(dto.allowedModules || []),
+      permissionsVersion: 2,
       isActive: true,
     });
   }
 
   async listForTenant(tenantId: string) {
-    return this.roleModel
-      .find({ tenantId: new Types.ObjectId(tenantId) })
-      .sort({ createdAt: -1 });
+    return this.roleModel.find({ tenantId: new Types.ObjectId(tenantId) }).sort({ createdAt: -1 });
   }
 
-  async updateRole(tenantId: string, id: string, dto: UpdateRoleDto) {
+  async updateRole(tenantId: string, id: string, dto: UpdateRoleDto, actorId?: string) {
     const role = await this.findById(tenantId, id);
 
     if (!role) {
       throw new NotFoundException('Role not found');
     }
 
+    let oldKeys: string[] | undefined;
     if (dto.allowedModules !== undefined) {
-      role.allowedModules = dto.allowedModules;
+      oldKeys = this.effectiveKeys(role);
+      role.allowedModules = normalizePermissions(dto.allowedModules);
+      role.permissionsVersion = 2;
     }
 
     if (dto.name !== undefined) {
@@ -71,7 +79,18 @@ export class RolesService extends TenantScopedRepository<RoleDocument> {
       role.description = dto.description;
     }
 
-    return role.save();
+    const saved = await role.save();
+    if (oldKeys && actorId) {
+      await this.auditService.log({
+        tenantId,
+        actorId,
+        targetType: 'role',
+        targetId: id,
+        oldPermissions: oldKeys,
+        newPermissions: this.effectiveKeys(saved),
+      });
+    }
+    return saved;
   }
 
   async setStatus(tenantId: string, id: string, isActive: boolean) {
@@ -84,7 +103,6 @@ export class RolesService extends TenantScopedRepository<RoleDocument> {
     role.isActive = isActive;
     return role.save();
   }
-
 
   async deleteRole(tenantId: string, id: string) {
     const role = await this.findById(tenantId, id);
@@ -104,6 +122,13 @@ export class RolesService extends TenantScopedRepository<RoleDocument> {
     await this.deleteById(tenantId, id);
   }
 
+  /** Keys in the module-matrix vocabulary; roles saved before it are expanded on the fly. */
+  effectiveKeys(role: RoleDocument): string[] {
+    return (role.permissionsVersion ?? 1) >= 2
+      ? role.allowedModules
+      : expandLegacyPermissions(role.allowedModules);
+  }
+
   toRoleResponse(role: RoleDocument): RoleType {
     const obj = role.toObject() as any;
     return {
@@ -111,7 +136,7 @@ export class RolesService extends TenantScopedRepository<RoleDocument> {
       tenantId: obj.tenantId.toString(),
       name: obj.name,
       description: obj.description,
-      allowedModules: obj.allowedModules,
+      allowedModules: this.effectiveKeys(role),
       isActive: obj.isActive,
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt,

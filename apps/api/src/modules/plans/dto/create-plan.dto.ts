@@ -1,4 +1,13 @@
-import { IsEnum, IsInt, IsOptional, IsString, Length, Matches, Min, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { BillingInterval } from '@medicore/shared-types';
 
 export class CreatePlanDto {

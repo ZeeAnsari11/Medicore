@@ -22,7 +22,27 @@ import type { AuthenticatedUser } from '@medicore/shared-types';
 export class VendorProductsController {
   constructor(private readonly vendorsService: VendorsService) {}
 
-  @RequirePermission('vendors:read')
+  @RequirePermission('vendors:read', 'purchases:create')
+  @Get('search')
+  search(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('product') product = '',
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.vendorsService.searchVendorsByProduct(
+      user.tenantId,
+      product,
+      includeInactive === 'true',
+    );
+  }
+
+  @RequirePermission('vendors:read', 'purchases:create')
+  @Get('summary')
+  summary(@CurrentUser() user: AuthenticatedUser) {
+    return this.vendorsService.summarizeVendorsByProduct(user.tenantId);
+  }
+
+  @RequirePermission('vendors:read', 'purchases:create')
   @Get()
   async list(
     @CurrentUser() user: AuthenticatedUser,

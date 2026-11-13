@@ -1,17 +1,18 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
 import { ProductStatus } from '@medicore/shared-types';
+import { BRANCH_SCOPED } from '../../../common/tenancy/branch-scope.plugin';
 
 export type ProductDocument = HydratedDocument<Product>;
 
-/**
- * Catalog data — not branch-scoped. Only Batches (Phase 2) are per-branch;
- * a Product itself is org-wide master data.
- */
-@Schema({ timestamps: true, collection: 'products' })
+/** Branch-owned catalog data: each branch keeps its own products (and its own barcodes). */
+@Schema({ timestamps: true, collection: 'products', ...BRANCH_SCOPED })
 export class Product {
   @Prop({ required: true, type: Types.ObjectId, ref: 'Tenant', index: true })
   tenantId: Types.ObjectId;
+
+  @Prop({ required: true, type: Types.ObjectId, ref: 'Branch', index: true })
+  branchId: Types.ObjectId;
 
   @Prop({ required: true, trim: true })
   name: string;
@@ -34,14 +35,17 @@ export class Product {
   @Prop({ trim: true })
   packing?: string;
 
+  /** Trade price: the default price we sell at. */
   @Prop({ required: true, min: 0 })
-  purchasePrice: number;
+  tp: number;
 
+  /** Cost price: what we purchase at, and the floor for sale prices. */
   @Prop({ required: true, min: 0 })
-  salePrice: number;
+  cp: number;
 
-  @Prop({ min: 0 })
-  dealerPrice?: number;
+  /** Retail price printed on the pack; reference only. */
+  @Prop({ required: true, min: 0 })
+  rp: number;
 
   @Prop({ required: true, enum: ProductStatus, default: ProductStatus.ACTIVE })
   status: ProductStatus;
@@ -58,9 +62,8 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 // barcode collides with the first. A partial index scoped to "barcode is
 // actually a string" is what sparse was meant to express here.
 ProductSchema.index(
-  { tenantId: 1, barcode: 1 },
+  { tenantId: 1, branchId: 1, barcode: 1 },
   { unique: true, partialFilterExpression: { barcode: { $type: 'string' } } },
 );
-ProductSchema.index({ tenantId: 1, manufacturerId: 1 });
+ProductSchema.index({ tenantId: 1, branchId: 1, manufacturerId: 1 });
 ProductSchema.index({ tenantId: 1, categoryId: 1 });
-ProductSchema.index({ name: 'text', genericName: 'text' });

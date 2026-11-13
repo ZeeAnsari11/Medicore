@@ -40,7 +40,9 @@ export class PermissionsGuard implements CanActivate {
     }
 
     // Check if user has any of the required permissions (OR logic)
-    const hasPermission = requiredPermissions.some((required) => resolved.permissions.includes(required));
+    const hasPermission = requiredPermissions.some((required) =>
+      resolved.permissions.includes(required),
+    );
 
     if (!hasPermission) {
       throw new ForbiddenException('Insufficient permissions');

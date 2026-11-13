@@ -5,7 +5,7 @@ import { TenantStatus, SubscriptionStatus } from './enums';
 export interface CreatePlatformTenantRequest {
   tenantName: string;
   adminFullName: string;
-  adminEmail: string;
+  adminUsername: string;
 }
 
 export interface CreatePlatformTenantResponse {
@@ -21,7 +21,7 @@ export interface UpdateTenantStatusRequest {
 export interface UpdateTenantRequest {
   name: string;
   adminFullName?: string;
-  email?: string;
+  username?: string;
   password?: string;
 }
 

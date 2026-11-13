@@ -1,17 +1,31 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ProductsService } from './products.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateProductStatusDto } from './dto/update-product-status.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
+import { PermissionResolverService } from '../roles/permission-resolver.service';
+import { resolveCreateBranch } from '../../common/branch/branch-scope.util';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly permissionResolver: PermissionResolverService,
+  ) {}
 
-  @RequirePermission('products:read')
+  @RequirePermission('products:read', 'purchases:create', 'sales:create', 'inventory:adjust')
   @Get()
   async list(
     @CurrentUser() user: AuthenticatedUser,
@@ -30,7 +44,10 @@ export class ProductsController {
   @RequirePermission('products:create')
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateProductDto) {
-    const product = await this.productsService.createProduct(user.tenantId, dto);
+    const product = await this.productsService.createProduct(user.tenantId, {
+      ...dto,
+      branchId: resolveCreateBranch(user, dto.branchId),
+    });
     return this.productsService.toProductResponse(product);
   }
 
@@ -41,6 +58,11 @@ export class ProductsController {
     @Param('id') id: string,
     @Body() dto: UpdateProductDto,
   ) {
+    const changesPrices =
+      dto.tp !== undefined || dto.cp !== undefined || dto.rp !== undefined;
+    if (changesPrices && !(await this.permissionResolver.has(user, 'products:edit_prices'))) {
+      throw new ForbiddenException('You do not have permission to edit prices');
+    }
     const product = await this.productsService.updateProduct(user.tenantId, id, dto);
     return this.productsService.toProductResponse(product);
   }

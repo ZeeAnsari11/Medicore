@@ -27,7 +27,7 @@ interface EditTenantDialogProps {
 interface EditTenantFormValues {
   name: string;
   adminFullName?: string;
-  email?: string;
+  username?: string;
   password?: string;
 }
 
@@ -41,7 +41,7 @@ export function EditTenantDialog({ open, tenant, onOpenChange }: EditTenantDialo
     reset,
     formState: { errors },
   } = useForm<EditTenantFormValues>({
-    defaultValues: { name: '', adminFullName: '', email: '', password: '' },
+    defaultValues: { name: '', adminFullName: '', username: '', password: '' },
   });
 
   useEffect(() => {
@@ -52,7 +52,7 @@ export function EditTenantDialog({ open, tenant, onOpenChange }: EditTenantDialo
           reset({
             name: data.tenant.name,
             adminFullName: data.adminUser?.fullName ?? '',
-            email: data.adminUser?.email ?? '',
+            username: data.adminUser?.username ?? '',
             password: '',
           });
         })
@@ -70,7 +70,7 @@ export function EditTenantDialog({ open, tenant, onOpenChange }: EditTenantDialo
       await update(tenant.id, {
         name: values.name,
         ...(values.adminFullName && { adminFullName: values.adminFullName }),
-        ...(values.email && { email: values.email }),
+        ...(values.username && { username: values.username }),
         ...(values.password && { password: values.password }),
       });
       onOpenChange(false);
@@ -136,20 +136,20 @@ export function EditTenantDialog({ open, tenant, onOpenChange }: EditTenantDialo
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="edit-email">Admin Email</Label>
+                <Label htmlFor="edit-username">Admin Username</Label>
                 <Input
-                  id="edit-email"
-                  type="email"
-                  placeholder="Leave blank to keep current email"
-                  aria-invalid={!!errors.email}
-                  {...register('email', {
+                  id="edit-username"
+                  type="text"
+                  placeholder="Leave blank to keep current username"
+                  aria-invalid={!!errors.username}
+                  {...register('username', {
                     pattern: {
-                      value: /^[^@\s]*@?[^@\s]*\.?[^@\s]*$/,
-                      message: 'Invalid email format',
+                      value: /^[a-zA-Z0-9._-]{3,}$/,
+                      message: 'At least 3 characters: letters, numbers, dots, dashes, underscores',
                     },
                   })}
                 />
-                {errors.email && <p className="text-xs text-destructive">{errors.email.message}</p>}
+                {errors.username && <p className="text-xs text-destructive">{errors.username.message}</p>}
               </div>
 
               <div className="space-y-1.5">

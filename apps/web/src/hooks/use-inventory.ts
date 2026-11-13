@@ -1,9 +1,10 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import type { Batch, CreateBatchAdjustmentRequest, InventoryRollup } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
+import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 
 export const INVENTORY_QUERY_KEY = ['inventory'];
 export const INVENTORY_BATCHES_QUERY_KEY = ['inventory', 'batches'];
@@ -28,9 +29,9 @@ async function createAdjustment(dto: CreateBatchAdjustmentRequest): Promise<Batc
 }
 
 export function useInventory(branchId: string | null, search?: string) {
-  const queryClient = useQueryClient();
+  const queryClient = useTenantQueryClient();
 
-  const rollupQuery = useQuery({
+  const rollupQuery = useTenantQuery({
     queryKey: [...INVENTORY_QUERY_KEY, branchId, search],
     queryFn: () => fetchRollup(branchId, search),
     staleTime: 60 * 1000,
@@ -56,7 +57,7 @@ export function useInventory(branchId: string | null, search?: string) {
 }
 
 export function useProductBatches(productId: string | null, branchId: string | null) {
-  const query = useQuery({
+  const query = useTenantQuery({
     queryKey: [...INVENTORY_BATCHES_QUERY_KEY, productId, branchId],
     queryFn: () => fetchBatchesForProduct(productId!, branchId),
     enabled: !!productId,

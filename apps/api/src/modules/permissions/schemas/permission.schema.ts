@@ -34,4 +34,7 @@ export const PermissionSchema = SchemaFactory.createForClass(Permission);
 PermissionSchema.index({ key: 1 }, { unique: true, partialFilterExpression: { tenantId: null } });
 
 // For tenant-level permissions
-PermissionSchema.index({ tenantId: 1, key: 1 }, { unique: true, partialFilterExpression: { tenantId: { $type: 'objectId' } } });
+PermissionSchema.index(
+  { tenantId: 1, key: 1 },
+  { unique: true, partialFilterExpression: { tenantId: { $type: 'objectId' } } },
+);

@@ -8,6 +8,12 @@ import { CreateBranchDto } from './dto/create-branch.dto';
 import { UpdateBranchDto } from './dto/update-branch.dto';
 import type { Branch as BranchType } from '@medicore/shared-types';
 
+/** Collections that hold branch-owned data; a branch with rows in any of them cannot be deleted. */
+const BRANCH_DATA_COLLECTIONS = [
+  'sales', 'purchases', 'batches', 'stock_movements', 'customers', 'vendors', 'payments', 'expenses',
+  'journal_entries', 'sale_returns', 'purchase_returns', 'cash_receipts', 'stock_transfers',
+];
+
 @Injectable()
 export class BranchesService extends TenantScopedRepository<BranchDocument> {
   constructor(
@@ -113,6 +119,15 @@ export class BranchesService extends TenantScopedRepository<BranchDocument> {
       throw new ConflictException(
         `This branch is assigned to ${usageCount} user(s). Please reassign them first.`,
       );
+    }
+
+    // A branch with any data keeps it: deactivate it instead (readable, no new documents).
+    const [tenant, branchOid] = [new Types.ObjectId(tenantId), new Types.ObjectId(id)];
+    for (const collection of BRANCH_DATA_COLLECTIONS) {
+      const count = await this.branchModel.db.collection(collection).countDocuments({ tenantId: tenant, branchId: branchOid });
+      if (count > 0) {
+        throw new ConflictException(`This branch has ${collection.replace('_', ' ')} on record. Deactivate it instead of deleting.`);
+      }
     }
 
     await this.deleteById(tenantId, id);

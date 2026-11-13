@@ -18,6 +18,7 @@ import {
   type ColumnDef,
 } from '@medicore/ui';
 import { useCustomers } from '@/hooks/use-customers';
+import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/hooks/use-permissions';
 import { ApiError } from '@/lib/api-client';
 import { CustomerDialog } from './components/customer-dialog';
@@ -27,6 +28,7 @@ type DialogMode = 'create' | 'edit' | null;
 
 export default function CustomersPage() {
   const { customers, isLoading, error, delete: deleteCustomer, isDeleting } = useCustomers();
+  const router = useRouter();
   const { has } = usePermissions();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export default function CustomersPage() {
       {
         id: 'contact',
         header: 'Contact',
-        cell: ({ row }) => row.original.phone ?? row.original.email ?? '—',
+        cell: ({ row }) => row.original.phone || '—',
       },
       {
         accessorKey: 'isDealer',
@@ -69,11 +71,11 @@ export default function CustomersPage() {
         cell: ({ getValue }) => (getValue() ? <Badge variant="outline">Dealer</Badge> : 'Retail'),
       },
       {
-        accessorKey: 'totalDue',
+        accessorKey: 'outstandingBalance',
         header: 'Outstanding',
         cell: ({ getValue }) => {
-          const due = getValue() as number;
-          return due > 0 ? <Badge variant="warning">{due.toFixed(2)}</Badge> : due.toFixed(2);
+          const due = (getValue() as number | undefined) ?? 0;
+          return due > 0.01 ? <Badge variant="warning">{due.toFixed(2)}</Badge> : due.toFixed(2);
         },
       },
       {
@@ -89,6 +91,12 @@ export default function CustomersPage() {
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => handleOpenEdit(row.original.id)} disabled={!has('customers:update')}>
                 Edit
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => router.push(`/accounting/customer-ledger?view=ledger&party=${row.original.id}`)}
+                disabled={!has('acc_customer_ledger:read')}
+              >
+                View ledger
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => handleDelete(row.original.id)}
@@ -133,7 +141,12 @@ export default function CustomersPage() {
       ) : customers.length === 0 ? (
         <EmptyState icon={Users} title="No customers yet" description="Add a customer to start recording sales" />
       ) : (
-        <DataTable columns={columns} data={customers} searchPlaceholder="Search customers..." />
+        <DataTable
+          columns={columns}
+          data={customers}
+          searchPlaceholder="Search customers..."
+          onRowClick={(row) => has('customers:update') && handleOpenEdit(row.id)}
+        />
       )}
 
       {dialogMode && (
