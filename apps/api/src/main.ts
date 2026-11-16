@@ -21,8 +21,9 @@ async function bootstrap() {
   });
 
   const port = config.get<number>('port')!;
-  await app.listen(port);
+  const host = '0.0.0.0';
+  await app.listen(port, host);
 
-  console.log(`Medicore API listening on http://localhost:${port}/api`);
+  console.log(`Medicore API listening on http://${host}:${port}/api`);
 }
 void bootstrap();

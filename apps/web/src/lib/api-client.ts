@@ -5,7 +5,11 @@ import { clearBrowserStorage } from '@/lib/session-reset';
 
 export { ApiError } from '@medicore/api-client';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+// Inlined at build time, so it must be set in the build environment (e.g. Vercel project settings).
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+if (!API_BASE_URL) {
+  throw new Error('NEXT_PUBLIC_API_URL is not set. Copy apps/web/.env.example to .env.local, or set it in your host.');
+}
 const TOKEN_STORAGE_KEY = 'medicore_access_token';
 // Impersonation lives in sessionStorage so it stays in its own tab and never overwrites the super admin's session.
 export const IMPERSONATION_TOKEN_KEY = 'medicore_impersonation_token';
