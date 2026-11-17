@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'crypto';
@@ -10,9 +15,12 @@ import { TenantRole, UserStatus, SystemRole } from '@medicore/shared-types';
 import type { User as UserType } from '@medicore/shared-types';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { runWithoutTenantScope } from '../../common/tenancy/tenant-context';
 
 const SALT_ROUNDS = 10;
 const USERNAME_TAKEN_MESSAGE = 'A user with this username already exists in this organization.';
+const CREDENTIALS_TAKEN_MESSAGE =
+  'Another organization already uses this username with this password. Choose a different password.';
 
 const isDuplicateKeyError = (err: unknown): boolean => (err as { code?: number })?.code === 11000;
 
@@ -47,6 +55,23 @@ export class UsersService {
       const branch = await this.branchModel.exists({ _id: new Types.ObjectId(branchId), tenantId: tenantOid });
       if (!branch) throw new NotFoundException('Branch not found');
     }
+  }
+
+  /**
+   * Whether an account in any tenant (other than `excludeUserId`) already has this username AND password.
+   * Login resolves the account from those two alone, so a shared pair would force an organization code.
+   */
+  private async isCredentialPairTaken(
+    username: string,
+    password: string,
+    excludeUserId?: Types.ObjectId,
+  ) {
+    const sameUsername = await runWithoutTenantScope(() => this.findAllByUsername(username));
+    for (const other of sameUsername) {
+      if (excludeUserId && other._id.equals(excludeUserId)) continue;
+      if (await bcrypt.compare(password, other.passwordHash)) return true;
+    }
+    return false;
   }
 
   /** Every account using this username, across tenants. Login only (pre-auth); callers must be in a bypass scope. */
@@ -111,7 +136,10 @@ export class UsersService {
     }
     await this.assertRoleAndBranchInTenant(params.tenantId, params.roleId, params.branchId);
 
-    const temporaryPassword = this.generateTemporaryPassword();
+    let temporaryPassword = this.generateTemporaryPassword();
+    while (await this.isCredentialPairTaken(params.username, temporaryPassword)) {
+      temporaryPassword = this.generateTemporaryPassword();
+    }
     const passwordHash = await bcrypt.hash(temporaryPassword, SALT_ROUNDS);
 
     let user: UserDocument;
@@ -245,6 +273,18 @@ export class UsersService {
 
     if (!user) {
       throw new NotFoundException('Admin user not found for this tenant');
+    }
+
+    // Only a new password can be checked against other organizations (the current one is stored hashed).
+    const nextUsername = updates.username?.toLowerCase() ?? user.username;
+    if (nextUsername !== user.username && updates.password === undefined) {
+      throw new BadRequestException('Set a new admin password when changing the admin username.');
+    }
+    if (
+      updates.password !== undefined &&
+      (await this.isCredentialPairTaken(nextUsername, updates.password, user._id))
+    ) {
+      throw new ConflictException(CREDENTIALS_TAKEN_MESSAGE);
     }
 
     if (updates.username !== undefined) {

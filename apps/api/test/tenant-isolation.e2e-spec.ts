@@ -206,6 +206,30 @@ describe('tenant isolation (e2e)', () => {
     });
   });
 
+  describe('tenant admin username + password is unique across organizations', () => {
+    it('two tenants may share an admin username, but never username and password together', async () => {
+      const platform = { token: env.platformToken };
+      const newTenant = async (tenantName: string) =>
+        (await api().post('/api/platform/tenants').set(auth(platform)).send({ tenantName, adminFullName: 'Same Admin', adminUsername: 'same-admin' }).expect(201)).body;
+      const C = await newTenant('Gamma Pharmacy');
+      const D = await newTenant('Delta Pharmacy');
+      expect(C.temporaryPassword).not.toBe(D.temporaryPassword);
+
+      const setAdmin = (t: any, body: object) => api().patch(`/api/platform/tenants/${t.tenant.id}`).set(auth(platform)).send({ name: t.tenant.name, ...body });
+      await setAdmin(C, { username: 'same-admin', password: 'Shared#12345' }).expect(200);
+      const clash = await setAdmin(D, { username: 'same-admin', password: 'Shared#12345' }).expect(409);
+      expect(clash.body.message).toMatch(/already uses this username with this password/);
+
+      // A username change can only be checked with a new password, so one is required.
+      await setAdmin(D, { username: 'renamed-admin' }).expect(400);
+      await setAdmin(D, { username: 'renamed-admin', password: 'Other#12345' }).expect(200);
+
+      // Exactly one account matches, so no organization code is needed.
+      const login = await api().post('/api/auth/login').send({ username: 'same-admin', password: 'Shared#12345' }).expect(200);
+      expect(login.body.user.tenantId).toBe(C.tenant.id);
+    });
+  });
+
   describe('client-supplied tenantId is ignored or rejected', () => {
     it('forbidNonWhitelisted rejects tenantId in the body', async () => {
       await api().post('/api/customers').set(auth(A)).send({ name: 'Sneaky', tenantId: B.tenantId }).expect(400);
