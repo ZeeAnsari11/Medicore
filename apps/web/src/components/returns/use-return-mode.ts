@@ -42,7 +42,8 @@ export function useReturnMode(input: Doc, branchId: string | null) {
   const { create, isCreating } = useCreateDocumentReturn(kind, doc.id, branchId);
 
   const [active, setActive] = useState(false);
-  const [qty, setQty] = useState<Record<string, number>>({});
+  // A key present means the row is ticked; null while its qty box is being retyped (empty).
+  const [qty, setQty] = useState<Record<string, number | null>>({});
   const [condition, setCondition] = useState<Record<string, ReturnCondition>>({});
   const [reasonCode, setReasonCode] = useState<ReturnReasonCode>(ReturnReasonCode.OTHER);
   const [notes, setNotes] = useState('');
@@ -105,12 +106,13 @@ export function useReturnMode(input: Doc, branchId: string | null) {
 
   const selectable = rows.filter((r) => r.returnable > 0);
   const qtyOf = (r: ReturnRow) => qty[r.key] ?? 0;
-  const ticked = (r: ReturnRow) => qtyOf(r) > 0;
+  const ticked = (r: ReturnRow) => r.key in qty;
+  const qtyInput = (r: ReturnRow) => qty[r.key] ?? '';
 
   const allFull = selectable.length > 0 && selectable.every((r) => qtyOf(r) === r.returnable);
   const headerState: boolean | 'indeterminate' = allFull
     ? true
-    : selectable.some((r) => qtyOf(r) > 0)
+    : selectable.some(ticked)
       ? 'indeterminate'
       : false;
 
@@ -123,9 +125,17 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     setMethod(PaymentMethod.CASH);
   };
 
-  const toggle = (r: ReturnRow) => setQty({ ...qty, [r.key]: ticked(r) ? 0 : r.returnable });
-  const setRowQty = (r: ReturnRow, n: number) =>
-    setQty({ ...qty, [r.key]: Number.isFinite(n) ? n : 0 });
+  const toggle = (r: ReturnRow) => {
+    const next = { ...qty };
+    if (ticked(r)) delete next[r.key];
+    else next[r.key] = r.returnable;
+    setQty(next);
+  };
+  // Clearing the box keeps the row ticked; an empty or zero qty is flagged as invalid instead.
+  const setRowQty = (r: ReturnRow, raw: string) => {
+    const n = Number(raw);
+    setQty({ ...qty, [r.key]: raw === '' || !Number.isFinite(n) ? null : n });
+  };
   const toggleAll = () =>
     setQty(allFull ? {} : Object.fromEntries(selectable.map((r) => [r.key, r.returnable])));
 
@@ -139,7 +149,7 @@ export function useReturnMode(input: Doc, branchId: string | null) {
   const refund = mode === ReturnSettlementMode.REFUND ? excess : 0;
   const credit = round2(excess - refund);
 
-  const invalid = rows.some((r) => qtyOf(r) !== 0 && (qtyOf(r) < 1 || qtyOf(r) > r.returnable + 0.0001));
+  const invalid = rows.some((r) => ticked(r) && (qtyOf(r) < 1 || qtyOf(r) > r.returnable + 0.0001));
   const canConfirm = rows.some(ticked) && !invalid && !isCreating;
 
   const submit = async (chosen: ReturnRow[], qtyOf: (r: ReturnRow) => number) => {
@@ -174,7 +184,7 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     setActive(false);
   };
 
-  const confirm = () => submit(rows.filter(ticked), (r) => qty[r.key]);
+  const confirm = () => submit(rows.filter(ticked), qtyOf);
 
   /** Returns everything still returnable on the document in one go (default ADJUST settlement). */
   const fullReturn = () => submit(selectable, (r) => r.returnable);
@@ -189,6 +199,7 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     },
     rows,
     qtyOf,
+    qtyInput,
     ticked,
     amountOf,
     toggle,

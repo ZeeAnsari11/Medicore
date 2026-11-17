@@ -68,8 +68,8 @@ export function ReturnTable({ ret }: { ret: ReturnMode }) {
                       max={r.returnable}
                       step="any"
                       disabled={!ret.ticked(r)}
-                      value={ret.ticked(r) ? ret.qtyOf(r) : ''}
-                      onChange={(e) => ret.setRowQty(r, Number(e.target.value))}
+                      value={ret.qtyInput(r)}
+                      onChange={(e) => ret.setRowQty(r, e.target.value)}
                     />
                   )}
                 </TableCell>
