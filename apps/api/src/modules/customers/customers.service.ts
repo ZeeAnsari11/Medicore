@@ -52,7 +52,11 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
       throw new NotFoundException('Customer not found');
     }
 
-    Object.assign(customer, dto);
+    // The DTO instance declares every field (undefined when absent from the body): apply only what was sent.
+    Object.assign(
+      customer,
+      Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)),
+    );
     return customer.save();
   }
 
