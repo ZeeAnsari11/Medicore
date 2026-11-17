@@ -4,6 +4,9 @@ import { SystemRole, TenantRole, UserStatus } from './enums';
 export interface User extends TenantOwnedEntity {
   username: string;
   phone?: string;
+  territory: string;
+  city: string;
+  address: string;
   fullName: string;
   status: UserStatus;
   systemRole?: SystemRole;
@@ -30,10 +33,13 @@ export interface AuthenticatedUser {
 export interface CreateUserRequest {
   username: string;
   phone?: string;
+  territory: string;
+  city: string;
+  address: string;
   fullName: string;
   tenantRole: TenantRole;
   roleId?: string;
-  branchId?: string;
+  branchId: string;
 }
 
 export interface CreateUserResponse extends User {
@@ -43,9 +49,12 @@ export interface CreateUserResponse extends User {
 export interface UpdateUserRequest {
   fullName?: string;
   phone?: string;
+  territory?: string;
+  city?: string;
+  address?: string;
   tenantRole?: TenantRole;
   roleId?: string | null;
-  branchId?: string | null;
+  branchId?: string;
 }
 
 export interface UpdateUserStatusRequest {

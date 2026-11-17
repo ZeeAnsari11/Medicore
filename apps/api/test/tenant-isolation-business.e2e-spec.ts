@@ -480,7 +480,7 @@ describe('tenant isolation: business modules (e2e)', () => {
     });
 
     it('has the full admin access of the impersonated user (no extra restrictions)', async () => {
-      const created = (await api().post('/api/users').set(auth(imp)).send({ username: 'newuser', fullName: 'New User', tenantRole: 'TENANT_USER' }).expect(201)).body;
+      const created = (await api().post('/api/users').set(auth(imp)).send({ username: 'newuser', fullName: 'New User', territory: 'North', city: 'Lahore', address: '1 Mall Road', branchId: a.branchId, tenantRole: 'TENANT_USER' }).expect(201)).body;
       await api().patch(`/api/users/${created.user?.id ?? created.id}`).set(auth(imp)).send({ fullName: 'Renamed User' }).expect(200);
       await api().post('/api/roles').set(auth(imp)).send({ name: 'Cashier Role', allowedModules: [] }).expect(201);
       await api().delete(`/api/users/${created.user?.id ?? created.id}`).set(auth(imp)).expect(204);

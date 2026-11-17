@@ -8,6 +8,8 @@ import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
 let env: TestEnv;
 let app: INestApplication;
 const api = () => env.api();
+// Required on every new user.
+const LOCATION = { territory: 'North', city: 'Lahore', address: '1 Mall Road' };
 
 describe('tenant isolation (e2e)', () => {
   let A: TenantCtx;
@@ -88,9 +90,9 @@ describe('tenant isolation (e2e)', () => {
     let aliB: any;
 
     it('the same username can exist in both tenants', async () => {
-      const body = { username: 'alihamza', fullName: 'Ali Hamza', tenantRole: 'TENANT_USER' };
-      aliA = (await api().post('/api/users').set(auth(A)).send(body).expect(201)).body;
-      aliB = (await api().post('/api/users').set(auth(B)).send(body).expect(201)).body;
+      const body = { username: 'alihamza', fullName: 'Ali Hamza', ...LOCATION, tenantRole: 'TENANT_USER' };
+      aliA = (await api().post('/api/users').set(auth(A)).send({ ...body, branchId: (A as any).branchId }).expect(201)).body;
+      aliB = (await api().post('/api/users').set(auth(B)).send({ ...body, branchId: (B as any).branchId }).expect(201)).body;
       expect(aliA.user?.tenantId ?? aliA.tenantId).toBe(A.tenantId);
       expect(aliB.user?.tenantId ?? aliB.tenantId).toBe(B.tenantId);
     });
@@ -99,7 +101,7 @@ describe('tenant isolation (e2e)', () => {
       const res = await api()
         .post('/api/users')
         .set(auth(A))
-        .send({ username: 'alihamza', fullName: 'Ali Again', tenantRole: 'TENANT_USER' })
+        .send({ username: 'alihamza', fullName: 'Ali Again', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' })
         .expect(409);
       expect(res.body.message).toBe('A user with this username already exists in this organization.');
     });
@@ -134,22 +136,73 @@ describe('tenant isolation (e2e)', () => {
 
   describe('email and phone fields', () => {
     it('email is no longer accepted on users, vendors, manufacturers or customers', async () => {
-      await api().post('/api/users').set(auth(A)).send({ username: 'emailer', email: 'e@x.com', fullName: 'Emailer', tenantRole: 'TENANT_USER' }).expect(400);
+      await api().post('/api/users').set(auth(A)).send({ username: 'emailer', email: 'e@x.com', fullName: 'Emailer', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(400);
       await api().post('/api/vendors').set(auth(A)).send({ branchId: (A as any).branchId, company: 'Mailco', contactEmail: 'e@x.com' }).expect(400);
       await api().post('/api/manufacturers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Mailfab', contactEmail: 'e@x.com' }).expect(400);
       await api().post('/api/customers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Mail Cust', email: 'e@x.com' }).expect(400);
     });
     it('phone is optional and stored', async () => {
-      const withPhone = (await api().post('/api/users').set(auth(A)).send({ username: 'phoneuser', phone: '0300-1234567', fullName: 'Phone User', tenantRole: 'TENANT_USER' }).expect(201)).body;
+      const withPhone = (await api().post('/api/users').set(auth(A)).send({ username: 'phoneuser', phone: '0300-1234567', fullName: 'Phone User', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(201)).body;
       expect(withPhone.user?.phone ?? withPhone.phone).toBe('0300-1234567');
-      await api().post('/api/users').set(auth(A)).send({ username: 'nophone', fullName: 'No Phone', tenantRole: 'TENANT_USER' }).expect(201);
+      await api().post('/api/users').set(auth(A)).send({ username: 'nophone', fullName: 'No Phone', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(201);
       await api().post('/api/vendors').set(auth(A)).send({ branchId: (A as any).branchId, company: 'Phone Vendor', contactPhone: '021-111' }).expect(201);
       await api().post('/api/manufacturers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Phone Maker', contactPhone: '021-222' }).expect(201);
       await api().post('/api/customers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Phone Customer' }).expect(201);
     });
     it('usernames must be well formed', async () => {
-      await api().post('/api/users').set(auth(A)).send({ username: 'a b', fullName: 'Bad Name', tenantRole: 'TENANT_USER' }).expect(400);
-      await api().post('/api/users').set(auth(A)).send({ username: 'ab', fullName: 'Bad Name', tenantRole: 'TENANT_USER' }).expect(400);
+      await api().post('/api/users').set(auth(A)).send({ username: 'a b', fullName: 'Bad Name', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(400);
+      await api().post('/api/users').set(auth(A)).send({ username: 'ab', fullName: 'Bad Name', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(400);
+    });
+  });
+
+  describe('territory, city and address', () => {
+    const base = () => ({ fullName: 'Field Rep', tenantRole: 'TENANT_USER', branchId: (A as any).branchId });
+
+    it('are stored on create and returned by the list', async () => {
+      const created = (await api().post('/api/users').set(auth(A)).send({ ...base(), ...LOCATION, username: 'fieldrep' }).expect(201)).body;
+      expect(created).toMatchObject(LOCATION);
+      const list = (await api().get('/api/users').set(auth(A)).expect(200)).body;
+      expect(list.find((u: any) => u.id === created.id)).toMatchObject(LOCATION);
+    });
+
+    it('are each required and cannot be blank on create', async () => {
+      for (const field of Object.keys(LOCATION)) {
+        // undefined is dropped when the body is serialised, so the field is missing.
+        await api().post('/api/users').set(auth(A)).send({ ...base(), ...LOCATION, [field]: undefined, username: `missing-${field}` }).expect(400);
+        await api().post('/api/users').set(auth(A)).send({ ...base(), ...LOCATION, [field]: '   ', username: `blank-${field}` }).expect(400);
+      }
+    });
+
+    it('are required by the schema, not just the API', async () => {
+      const { runWithoutTenantScope } = require('../src/common/tenancy/tenant-context');
+      const userModel = app.get<Model<any>>(getModelToken('User'));
+      await expect(
+        runWithoutTenantScope(async () =>
+          userModel.create({ tenantId: new Types.ObjectId(A.tenantId), username: 'nolocation', passwordHash: 'x', fullName: 'No Location' }),
+        ),
+      ).rejects.toThrow(/territory.*required|city.*required|address.*required/i);
+    });
+
+    it('branch is required on create and cannot be cleared on edit', async () => {
+      await api().post('/api/users').set(auth(A)).send({ ...base(), ...LOCATION, branchId: undefined, username: 'nobranch' }).expect(400);
+      await api().post('/api/users').set(auth(A)).send({ ...base(), ...LOCATION, branchId: '', username: 'blankbranch' }).expect(400);
+      const created = (await api().post('/api/users').set(auth(A)).send({ ...base(), ...LOCATION, username: 'branchrep' }).expect(201)).body;
+      expect(created.branchId).toBe((A as any).branchId);
+      await api().patch(`/api/users/${created.id}`).set(auth(A)).send({ branchId: null }).expect(400);
+      await api().patch(`/api/users/${created.id}`).set(auth(A)).send({ branchId: '' }).expect(400);
+    });
+
+    it('tenant admins start as Unassigned and can be given a real location, but not a blank one', async () => {
+      const list = (await api().get('/api/users').set(auth(A)).expect(200)).body;
+      const admin = list.find((u: any) => u.username === A.adminUsername);
+      expect(admin).toMatchObject({ territory: 'Unassigned', city: 'Unassigned', address: 'Unassigned' });
+
+      const renamed = (await api().patch(`/api/users/${admin.id}`).set(auth(A)).send({ fullName: 'Alpha Owner' }).expect(200)).body;
+      expect(renamed).toMatchObject({ fullName: 'Alpha Owner', territory: 'Unassigned' });
+
+      const located = (await api().patch(`/api/users/${admin.id}`).set(auth(A)).send({ territory: ' South ' }).expect(200)).body;
+      expect(located.territory).toBe('South');
+      await api().patch(`/api/users/${admin.id}`).set(auth(A)).send({ territory: '' }).expect(400);
     });
   });
 
@@ -161,7 +214,7 @@ describe('tenant isolation (e2e)', () => {
       await api()
         .post('/api/users')
         .set(auth(A))
-        .send({ username: 'xavier', fullName: 'Xavier', tenantRole: 'TENANT_USER', branchId: ids.branchesB })
+        .send({ username: 'xavier', fullName: 'Xavier', ...LOCATION, tenantRole: 'TENANT_USER', branchId: ids.branchesB })
         .expect(404);
     });
   });

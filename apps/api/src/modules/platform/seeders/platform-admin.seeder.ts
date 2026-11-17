@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
 import { TenantsService } from '../../tenants/tenants.service';
 import { UsersService } from '../../users/users.service';
+import { UNASSIGNED_LOCATION } from '../../users/schemas/user.schema';
 import { SystemRole, TenantRole, TenantStatus } from '@medicore/shared-types';
 
 import { runWithoutTenantScope } from '../../../common/tenancy/tenant-context';
@@ -53,6 +54,7 @@ export class PlatformAdminSeeder implements OnApplicationBootstrap {
       username,
       passwordHash,
       fullName: 'Platform Administrator',
+      ...UNASSIGNED_LOCATION,
       tenantRole: TenantRole.TENANT_SUPER_ADMIN,
       systemRole: SystemRole.SUPER_ADMIN,
     });

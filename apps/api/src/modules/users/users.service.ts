@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
-import { User, UserDocument } from './schemas/user.schema';
+import { User, UserDocument, UNASSIGNED_LOCATION } from './schemas/user.schema';
 import { Role, RoleDocument } from '../roles/schemas/role.schema';
 import { Branch, BranchDocument } from '../branches/schemas/branch.schema';
 import { TenantRole, UserStatus, SystemRole } from '@medicore/shared-types';
@@ -21,6 +21,9 @@ export interface CreateUserInput {
   username: string;
   passwordHash: string;
   fullName: string;
+  territory: string;
+  city: string;
+  address: string;
   tenantRole: TenantRole;
   systemRole?: SystemRole;
 }
@@ -91,6 +94,9 @@ export class UsersService {
     username: string;
     fullName: string;
     phone?: string;
+    territory: string;
+    city: string;
+    address: string;
     tenantRole: TenantRole;
     roleId?: string;
     branchId?: string;
@@ -115,6 +121,9 @@ export class UsersService {
         username: params.username.toLowerCase(),
         fullName: params.fullName,
         phone: params.phone,
+        territory: params.territory,
+        city: params.city,
+        address: params.address,
         passwordHash,
         tenantRole: params.tenantRole,
         roleId: params.roleId ? new Types.ObjectId(params.roleId) : undefined,
@@ -138,6 +147,9 @@ export class UsersService {
       username: dto.username,
       fullName: dto.fullName,
       phone: dto.phone,
+      territory: dto.territory,
+      city: dto.city,
+      address: dto.address,
       tenantRole: dto.tenantRole,
       roleId: dto.roleId,
       branchId: dto.branchId,
@@ -149,6 +161,7 @@ export class UsersService {
       tenantId,
       username: input.username,
       fullName: input.fullName,
+      ...UNASSIGNED_LOCATION,
       tenantRole: TenantRole.TENANT_SUPER_ADMIN,
     });
   }
@@ -184,6 +197,15 @@ export class UsersService {
     }
     if (dto.phone !== undefined) {
       user.phone = dto.phone || undefined;
+    }
+    if (dto.territory !== undefined) {
+      user.territory = dto.territory;
+    }
+    if (dto.city !== undefined) {
+      user.city = dto.city;
+    }
+    if (dto.address !== undefined) {
+      user.address = dto.address;
     }
 
     const isSelf = actorId === id;
@@ -350,6 +372,9 @@ export class UsersService {
       tenantId: obj.tenantId.toString(),
       username: obj.username,
       phone: obj.phone,
+      territory: obj.territory,
+      city: obj.city,
+      address: obj.address,
       fullName: obj.fullName,
       status: obj.status,
       systemRole: obj.systemRole,

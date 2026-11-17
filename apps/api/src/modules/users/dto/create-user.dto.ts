@@ -1,6 +1,8 @@
-import { IsString, MinLength, IsEnum, IsOptional, IsMongoId, MaxLength, Matches } from 'class-validator';
+import { IsString, MinLength, IsEnum, IsOptional, IsMongoId, MaxLength, Matches, IsNotEmpty } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { TenantRole } from '@medicore/shared-types';
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class CreateUserDto {
   @IsString()
@@ -18,6 +20,24 @@ export class CreateUserDto {
   @MaxLength(30)
   phone?: string;
 
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  territory: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(100)
+  city: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  address: string;
+
   @IsEnum(TenantRole)
   tenantRole: TenantRole;
 
@@ -26,8 +46,6 @@ export class CreateUserDto {
   @IsMongoId()
   roleId?: string;
 
-  @Transform(({ value }) => (value === '' ? undefined : value))
-  @IsOptional()
-  @IsMongoId()
-  branchId?: string;
+  @IsMongoId({ message: 'branchId is required' })
+  branchId: string;
 }

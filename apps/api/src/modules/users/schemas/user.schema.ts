@@ -4,6 +4,13 @@ import { SystemRole, TenantRole, UserStatus } from '@medicore/shared-types';
 
 export type UserDocument = HydratedDocument<User>;
 
+/** Location for accounts created outside the user form (tenant admins, platform admin, backfilled users). */
+export const UNASSIGNED_LOCATION = {
+  territory: 'Unassigned',
+  city: 'Unassigned',
+  address: 'Unassigned',
+};
+
 @Schema({ timestamps: true, collection: 'users' })
 export class User {
   @Prop({ required: true, type: Types.ObjectId, ref: 'Tenant', index: true })
@@ -18,6 +25,16 @@ export class User {
 
   @Prop({ trim: true })
   phone?: string;
+
+  // Users created before these fields existed are backfilled by scripts/user-location-backfill.ts.
+  @Prop({ required: true, trim: true })
+  territory: string;
+
+  @Prop({ required: true, trim: true })
+  city: string;
+
+  @Prop({ required: true, trim: true })
+  address: string;
 
   @Prop({ required: true })
   passwordHash: string;

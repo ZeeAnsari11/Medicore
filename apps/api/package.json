@@ -25,6 +25,7 @@
     "migrate:indexes": "ts-node scripts/index-audit.ts",
     "migrate:tenant-isolation": "ts-node scripts/tenant-isolation-migration.ts",
     "migrate:branch-backfill": "ts-node scripts/branch-backfill-migration.ts",
+    "migrate:user-location": "ts-node scripts/user-location-backfill.ts",
     "migrate:branch-indexes": "ts-node scripts/branch-indexes-migration.ts",
     "migrate:normalize-branch-ids": "ts-node scripts/normalize-branch-ids.ts",
     "migrate:order-booker-backfill": "ts-node scripts/order-booker-backfill.ts",

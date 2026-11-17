@@ -5,13 +5,23 @@ import { EmptyState } from '@/components/layout/empty-state';
 import { Button, Alert } from '@medicore/ui';
 import { useUsers } from '@/hooks/use-users';
 import { useRoles } from '@/hooks/use-roles';
+import { useBranches } from '@/hooks/use-branches';
 import { usePermissions } from '@/hooks/use-permissions';
 import { UsersTable } from './components/users-table';
 import { TenantRole } from '@medicore/shared-types';
 
+const LOCATION_FIELDS = [
+  { name: 'territory', label: 'Territory', placeholder: 'e.g. Lahore North' },
+  { name: 'city', label: 'City', placeholder: 'e.g. Lahore' },
+  { name: 'address', label: 'Address', placeholder: 'Street, area' },
+] as const;
+
+const EMPTY_LOCATION = { territory: '', city: '', address: '' };
+
 function UsersPage() {
   const { users, isLoading, error, create, update } = useUsers();
   const { roles } = useRoles();
+  const { branches } = useBranches();
   const { isAdmin } = usePermissions();
 
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -24,19 +34,36 @@ function UsersPage() {
   // Form state
   const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
+  const [location, setLocation] = useState(EMPTY_LOCATION);
   const [fullName, setFullName] = useState('');
   const [tenantRole, setTenantRole] = useState<TenantRole>(TenantRole.TENANT_USER);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [branchId, setBranchId] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  const validateLocationAndBranch = () => {
+    if (!branchId) {
+      setCreateError('Branch is required');
+      return false;
+    }
+    const missing = LOCATION_FIELDS.find(({ name }) => !location[name].trim());
+    if (missing) {
+      setCreateError(`${missing.label} is required`);
+      return false;
+    }
+    return true;
+  };
+
   const handleOpenCreate = () => {
     setUsername('');
     setPhone('');
+    setLocation(EMPTY_LOCATION);
     setFullName('');
     setTenantRole(TenantRole.TENANT_USER);
     setSelectedRoleId(null);
+    setBranchId('');
     setCreateError(null);
     setShowCreateModal(true);
   };
@@ -45,9 +72,11 @@ function UsersPage() {
     setShowCreateModal(false);
     setUsername('');
     setPhone('');
+    setLocation(EMPTY_LOCATION);
     setFullName('');
     setTenantRole(TenantRole.TENANT_USER);
     setSelectedRoleId(null);
+    setBranchId('');
     setCreateError(null);
   };
 
@@ -57,9 +86,11 @@ function UsersPage() {
       setEditingUserId(userId);
       setUsername(user.username);
       setPhone(user.phone ?? '');
+      setLocation({ territory: user.territory ?? '', city: user.city ?? '', address: user.address ?? '' });
       setFullName(user.fullName);
       setTenantRole(user.tenantRole);
       setSelectedRoleId(user.roleId || null);
+      setBranchId(user.branchId ?? '');
       setCreateError(null);
       setShowEditModal(true);
     }
@@ -70,9 +101,11 @@ function UsersPage() {
     setEditingUserId(null);
     setUsername('');
     setPhone('');
+    setLocation(EMPTY_LOCATION);
     setFullName('');
     setTenantRole(TenantRole.TENANT_USER);
     setSelectedRoleId(null);
+    setBranchId('');
     setCreateError(null);
   };
 
@@ -81,6 +114,8 @@ function UsersPage() {
       setCreateError('Full name is required');
       return;
     }
+
+    if (!validateLocationAndBranch()) return;
 
     setIsUpdating(true);
     setCreateError(null);
@@ -91,6 +126,10 @@ function UsersPage() {
         phone: phone.trim(),
         tenantRole,
       };
+      for (const { name } of LOCATION_FIELDS) {
+        payload[name] = location[name].trim();
+      }
+      payload.branchId = branchId;
 
       if (selectedRoleId && selectedRoleId.trim()) {
         payload.roleId = selectedRoleId;
@@ -120,6 +159,8 @@ function UsersPage() {
       return;
     }
 
+    if (!validateLocationAndBranch()) return;
+
     setIsCreating(true);
     setCreateError(null);
 
@@ -128,6 +169,10 @@ function UsersPage() {
         username: username.trim(),
         fullName: fullName.trim(),
         tenantRole,
+        territory: location.territory.trim(),
+        city: location.city.trim(),
+        address: location.address.trim(),
+        branchId,
       };
       if (phone.trim()) payload.phone = phone.trim();
 
@@ -236,6 +281,27 @@ function UsersPage() {
 
             {/* Form */}
             <div className="space-y-4">
+              {/* Branch */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Branch *</label>
+                <select
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                >
+                  <option value="" disabled>
+                    {branches.length ? '-- Select a branch --' : 'No branches yet: create one first'}
+                  </option>
+                  {branches
+                    .filter((b) => b.isActive)
+                    .map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
               {/* Username */}
               <div>
                 <label className="block text-sm font-medium mb-2">Username *</label>
@@ -271,6 +337,19 @@ function UsersPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
+
+              {LOCATION_FIELDS.map(({ name, label, placeholder }) => (
+                <div key={name}>
+                  <label className="block text-sm font-medium mb-2">{label} *</label>
+                  <input
+                    type="text"
+                    value={location[name]}
+                    onChange={(e) => setLocation((prev) => ({ ...prev, [name]: e.target.value }))}
+                    placeholder={placeholder}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                  />
+                </div>
+              ))}
 
               {/* Tenant Role */}
               <div>
@@ -448,6 +527,27 @@ function UsersPage() {
 
             {/* Form */}
             <div className="space-y-4">
+              {/* Branch */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Branch *</label>
+                <select
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                >
+                  <option value="" disabled>
+                    {branches.length ? '-- Select a branch --' : 'No branches yet: create one first'}
+                  </option>
+                  {branches
+                    .filter((b) => b.isActive)
+                    .map((branch) => (
+                      <option key={branch.id} value={branch.id}>
+                        {branch.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
               {/* Username (read-only) */}
               <div>
                 <label className="block text-sm font-medium mb-2">Username</label>
@@ -483,6 +583,19 @@ function UsersPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
+
+              {LOCATION_FIELDS.map(({ name, label, placeholder }) => (
+                <div key={name}>
+                  <label className="block text-sm font-medium mb-2">{label} *</label>
+                  <input
+                    type="text"
+                    value={location[name]}
+                    onChange={(e) => setLocation((prev) => ({ ...prev, [name]: e.target.value }))}
+                    placeholder={placeholder}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900 dark:border-slate-700"
+                  />
+                </div>
+              ))}
 
               {/* Tenant Role */}
               <div>

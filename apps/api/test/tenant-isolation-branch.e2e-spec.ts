@@ -51,6 +51,9 @@ describe('branch separation (e2e)', () => {
     const created = await post(as(A), 'users', {
       username: 'clerk-k',
       fullName: 'Clerk Kasur',
+      territory: 'Kasur',
+      city: 'Kasur',
+      address: '1 Main Bazaar',
       tenantRole: 'TENANT_USER',
       roleId: role.id,
       branchId: K,
