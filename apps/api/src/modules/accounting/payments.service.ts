@@ -391,6 +391,132 @@ export class PaymentsService {
     }
   }
 
+  /** Ids among `paymentIds` whose payment still exists (not voided). */
+  async livePaymentIds(
+    tenantId: string,
+    paymentIds: string[],
+    session?: ClientSession,
+  ): Promise<Set<string>> {
+    const rows = await this.paymentModel
+      .find({ _id: { $in: paymentIds }, tenantId: new Types.ObjectId(tenantId), deletedAt: null })
+      .select('_id')
+      .session(session ?? null)
+      .lean();
+    return new Set(rows.map((r) => String(r._id)));
+  }
+
+  /**
+   * In-place edit of a cash-receipt payment (a customer payment fully applied to one sale): new amount and/or date
+   * on the same Payment and the same ledger entry. Returns the previous amount. The invoice's paid total is
+   * adjusted separately with `adjustSalePaid`.
+   */
+  async editReceiptPayment(
+    tenantId: string,
+    branchId: string,
+    paymentId: string,
+    change: { amount: number; paymentDate?: Date },
+    session: ClientSession,
+  ): Promise<{ previousAmount: number; invoiceId: string }> {
+    const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session);
+    const previousAmount = payment.amount;
+    payment.amount = change.amount;
+    payment.allocations[0].amount = change.amount;
+    payment.markModified('allocations');
+    if (change.paymentDate) payment.paymentDate = change.paymentDate;
+    await payment.save({ session });
+    await this.postingService.editReceiptPaymentEntry(
+      tenantId,
+      paymentId,
+      change.amount,
+      change.paymentDate,
+      session,
+    );
+    return { previousAmount, invoiceId: payment.allocations[0].invoiceId };
+  }
+
+  /** Removes a cash-receipt payment and its ledger entry in place (soft delete). Returns what it had applied. */
+  async removeReceiptPayment(
+    tenantId: string,
+    branchId: string,
+    paymentId: string,
+    session: ClientSession,
+  ): Promise<{ previousAmount: number; invoiceId: string }> {
+    const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session);
+    payment.deletedAt = new Date();
+    await payment.save({ session });
+    await this.postingService.removeReceiptPaymentEntry(tenantId, paymentId, session);
+    return { previousAmount: payment.amount, invoiceId: payment.allocations[0].invoiceId };
+  }
+
+  private async liveReceiptPayment(
+    tenantId: string,
+    branchId: string,
+    paymentId: string,
+    session: ClientSession,
+  ) {
+    const payment = await this.paymentModel
+      .findOne({
+        _id: paymentId,
+        tenantId: new Types.ObjectId(tenantId),
+        branchId: new Types.ObjectId(branchId),
+        deletedAt: null,
+      })
+      .session(session);
+    if (!payment) throw new ConflictException('This payment was voided elsewhere');
+    const [allocation] = payment.allocations;
+    if (
+      payment.partyType !== PartyType.CUSTOMER ||
+      payment.allocations.length !== 1 ||
+      allocation.invoiceType !== InvoiceType.SALE ||
+      Math.abs(allocation.amount - payment.amount) > 0.01
+    ) {
+      throw new ConflictException(
+        'This payment is not a plain invoice receipt and cannot be edited here',
+      );
+    }
+    return payment;
+  }
+
+  /**
+   * Moves a sale's cached paid total by `delta` (negative to take payment back), re-derives its status and bumps its
+   * edit version. Always a delta: `amountPaid` also holds money taken at the point of sale, which is not a Payment.
+   * A decrease may not push the paid total (net of refunds already paid out) below zero.
+   */
+  async adjustSalePaid(
+    tenantId: string,
+    branchId: string,
+    saleId: string,
+    delta: number,
+    session: ClientSession,
+  ): Promise<{
+    before: { amountPaid: number; paymentStatus: PaymentStatus };
+    after: { amountPaid: number; paymentStatus: PaymentStatus };
+  }> {
+    const sale = await this.saleModel
+      .findOne({
+        _id: saleId,
+        tenantId: new Types.ObjectId(tenantId),
+        branchId: new Types.ObjectId(branchId),
+      })
+      .session(session);
+    if (!sale) throw new NotFoundException(`Sale ${saleId} not found`);
+    const before = { amountPaid: sale.amountPaid, paymentStatus: sale.paymentStatus };
+    const next = round2(sale.amountPaid + delta);
+    if (delta < 0 && next - (sale.refundedTotal ?? 0) < -0.01) {
+      throw new ConflictException(
+        `Cannot lower the payments on invoice ${sale.invoiceNumber}: it would drop below the refunds already paid out`,
+      );
+    }
+    sale.amountPaid = next;
+    sale.editVersion = (sale.editVersion ?? 0) + 1; // write-conflicts with a concurrent invoice edit
+    sale.paymentStatus = resolvePaymentStatus(
+      sale.amountPaid - (sale.refundedTotal ?? 0),
+      sale.grandTotal - (sale.returnedTotal ?? 0),
+    );
+    await sale.save({ session });
+    return { before, after: { amountPaid: sale.amountPaid, paymentStatus: sale.paymentStatus } };
+  }
+
   /**
    * Delta-based helper used by Sales/Purchases' legacy quick payment
    * editors (see decision #11) — computes a delta from the invoice's

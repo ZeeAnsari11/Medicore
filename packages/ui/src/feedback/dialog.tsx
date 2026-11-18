@@ -31,10 +31,27 @@ interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof Dialo
   expandable?: boolean;
 }
 
+// Pressing these never starts a drag, so fields stay editable and clickable.
+const NO_DRAG_SELECTOR =
+  'input, textarea, select, button, a, label, [role="combobox"], [role="option"], [contenteditable="true"]';
+
 const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, expandable, ...props }, ref) => {
-    // Lives with the content, so it resets to normal size every time the dialog reopens.
+  ({ className, children, expandable, style, onPointerDown, onPointerMove, onPointerUp, onPointerCancel, ...props }, ref) => {
+    // Lives with the content, so it resets to normal size and centered every time the dialog reopens.
     const [expanded, setExpanded] = React.useState(false);
+    const [offset, setOffset] = React.useState({ x: 0, y: 0 });
+    const [dragging, setDragging] = React.useState(false);
+    const drag = React.useRef<{
+      pointerX: number;
+      pointerY: number;
+      start: { x: number; y: number };
+      rect: DOMRect;
+    } | null>(null);
+
+    const endDrag = () => {
+      drag.current = null;
+      setDragging(false);
+    };
     return (
       <DialogPortal>
         <DialogOverlay />
@@ -45,7 +62,42 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
             className,
             expanded && 'h-screen max-h-screen w-screen max-w-none rounded-none',
+            !expanded && (dragging ? 'cursor-grabbing select-none' : 'cursor-grab'),
           )}
+          // Offsets left/top rather than transform, which the centering and open animation already use.
+          style={expanded ? style : { ...style, left: `calc(50% + ${offset.x}px)`, top: `calc(50% + ${offset.y}px)` }}
+          onPointerDown={(e) => {
+            onPointerDown?.(e);
+            if (e.defaultPrevented || expanded || e.button !== 0) return;
+            // React events bubble out of portals (e.g. an open Select list), which must not drag the dialog.
+            if (!e.currentTarget.contains(e.target as Node)) return;
+            if ((e.target as HTMLElement).closest(NO_DRAG_SELECTOR)) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            drag.current = {
+              pointerX: e.clientX,
+              pointerY: e.clientY,
+              start: offset,
+              rect: e.currentTarget.getBoundingClientRect(),
+            };
+            setDragging(true);
+          }}
+          onPointerMove={(e) => {
+            onPointerMove?.(e);
+            const d = drag.current;
+            if (!d) return;
+            // Keep the whole dialog inside the window so its title bar is always reachable.
+            const dx = Math.min(Math.max(e.clientX - d.pointerX, -d.rect.left), Math.max(0, window.innerWidth - d.rect.right));
+            const dy = Math.min(Math.max(e.clientY - d.pointerY, -d.rect.top), Math.max(0, window.innerHeight - d.rect.bottom));
+            setOffset({ x: d.start.x + dx, y: d.start.y + dy });
+          }}
+          onPointerUp={(e) => {
+            onPointerUp?.(e);
+            endDrag();
+          }}
+          onPointerCancel={(e) => {
+            onPointerCancel?.(e);
+            endDrag();
+          }}
           {...props}
         >
           {children}

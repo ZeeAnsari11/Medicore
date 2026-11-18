@@ -43,6 +43,8 @@ export function Sidebar() {
               <div className="space-y-1">
                 {section.items
                   .filter((item) => !item.requires || can(subjectRoles, item.requires))
+                  // Accounting sub-pages are reached from the cards on the Accounting overview page
+                  .filter((item) => !item.href.startsWith('/accounting/'))
                   .map((item) => {
                     const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                     return (

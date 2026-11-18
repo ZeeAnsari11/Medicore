@@ -125,7 +125,13 @@ export default function PaymentsPage() {
           <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
         </div>
       ) : (
-        <DataTable columns={columns} data={payments} searchPlaceholder="Search payments..." />
+        <DataTable
+          columns={columns}
+          data={payments}
+          searchPlaceholder="Search payments..."
+          filtersActive={partyTypeFilter !== null}
+          onClearFilters={() => setPartyTypeFilter(null)}
+        />
       )}
 
       <Dialog open={voidTarget !== null} onOpenChange={(open) => !open && setVoidTarget(null)}>

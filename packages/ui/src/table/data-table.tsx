@@ -48,6 +48,12 @@ export interface DataTableProps<TData, TValue> {
   toolbar?: React.ReactNode;
   /** Client-side paging only: shows a "Rows per page" selector with these choices. */
   pageSizeOptions?: number[];
+  /** True while a filter outside the table (e.g. one in `toolbar`) is applied; enables the Clear filters button. */
+  filtersActive?: boolean;
+  /** Resets those outside filters. The Clear filters button also empties the search box. */
+  onClearFilters?: () => void;
+  /** For pages that already render their own Clear filters button. */
+  hideClearFilters?: boolean;
 }
 
 export function DataTable<TData, TValue>({
@@ -61,6 +67,9 @@ export function DataTable<TData, TValue>({
   search,
   toolbar,
   pageSizeOptions,
+  filtersActive,
+  onClearFilters,
+  hideClearFilters,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
@@ -86,16 +95,32 @@ export function DataTable<TData, TValue>({
     initialState: { pagination: { pageSize } },
   });
 
+  const searchValue = search ? search.value : globalFilter;
+  const setSearchValue = (value: string) => (search ? search.onChange(value) : table.setGlobalFilter(value));
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <Input
           placeholder={searchPlaceholder}
-          value={search ? search.value : globalFilter}
-          onChange={(e) => (search ? search.onChange(e.target.value) : table.setGlobalFilter(e.target.value))}
+          value={searchValue}
+          onChange={(e) => setSearchValue(e.target.value)}
           className="max-w-sm"
         />
         {toolbar}
+        {!hideClearFilters && (
+          <Button
+            disabled={searchValue === '' && !filtersActive}
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSearchValue('');
+              onClearFilters?.();
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
         {pageSizeOptions && !pagination && (
           <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
             <span>Rows per page</span>

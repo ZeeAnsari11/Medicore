@@ -20,6 +20,10 @@ export class Tenant {
 
   @Prop({ required: true, enum: TenantStatus, default: TenantStatus.TRIAL })
   status: TenantStatus;
+
+  /** Set while SUSPENDED: the status to restore on reactivation, so a trial stays a trial. */
+  @Prop({ enum: TenantStatus })
+  statusBeforeSuspension?: TenantStatus;
 }
 
 export const TenantSchema = SchemaFactory.createForClass(Tenant);

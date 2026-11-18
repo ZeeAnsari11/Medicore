@@ -153,6 +153,8 @@ export default function InventoryPage() {
           data={filteredRollup}
           searchPlaceholder="Search inventory..."
           pageSizeOptions={[10, 25, 50, 100, 250, 500]}
+          filtersActive={stockFilter !== 'all'}
+          onClearFilters={() => setStockFilter('all')}
           toolbar={
             <Select value={stockFilter} onValueChange={(v) => setStockFilter(v as StockFilter)}>
               <SelectTrigger className="w-52" aria-label="Stock status">

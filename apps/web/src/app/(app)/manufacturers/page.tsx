@@ -66,7 +66,7 @@ export default function ManufacturersPage() {
         </Alert>
       )}
 
-      <div className="mb-4">
+      <div className="mb-4 flex items-center gap-3">
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -74,6 +74,10 @@ export default function ManufacturersPage() {
           className="max-w-xs"
           aria-label="Search manufacturers"
         />
+        <Button
+          disabled={!(search)} variant="outline" size="sm" onClick={() => setSearch('')}>
+          Clear filters
+        </Button>
       </div>
 
       {isLoading ? (

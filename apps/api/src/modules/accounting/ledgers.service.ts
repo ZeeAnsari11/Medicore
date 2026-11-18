@@ -304,6 +304,7 @@ export class LedgersService {
       const match: Record<string, unknown> = {
         tenantId: new Types.ObjectId(tenantId),
         status: { $in: LEDGER_VISIBLE_STATUSES },
+        deletedAt: null,
         'lines.accountId': { $in: accountIds },
       };
       if (branchId) match.branchId = new Types.ObjectId(branchId);
@@ -434,6 +435,7 @@ export class LedgersService {
     const entryMatch: Record<string, unknown> = {
       tenantId: new Types.ObjectId(p.tenantId),
       status: { $in: LEDGER_VISIBLE_STATUSES },
+      deletedAt: null,
       'lines.accountId': { $in: p.accountIds },
     };
     if (p.branchId) entryMatch.branchId = new Types.ObjectId(p.branchId);

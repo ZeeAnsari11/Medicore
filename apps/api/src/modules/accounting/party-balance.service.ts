@@ -79,7 +79,13 @@ export class PartyBalanceService {
       debit: number;
       credit: number;
     }>([
-      { $match: { tenantId: new Types.ObjectId(tenantId), status: { $in: LEDGER_VISIBLE_STATUSES } } },
+      {
+        $match: {
+          tenantId: new Types.ObjectId(tenantId),
+          status: { $in: LEDGER_VISIBLE_STATUSES },
+          deletedAt: null,
+        },
+      },
       { $unwind: '$lines' },
       { $match: { 'lines.accountId': account.id, 'lines.partyId': { $ne: null } } },
       {
@@ -112,7 +118,13 @@ export class PartyBalanceService {
     if (!account) return 0;
 
     const [result] = await this.journalEntryModel.aggregate<{ debit: number; credit: number }>([
-      { $match: { tenantId: new Types.ObjectId(tenantId), status: { $in: LEDGER_VISIBLE_STATUSES } } },
+      {
+        $match: {
+          tenantId: new Types.ObjectId(tenantId),
+          status: { $in: LEDGER_VISIBLE_STATUSES },
+          deletedAt: null,
+        },
+      },
       { $unwind: '$lines' },
       { $match: { 'lines.accountId': account.id, 'lines.partyId': partyId } },
       { $group: { _id: null, debit: { $sum: '$lines.debit' }, credit: { $sum: '$lines.credit' } } },

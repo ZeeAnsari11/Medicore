@@ -46,7 +46,25 @@ export class TenantsService {
     if (!tenant) {
       throw new NotFoundException('Tenant not found');
     }
+    if (status === TenantStatus.SUSPENDED && tenant.status !== TenantStatus.SUSPENDED) {
+      tenant.statusBeforeSuspension = tenant.status;
+    } else if (status !== TenantStatus.SUSPENDED) {
+      tenant.statusBeforeSuspension = undefined;
+    }
     tenant.status = status;
+    return tenant.save();
+  }
+
+  /** Lifts a suspension, restoring the status the tenant had before it (ACTIVE if unknown). */
+  async reactivate(id: string) {
+    const tenant = await this.tenantModel.findById(id);
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+    if (tenant.status === TenantStatus.SUSPENDED) {
+      tenant.status = tenant.statusBeforeSuspension ?? TenantStatus.ACTIVE;
+      tenant.statusBeforeSuspension = undefined;
+    }
     return tenant.save();
   }
 

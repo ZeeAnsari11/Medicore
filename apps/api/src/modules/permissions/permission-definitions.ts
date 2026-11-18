@@ -73,7 +73,7 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
   },
   // Its own menu: ticking Sales must not hand out the right to confirm or reject pending orders.
   { key: 'process_orders', label: 'Process Orders', group: 'Operations', actions: [VIEW] },
-  { key: 'cash_receipt', label: 'Cash Receipt', group: 'Operations', actions: [VIEW, CREATE] },
+  { key: 'cash_receipt', label: 'Cash Receipt', group: 'Operations', actions: [VIEW, CREATE, EDIT] },
   { key: 'customers', label: 'Customers', group: 'Operations', actions: [VIEW, CREATE, EDIT, DELETE] },
   { key: 'reports', label: 'Reports', group: 'Insights', actions: [VIEW, EXPORT] },
   {

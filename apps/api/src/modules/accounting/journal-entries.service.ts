@@ -21,7 +21,10 @@ export class JournalEntriesService {
     branchId: string | null,
     sourceType?: JournalEntrySourceType,
   ) {
-    const filter: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId) };
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      deletedAt: null,
+    };
     if (branchId) filter.branchId = new Types.ObjectId(branchId);
     if (sourceType) filter.sourceType = sourceType;
     return this.journalEntryModel.find(filter).sort({ entryDate: -1, createdAt: -1 });

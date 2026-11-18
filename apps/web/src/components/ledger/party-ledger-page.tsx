@@ -207,6 +207,17 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
               <Switch checked={hasBalance} onCheckedChange={(v) => url.set({ bal: v ? '1' : null, lpage: null })} />
               Has balance only
             </label>
+            <Button
+              disabled={!((searchInput || hasBalance))}
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchInput('');
+                url.set({ q: null, bal: null, lpage: null }, { replace: true });
+              }}
+            >
+              Clear filters
+            </Button>
           </div>
         )}
       </div>

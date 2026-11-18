@@ -175,6 +175,17 @@ function SsrContent() {
               onChange={(v) => url.set({ user: v.join(','), page: null })}
             />
           )}
+          <Button
+            disabled={!((from !== def.from || to !== def.to || url.get('user') || searchInput))}
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSearchInput('');
+              url.set({ from: null, to: null, user: null, q: null, page: null });
+            }}
+          >
+            Clear filters
+          </Button>
         </div>
       </div>
 

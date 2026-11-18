@@ -72,6 +72,10 @@ function Content() {
           onChange={(e) => url.set({ date: e.target.value || null, booker: null })}
         />
         <BranchFilter filter={branchFilter} />
+        <Button
+          disabled={!((url.get('date') || bookerId))} variant="outline" size="sm" onClick={() => url.set({ date: null, booker: null })}>
+          Clear filters
+        </Button>
       </div>
 
       {error ? (

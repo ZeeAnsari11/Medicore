@@ -60,6 +60,9 @@ export function LedgerFilters({ from, to, branchFilter, onChange }: LedgerFilter
     return r.from === from && r.to === to;
   })?.key;
 
+  const def = defaultRange();
+  const isDefault = from === def.from && to === def.to;
+
   return (
     <div className="flex flex-wrap items-center gap-3">
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Period">
@@ -84,6 +87,10 @@ export function LedgerFilters({ from, to, branchFilter, onChange }: LedgerFilter
         <Input type="date" value={to} min={from || undefined} onChange={(e) => onChange({ to: e.target.value })} className="w-40" />
       </label>
       <BranchFilter filter={branchFilter} />
+      <Button
+        disabled={!(!isDefault)} variant="outline" size="sm" onClick={() => onChange(def)}>
+        Clear filters
+      </Button>
     </div>
   );
 }

@@ -22,6 +22,8 @@ import { CashReceiptsService } from './cash-receipts.service';
 import { CreateCashReceiptDto } from './dto/create-cash-receipt.dto';
 import { UpdateSaleDto } from './dto/update-sale.dto';
 import { CreateSaleDto } from './dto/create-sale.dto';
+import { UpdateCashTransactionDto } from './dto/update-cash-transaction.dto';
+import { ListCashTransactionsQueryDto } from './dto/list-cash-transactions-query.dto';
 import { ListSalesQueryDto } from './dto/list-sales-query.dto';
 import { UpdateSalePaymentDto } from './dto/update-sale-payment.dto';
 import {
@@ -77,6 +79,24 @@ export class SalesController {
     return { items: items.map((s) => this.salesService.toSaleResponse(s)), ...meta };
   }
 
+  /** Declared before `:id` routes so `report/pdf` is not read as a sale id. */
+  @RequirePermission('sales:read')
+  @Get('report/pdf')
+  async reportPdf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ListSalesQueryDto,
+    @Res() res: Response,
+  ) {
+    const scope = resolveBranchScope(user, query.branchId);
+    const owner = await this.ownScope(user);
+    if (owner) query.orderBookerId = owner;
+    const doc = await this.salesService.buildReportPdf(user.tenantId, scope, query);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="sales-report.pdf"');
+    doc.pipe(res);
+    doc.end();
+  }
+
   @RequirePermission('sales:read', 'sales:create')
   @Get('order-bookers')
   async listOrderBookers(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string) {
@@ -109,6 +129,72 @@ export class SalesController {
     );
     const scope = resolveBranchFromDocument(user, original, 'Invoice not found', dto.branchId);
     return this.cashReceiptsService.create(user.tenantId, scope, user.userId, dto);
+  }
+
+  @RequirePermission('cash_receipt:read')
+  @Get('cash-receipts')
+  async listCashTransactions(@CurrentUser() user: AuthenticatedUser, @Query() query: ListCashTransactionsQueryDto) {
+    const scope = resolveBranchScope(user, query.branchId);
+    // An Order Booker sees the transactions they saved themselves.
+    const owner = await this.ownScope(user);
+    return this.cashReceiptsService.listTransactions(user.tenantId, scope, query, owner);
+  }
+
+  /** The branch of a transaction is the branch of its entries; the caller may only see it if that is theirs. */
+  private async transactionBranch(user: AuthenticatedUser, number: string): Promise<string> {
+    const documentBranch = await this.cashReceiptsService.branchOfTransaction(
+      user.tenantId,
+      number,
+    );
+    return resolveBranchFromDocument(user, documentBranch, 'Transaction not found');
+  }
+
+  @RequirePermission('cash_receipt:read')
+  @Get('cash-receipts/by-number/:number')
+  async getCashTransaction(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('number') number: string,
+  ) {
+    const scope = await this.transactionBranch(user, number);
+    return this.cashReceiptsService.getByNumber(
+      user.tenantId,
+      scope,
+      number,
+      await this.ownScope(user),
+    );
+  }
+
+  @RequirePermission('cash_receipt:read')
+  @Get('cash-receipts/by-number/:number/history')
+  async cashTransactionHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('number') number: string,
+  ) {
+    const scope = await this.transactionBranch(user, number);
+    return this.cashReceiptsService.historyByNumber(
+      user.tenantId,
+      scope,
+      number,
+      await this.ownScope(user),
+    );
+  }
+
+  @RequirePermission('cash_receipt:update')
+  @Patch('cash-receipts/by-number/:number')
+  async updateCashTransaction(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('number') number: string,
+    @Body() dto: UpdateCashTransactionDto,
+  ) {
+    const scope = await this.transactionBranch(user, number);
+    return this.cashReceiptsService.update(
+      user.tenantId,
+      scope,
+      user.userId,
+      number,
+      dto,
+      await this.ownScope(user),
+    );
   }
 
   @RequirePermission('cash_receipt:read')

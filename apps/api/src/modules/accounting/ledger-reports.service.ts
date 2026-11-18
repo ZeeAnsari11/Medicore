@@ -28,6 +28,7 @@ export class LedgerReportsService {
     const match: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
       status: { $in: LEDGER_VISIBLE_STATUSES },
+      deletedAt: null,
     };
     if (branchId) match.branchId = new Types.ObjectId(branchId);
     if (asOfDate) match.entryDate = { $lte: new Date(asOfDate) };
@@ -86,6 +87,7 @@ export class LedgerReportsService {
     const match: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
       status: { $in: LEDGER_VISIBLE_STATUSES },
+      deletedAt: null,
     };
     if (branchId) match.branchId = new Types.ObjectId(branchId);
     if (startDate || endDate) {
@@ -152,6 +154,7 @@ export class LedgerReportsService {
     const match: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
       status: { $in: LEDGER_VISIBLE_STATUSES },
+      deletedAt: null,
     };
     if (branchId) match.branchId = new Types.ObjectId(branchId);
     if (asOfDate) match.entryDate = { $lte: new Date(asOfDate) };
@@ -241,6 +244,7 @@ export class LedgerReportsService {
       const match: Record<string, unknown> = {
         tenantId: new Types.ObjectId(tenantId),
         status: { $in: LEDGER_VISIBLE_STATUSES },
+        deletedAt: null,
       };
       if (branchId) match.branchId = new Types.ObjectId(branchId);
       const [result] = await this.journalEntryModel.aggregate<{ debit: number; credit: number }>([

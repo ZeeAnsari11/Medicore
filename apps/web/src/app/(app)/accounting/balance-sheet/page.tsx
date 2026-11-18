@@ -19,6 +19,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  Button,
 } from '@medicore/ui';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { useBalanceSheet } from '@/hooks/use-ledger-reports';
@@ -84,6 +85,10 @@ export default function BalanceSheetPage() {
         actions={
           <div className="flex items-center gap-3">
             <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-40" aria-label="As of date" />
+            <Button
+              disabled={!(asOfDate !== todayISO())} variant="outline" size="sm" onClick={() => setAsOfDate(todayISO())}>
+              Clear filters
+            </Button>
           </div>
         }
       />

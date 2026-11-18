@@ -17,11 +17,12 @@ const statusColors: Record<TenantStatus, 'default' | 'secondary' | 'destructive'
 };
 
 export function TenantsTable({ tenants, isLoading, onEdit }: TenantsTableProps) {
-  const { setStatus, impersonate } = usePlatformTenants();
+  const { setStatus, reactivate, impersonate } = usePlatformTenants();
 
+  // On means usable (ACTIVE or TRIAL); off suspends, which blocks login, impersonation and live sessions.
   const handleToggleActive = async (tenant: Tenant) => {
-    const nextStatus = tenant.status === TenantStatus.ACTIVE ? TenantStatus.SUSPENDED : TenantStatus.ACTIVE;
-    await setStatus(tenant.id, nextStatus);
+    if (tenant.status === TenantStatus.SUSPENDED) await reactivate(tenant.id);
+    else await setStatus(tenant.id, TenantStatus.SUSPENDED);
   };
 
   const handleLogin = async (tenant: Tenant) => {
@@ -70,7 +71,7 @@ export function TenantsTable({ tenants, isLoading, onEdit }: TenantsTableProps) 
               </TableCell>
               <TableCell onClick={(event) => event.stopPropagation()}>
                 <Switch
-                  checked={tenant.status === TenantStatus.ACTIVE}
+                  checked={tenant.status !== TenantStatus.SUSPENDED}
                   onCheckedChange={() => handleToggleActive(tenant)}
                 />
               </TableCell>

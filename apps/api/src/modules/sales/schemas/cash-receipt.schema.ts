@@ -6,6 +6,10 @@ import { PaymentMethod } from '@medicore/shared-types';
 
 @Schema({ _id: false })
 export class CashReceiptRow {
+  /** Stable id of this entry within its transaction; edits are matched on it. */
+  @Prop({ type: String })
+  entryId?: string;
+
   @Prop({ required: true, type: String })
   invoiceId: string;
 
@@ -20,6 +24,13 @@ export class CashReceiptRow {
 
   @Prop({ required: true, type: String })
   paymentId: string;
+
+  /** The ledger posting this entry's payment created, edited in place by a transaction edit. */
+  @Prop({ type: String })
+  journalEntryId?: string;
+
+  @Prop({ type: Date })
+  date?: Date;
 
   @Prop({ required: true, min: 0 })
   amount: number;
@@ -58,6 +69,17 @@ export class CashReceipt {
   @Prop({ required: true, type: String })
   voucherNumber: string;
 
+  /** Per-tenant T-0001 number; absent on receipts saved before transactions existed until migrated. */
+  @Prop({ type: String })
+  transactionNumber?: string;
+
+  /** Bumped by every edit; a stale expectedVersion is rejected with 409. */
+  @Prop({ type: Number, default: 1 })
+  version: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  updatedBy?: Types.ObjectId;
+
   @Prop({ required: true })
   date: Date;
 
@@ -78,3 +100,7 @@ export const CashReceiptSchema = SchemaFactory.createForClass(CashReceipt);
 
 CashReceiptSchema.index({ tenantId: 1, branchId: 1, batchId: 1 }, { unique: true });
 CashReceiptSchema.index({ tenantId: 1, branchId: 1, voucherNumber: 1 }, { unique: true });
+CashReceiptSchema.index(
+  { tenantId: 1, transactionNumber: 1 },
+  { unique: true, partialFilterExpression: { transactionNumber: { $type: 'string' } } },
+);

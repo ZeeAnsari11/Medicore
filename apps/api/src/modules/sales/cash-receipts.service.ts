@@ -1,12 +1,31 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { Connection, Model, Types } from 'mongoose';
+import { v7 as uuidv7 } from 'uuid';
+import type {
+  CashTransaction,
+  CashTransactionHistoryEntry,
+  CashTransactionRow,
+  PaginatedCashTransactions,
+} from '@medicore/shared-types';
 import { InvoiceType, PartyType } from '@medicore/shared-types';
 import { Sale, SaleDocument } from './schemas/sale.schema';
 import { CashReceipt, CashReceiptDocument } from './schemas/cash-receipt.schema';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Branch, BranchDocument } from '../branches/schemas/branch.schema';
+import {
+  CashReceiptHistory,
+  CashReceiptHistoryDocument,
+} from './schemas/cash-receipt-history.schema';
 import { CreateCashReceiptDto } from './dto/create-cash-receipt.dto';
+import { UpdateCashTransactionDto } from './dto/update-cash-transaction.dto';
+import { ListCashTransactionsQueryDto } from './dto/list-cash-transactions-query.dto';
+import { InvoiceAuditService } from '../../common/invoices/invoice-audit.service';
 import { SequenceService } from '../../common/sequence/sequence.service';
 import { runWithoutBranchScope } from '../../common/tenancy/tenant-context';
 import { PaymentsService } from '../accounting/payments.service';
@@ -16,6 +35,20 @@ import { DocumentPdfService } from '../../common/pdf/document-pdf.service';
 import { TenantsService } from '../tenants/tenants.service';
 import { NOT_PENDING } from './not-pending';
 import { SaleStatus } from '@medicore/shared-types';
+
+/** `T-0001`; grows past four digits instead of wrapping. */
+export const transactionNumberOf = (seq: number) => `T-${String(seq).padStart(4, '0')}`;
+
+const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+
+/** A stored row as a plain object, so it can be copied and re-saved. */
+const plainRow = (row: CashReceipt['rows'][number]): CashReceipt['rows'][number] =>
+  typeof (row as unknown as { toObject?: unknown }).toObject === 'function'
+    ? (row as unknown as { toObject: () => CashReceipt['rows'][number] }).toObject()
+    : row;
+
+/** Rolled-back sentinel: an edit that changes nothing leaves the transaction (and its version) alone. */
+class NothingChanged extends Error {}
 
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -28,6 +61,8 @@ export class CashReceiptsService {
   constructor(
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
     @InjectModel(CashReceipt.name) private readonly receiptModel: Model<CashReceiptDocument>,
+    @InjectModel(CashReceiptHistory.name)
+    private readonly historyModel: Model<CashReceiptHistoryDocument>,
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Branch.name) private readonly branchModel: Model<BranchDocument>,
     @InjectConnection() private readonly connection: Connection,
@@ -36,6 +71,7 @@ export class CashReceiptsService {
     private readonly partyBalanceService: PartyBalanceService,
     private readonly documentPdfService: DocumentPdfService,
     private readonly tenantsService: TenantsService,
+    private readonly invoiceAuditService: InvoiceAuditService,
   ) {}
 
   /** Customer invoices matching the typed number; `payable` is false once nothing is owed. */
@@ -186,6 +222,9 @@ export class CashReceiptsService {
             session,
           );
           rows.push({
+            entryId: uuidv7(),
+            journalEntryId: payment.journalEntryId,
+            date,
             invoiceId: sale.id,
             invoiceNumber: sale.invoiceNumber ?? '',
             customerId: String(sale.customerId),
@@ -204,6 +243,13 @@ export class CashReceiptsService {
         }
 
         const seq = await this.sequenceService.next(tenantId, branchId, 'cash_receipt', session);
+        // Tenant-wide (not per branch); issued in this transaction, so a failed save releases its number.
+        const transactionSeq = await this.sequenceService.next(
+          tenantId,
+          null,
+          'cash_transaction',
+          session,
+        );
         const [doc] = await this.receiptModel.create(
           [
             {
@@ -211,6 +257,8 @@ export class CashReceiptsService {
               branchId: branchObjectId,
               batchId: dto.batchId,
               voucherNumber: `CR-${String(seq).padStart(6, '0')}`,
+              transactionNumber: transactionNumberOf(transactionSeq),
+              version: 1,
               date,
               method: dto.method,
               rows,
@@ -238,6 +286,545 @@ export class CashReceiptsService {
     } finally {
       await session.endSession();
     }
+  }
+
+  /**
+   * Saved transactions, newest first, for the list page and the Transaction # typeahead. Receipts saved before the
+   * feature have no number until migrated and are not listed. `createdBy` limits an Order Booker to their own.
+   */
+  async listTransactions(
+    tenantId: string,
+    branchId: string | null,
+    query: ListCashTransactionsQueryDto,
+    createdBy?: string | null,
+  ): Promise<PaginatedCashTransactions> {
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      transactionNumber: { $type: 'string' },
+    };
+    if (branchId) filter.branchId = new Types.ObjectId(branchId);
+    if (createdBy) filter.createdBy = new Types.ObjectId(createdBy);
+    if (query.startDate || query.endDate) {
+      const range: { $gte?: Date; $lte?: Date } = {};
+      if (query.startDate) range.$gte = new Date(query.startDate);
+      if (query.endDate) {
+        const to = new Date(query.endDate);
+        // A bare yyyy-mm-dd means the whole day.
+        if (query.endDate.length <= 10) to.setUTCHours(23, 59, 59, 999);
+        range.$lte = to;
+      }
+      filter.date = range;
+    }
+    const term = query.q?.trim();
+    if (term) {
+      const rx = { $regex: escapeRegex(term), $options: 'i' };
+      filter.$or = [
+        { transactionNumber: rx },
+        { voucherNumber: rx },
+        { 'rows.customerName': rx },
+        { 'rows.invoiceNumber': rx },
+      ];
+    }
+    const [docs, total] = await runWithoutBranchScope(() =>
+      Promise.all([
+        this.receiptModel
+          .find(filter)
+          .sort({ createdAt: -1, _id: -1 })
+          .skip((page - 1) * limit)
+          .limit(limit),
+        this.receiptModel.countDocuments(filter),
+      ]),
+    );
+    return {
+      items: docs.map((r) => ({
+        id: r.id as string,
+        transactionNumber: r.transactionNumber ?? '',
+        voucherNumber: r.voucherNumber,
+        branchId: String(r.branchId),
+        date: r.date.toISOString(),
+        count: r.rows.length,
+        total: r.total,
+        customers: [...new Set(r.rows.map((x) => x.customerName))],
+        version: r.version ?? 1,
+        editedAt: (r.version ?? 1) > 1 ? (r as unknown as { updatedAt: Date }).updatedAt.toISOString() : null,
+      })),
+      total,
+      page,
+      limit,
+    };
+  }
+
+  /** Branch of the transaction numbered `number`; 404 when there is none. Read outside the branch filter so a header can't hide it. */
+  async branchOfTransaction(tenantId: string, number: string): Promise<string> {
+    const receipt = await runWithoutBranchScope(
+      async () =>
+        await this.receiptModel
+          .findOne({ tenantId: new Types.ObjectId(tenantId), transactionNumber: number })
+          .select('branchId')
+          .lean(),
+    );
+    if (!receipt) throw new NotFoundException('Transaction not found');
+    return String(receipt.branchId);
+  }
+
+  /** The saved transaction with every entry's invoice as it is now. `ownerId` limits an Order Booker to their own invoices. */
+  async getByNumber(
+    tenantId: string,
+    branchId: string,
+    number: string,
+    ownerId?: string | null,
+  ): Promise<CashTransaction> {
+    return runWithoutBranchScope(async () => {
+      const receipt = await this.findByNumber(tenantId, branchId, number);
+      if (ownerId)
+        await this.invoicesBranchId(
+          tenantId,
+          receipt.rows.map((r) => r.invoiceId),
+          ownerId,
+        );
+      return this.toTransaction(receipt);
+    });
+  }
+
+  async historyByNumber(
+    tenantId: string,
+    branchId: string,
+    number: string,
+    ownerId?: string | null,
+  ): Promise<CashTransactionHistoryEntry[]> {
+    return runWithoutBranchScope(async () => {
+      const receipt = await this.findByNumber(tenantId, branchId, number);
+      if (ownerId)
+        await this.invoicesBranchId(
+          tenantId,
+          receipt.rows.map((r) => r.invoiceId),
+          ownerId,
+        );
+      const rows = await this.historyModel
+        .find({ tenantId: new Types.ObjectId(tenantId), receiptId: receipt.id })
+        .sort({ createdAt: 1 });
+      return rows.map((h) => ({
+        id: h.id as string,
+        version: h.version,
+        actorId: String(h.actorId),
+        at: (h as unknown as { createdAt: Date }).createdAt.toISOString(),
+        changes: h.changes.map((c) => ({
+          entryId: c.entryId,
+          op: c.op,
+          invoiceId: c.invoiceId,
+          invoiceNumber: c.invoiceNumber,
+          before: c.before ? { amount: c.before.amount, date: c.before.date?.toISOString() } : null,
+          after: c.after ? { amount: c.after.amount, date: c.after.date?.toISOString() } : null,
+        })),
+      }));
+    });
+  }
+
+  /**
+   * Edits a saved transaction in place, all or nothing. Existing entries (matched on `entryId`) keep their payment and
+   * ledger entry and have them updated; new rows add a payment under the same transaction; entries left out are
+   * removed with their payment and ledger entry. Unchanged entries are not touched. `expectedVersion` rejects a stale edit.
+   */
+  async update(
+    tenantId: string,
+    branchId: string,
+    userId: string,
+    number: string,
+    dto: UpdateCashTransactionDto,
+    ownerId?: string | null,
+  ): Promise<CashTransaction> {
+    return runWithoutBranchScope(async () => {
+      const tenantObjectId = new Types.ObjectId(tenantId);
+      const branchObjectId = new Types.ObjectId(branchId);
+      const current = await this.findByNumber(tenantId, branchId, number);
+      if (ownerId)
+        await this.invoicesBranchId(
+          tenantId,
+          current.rows.map((r) => r.invoiceId),
+          ownerId,
+        );
+
+      const seen = new Set<string>();
+      const duplicates = dto.rows.filter((r) => seen.size === seen.add(r.invoiceId).size);
+      if (duplicates.length) {
+        throw new BadRequestException({
+          message: 'An invoice appears more than once in the sheet',
+          errors: duplicates.map((r) => ({ invoiceId: r.invoiceId, reason: 'Already in sheet' })),
+        });
+      }
+
+      const session = await this.connection.startSession();
+      try {
+        await session.withTransaction(async () => {
+          // The version bump is also the lock: two editors of one transaction conflict here.
+          const locked = await this.receiptModel.findOneAndUpdate(
+            {
+              _id: current.id,
+              tenantId: tenantObjectId,
+              branchId: branchObjectId,
+              version: dto.expectedVersion,
+            },
+            { $inc: { version: 1 }, $set: { updatedBy: new Types.ObjectId(userId) } },
+            { new: true, session },
+          );
+          if (!locked) {
+            const latest = await this.receiptModel.findById(current.id).select('version').lean();
+            throw new ConflictException({
+              message: 'This transaction was changed by someone else. Reload it and try again.',
+              currentVersion: latest?.version,
+            });
+          }
+
+          const errors: Array<{ invoiceId: string; reason: string }> = [];
+          const changes: CashReceiptHistory['changes'] = [];
+          const audits = new Map<
+            string,
+            { number: string; before: Record<string, unknown>; after: Record<string, unknown> }
+          >();
+          const noteAudit = (
+            invoiceId: string,
+            invoiceNumber: string,
+            moved: {
+              before: { amountPaid: number; paymentStatus: string };
+              after: { amountPaid: number; paymentStatus: string };
+            },
+          ) => {
+            const first = audits.get(invoiceId);
+            audits.set(invoiceId, {
+              number: invoiceNumber,
+              before: first?.before ?? moved.before,
+              after: moved.after,
+            });
+          };
+
+          const stored = new Map(locked.rows.map((r) => [r.entryId ?? r.invoiceId, r]));
+          const date = dto.date ? new Date(dto.date) : locked.date;
+          const dateChanged = !!dto.date && !sameDay(date, locked.date);
+          const livePayments = await this.paymentsService.livePaymentIds(
+            tenantId,
+            locked.rows.map((r) => r.paymentId),
+            session,
+          );
+
+          // Body rows that keep an existing entry of the same invoice; anything else is an addition.
+          const kept = new Map<string, { entryId: string; invoiceId: string; amount: number }>();
+          const added: Array<{ invoiceId: string; amount: number }> = [];
+          for (const row of dto.rows) {
+            const old = row.entryId ? stored.get(row.entryId) : undefined;
+            if (old && old.invoiceId === row.invoiceId)
+              kept.set(row.entryId!, { entryId: row.entryId!, ...row });
+            else added.push(row);
+          }
+
+          // 1. Removed entries (payment and ledger entry go; the invoice gets the money back as unpaid).
+          for (const [entryId, old] of stored) {
+            if (kept.has(entryId)) continue;
+            if (livePayments.has(old.paymentId)) {
+              const removed = await this.paymentsService.removeReceiptPayment(
+                tenantId,
+                branchId,
+                old.paymentId,
+                session,
+              );
+              const moved = await this.paymentsService.adjustSalePaid(
+                tenantId,
+                branchId,
+                removed.invoiceId,
+                -removed.previousAmount,
+                session,
+              );
+              noteAudit(old.invoiceId, old.invoiceNumber, moved);
+            }
+            changes.push({
+              entryId,
+              op: 'REMOVED',
+              invoiceId: old.invoiceId,
+              invoiceNumber: old.invoiceNumber,
+              before: { amount: old.amount, date: old.date ?? locked.date },
+              after: null,
+            });
+          }
+
+          // 2. Changed entries.
+          const finalRows: CashReceipt['rows'] = [];
+          for (const row of dto.rows) {
+            const keptRow = row.entryId ? kept.get(row.entryId) : undefined;
+            if (!keptRow) continue;
+            const old = stored.get(keptRow.entryId)!;
+            if (!livePayments.has(old.paymentId)) {
+              errors.push({
+                invoiceId: old.invoiceId,
+                reason: 'Its payment was voided elsewhere; remove this entry',
+              });
+              continue;
+            }
+            const amountChanged = Math.abs(keptRow.amount - old.amount) > 0.004;
+            if (!amountChanged && !dateChanged) {
+              finalRows.push(plainRow(old));
+              continue;
+            }
+            const sale = await this.saleModel
+              .findOne({ _id: old.invoiceId, tenantId: tenantObjectId, branchId: branchObjectId })
+              .session(session);
+            if (!sale || sale.deletedAt) {
+              errors.push({ invoiceId: old.invoiceId, reason: 'Invoice not found or voided' });
+              continue;
+            }
+            const limit = round2(outstandingOf(sale) + old.amount);
+            if (keptRow.amount > limit + 0.01) {
+              errors.push({
+                invoiceId: old.invoiceId,
+                reason: `Amount exceeds the balance of ${limit.toFixed(2)}`,
+              });
+              continue;
+            }
+            await this.paymentsService.editReceiptPayment(
+              tenantId,
+              branchId,
+              old.paymentId,
+              { amount: keptRow.amount, paymentDate: dateChanged ? date : undefined },
+              session,
+            );
+            if (amountChanged) {
+              const moved = await this.paymentsService.adjustSalePaid(
+                tenantId,
+                branchId,
+                old.invoiceId,
+                round2(keptRow.amount - old.amount),
+                session,
+              );
+              noteAudit(old.invoiceId, old.invoiceNumber, moved);
+            }
+            changes.push({
+              entryId: keptRow.entryId,
+              op: 'CHANGED',
+              invoiceId: old.invoiceId,
+              invoiceNumber: old.invoiceNumber,
+              before: { amount: old.amount, date: old.date ?? locked.date },
+              after: {
+                amount: keptRow.amount,
+                date: dateChanged ? date : (old.date ?? locked.date),
+              },
+            });
+            finalRows.push({
+              ...plainRow(old),
+              amount: keptRow.amount,
+              date: dateChanged ? date : old.date,
+            });
+          }
+
+          // 3. Added rows, validated like a fresh save.
+          const addedRows: CashReceipt['rows'] = [];
+          for (const row of added) {
+            const sale = await this.saleModel
+              .findOne({ _id: row.invoiceId, tenantId: tenantObjectId, branchId: branchObjectId })
+              .session(session);
+            if (!sale || sale.deletedAt || sale.status === SaleStatus.PENDING) {
+              errors.push({ invoiceId: row.invoiceId, reason: 'Invoice not found or voided' });
+              continue;
+            }
+            if (!sale.customerId) {
+              errors.push({
+                invoiceId: row.invoiceId,
+                reason: 'Walk-in invoices cannot be receipted here',
+              });
+              continue;
+            }
+            const balance = outstandingOf(sale);
+            if (balance <= 0.01) {
+              errors.push({ invoiceId: row.invoiceId, reason: 'Invoice is already paid' });
+              continue;
+            }
+            if (row.amount > balance + 0.01) {
+              errors.push({
+                invoiceId: row.invoiceId,
+                reason: `Amount exceeds the balance of ${balance.toFixed(2)}`,
+              });
+              continue;
+            }
+            const customer = await this.customerModel
+              .findOne({ _id: String(sale.customerId), tenantId: tenantObjectId })
+              .session(session);
+            if (!customer) {
+              errors.push({ invoiceId: row.invoiceId, reason: 'Customer not found' });
+              continue;
+            }
+            const before = { amountPaid: sale.amountPaid, paymentStatus: sale.paymentStatus };
+            const payment = await this.paymentsService.recordQuickPayment(
+              tenantId,
+              branchId,
+              userId,
+              InvoiceType.SALE,
+              sale.id,
+              PartyType.CUSTOMER,
+              String(sale.customerId),
+              locked.method,
+              row.amount,
+              { paymentDate: date.toISOString(), notes: 'Cash receipt' },
+              session,
+            );
+            const afterSale = await this.saleModel.findById(sale.id).session(session);
+            noteAudit(sale.id, sale.invoiceNumber ?? '', {
+              before,
+              after: { amountPaid: afterSale!.amountPaid, paymentStatus: afterSale!.paymentStatus },
+            });
+            const entryId = uuidv7();
+            addedRows.push({
+              entryId,
+              journalEntryId: payment.journalEntryId,
+              date,
+              invoiceId: sale.id,
+              invoiceNumber: sale.invoiceNumber ?? '',
+              customerId: String(sale.customerId),
+              customerName: customer.name,
+              paymentId: payment.id,
+              amount: row.amount,
+              method: locked.method,
+              orderBookerName: sale.orderBookerName,
+            });
+            changes.push({
+              entryId,
+              op: 'ADDED',
+              invoiceId: sale.id,
+              invoiceNumber: sale.invoiceNumber ?? '',
+              before: null,
+              after: { amount: row.amount, date },
+            });
+          }
+
+          if (errors.length) {
+            // Thrown inside withTransaction so everything written above rolls back, version bump included.
+            throw new BadRequestException({ message: 'Some rows could not be saved', errors });
+          }
+          if (changes.length === 0) throw new NothingChanged();
+
+          locked.rows = [...finalRows, ...addedRows];
+          locked.total = round2(locked.rows.reduce((sum, r) => sum + r.amount, 0));
+          if (dateChanged) locked.date = date;
+          await locked.save({ session });
+
+          await this.historyModel.create(
+            [
+              {
+                tenantId: tenantObjectId,
+                branchId: branchObjectId,
+                receiptId: locked.id,
+                transactionNumber: number,
+                version: locked.version,
+                actorId: new Types.ObjectId(userId),
+                changes,
+              },
+            ],
+            { session },
+          );
+          for (const [invoiceId, audit] of audits) {
+            await this.invoiceAuditService.log(
+              {
+                tenantId,
+                branchId,
+                invoiceType: 'SALE',
+                invoiceId,
+                invoiceNumber: audit.number,
+                actorId: userId,
+                action: 'CASH_RECEIPT_EDIT',
+                reason: `Transaction ${number} edited`,
+                before: audit.before,
+                after: audit.after,
+              },
+              session,
+            );
+          }
+        });
+      } catch (err) {
+        if (err instanceof NothingChanged)
+          return this.toTransaction(await this.findByNumber(tenantId, branchId, number));
+        throw err;
+      } finally {
+        await session.endSession();
+      }
+      return this.toTransaction(await this.findByNumber(tenantId, branchId, number));
+    });
+  }
+
+  private async findByNumber(tenantId: string, branchId: string, number: string) {
+    const receipt = await this.receiptModel.findOne({
+      tenantId: new Types.ObjectId(tenantId),
+      branchId: new Types.ObjectId(branchId),
+      transactionNumber: number,
+    });
+    if (!receipt) throw new NotFoundException('Transaction not found');
+    return receipt;
+  }
+
+  private async toTransaction(receipt: CashReceiptDocument): Promise<CashTransaction> {
+    const tenantId = String(receipt.tenantId);
+    const [live, sales] = await Promise.all([
+      this.paymentsService.livePaymentIds(
+        tenantId,
+        receipt.rows.map((r) => r.paymentId),
+      ),
+      this.saleModel.find({
+        _id: { $in: receipt.rows.map((r) => r.invoiceId) },
+        tenantId: receipt.tenantId,
+        branchId: receipt.branchId,
+      }),
+    ]);
+    const saleById = new Map(sales.map((s) => [s.id as string, s]));
+
+    // Balance before this transaction: what the customer owes now plus what its live entries took off.
+    const takenOff = new Map<string, number>();
+    for (const r of receipt.rows) {
+      if (live.has(r.paymentId))
+        takenOff.set(r.customerId, round2((takenOff.get(r.customerId) ?? 0) + r.amount));
+    }
+    const customerBalance = new Map<string, number>();
+    await Promise.all(
+      [...new Set(receipt.rows.map((r) => r.customerId))].map(async (id) =>
+        customerBalance.set(
+          id,
+          round2(
+            (await this.partyBalanceService.getCustomerBalance(tenantId, id)) +
+              (takenOff.get(id) ?? 0),
+          ),
+        ),
+      ),
+    );
+
+    const rows: CashTransactionRow[] = receipt.rows.map((r) => {
+      const sale = saleById.get(r.invoiceId);
+      const isLive = live.has(r.paymentId);
+      const own = isLive ? r.amount : 0;
+      const netTotal = sale ? round2(sale.grandTotal - (sale.returnedTotal ?? 0)) : 0;
+      const balance = sale ? round2(outstandingOf(sale) + own) : 0;
+      return {
+        entryId: r.entryId ?? r.invoiceId,
+        invoiceId: r.invoiceId,
+        invoiceNumber: r.invoiceNumber,
+        customerId: r.customerId,
+        customerName: r.customerName,
+        saleDate: sale ? sale.saleDate.toISOString() : receipt.date.toISOString(),
+        customerBalance: customerBalance.get(r.customerId) ?? 0,
+        voucherAmount: netTotal,
+        received: round2(netTotal - balance),
+        balance,
+        amount: r.amount,
+        paymentVoided: !isLive || !sale,
+      };
+    });
+
+    return {
+      id: receipt.id as string,
+      transactionNumber: receipt.transactionNumber ?? '',
+      voucherNumber: receipt.voucherNumber,
+      branchId: String(receipt.branchId),
+      version: receipt.version ?? 1,
+      date: receipt.date.toISOString(),
+      method: receipt.method,
+      total: receipt.total,
+      rows,
+    };
   }
 
   /** Combined voucher, or a single receipt when `invoiceId` is given. */
@@ -291,11 +878,14 @@ export class CashReceiptsService {
     return {
       id: r.id as string,
       voucherNumber: r.voucherNumber,
+      transactionNumber: r.transactionNumber,
+      version: r.version,
       date: r.date.toISOString(),
       method: r.method,
       count: r.rows.length,
       total: r.total,
       rows: r.rows.map((x) => ({
+        entryId: x.entryId,
         invoiceId: x.invoiceId,
         invoiceNumber: x.invoiceNumber,
         customerName: x.customerName,

@@ -73,6 +73,10 @@ export default function TrialBalancePage() {
         actions={
           <div className="flex items-center gap-3">
             <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-40" aria-label="As of date" />
+            <Button
+              disabled={!(asOfDate !== todayISO())} variant="outline" size="sm" onClick={() => setAsOfDate(todayISO())}>
+              Clear filters
+            </Button>
             <Button variant="outline" onClick={handleExport} disabled={!trialBalance || !has('acc_trial_balance:export')}>
               <Download className="mr-2 h-4 w-4" />
               Export CSV

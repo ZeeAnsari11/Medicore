@@ -22,6 +22,7 @@ import {
   HandCoins,
   BarChart3,
   ClipboardCheck,
+  ListChecks,
   type LucideIcon,
 } from 'lucide-react';
 import type { NavItem, NavSection } from '@medicore/ui';
@@ -47,6 +48,7 @@ export const navSections: NavSection[] = [
       { label: 'Sales', href: '/sales', icon: Receipt, requires: { anyOf: ['sales:read'] } },
       { label: 'Process Orders', href: '/sales/process-orders', icon: ClipboardCheck, requires: { anyOf: ['process_orders:read'] } },
       { label: 'Cash Receipt', href: '/sales/cash-receipt', icon: HandCoins, requires: { anyOf: ['cash_receipt:read'] } },
+      { label: 'Cash Receipt Transactions', href: '/sales/cash-receipt-transactions', icon: ListChecks, requires: { anyOf: ['cash_receipt:read'] } },
       { label: 'Customers', href: '/customers', icon: Users, requires: { anyOf: ['customers:read'] } },
     ],
   },
@@ -54,6 +56,7 @@ export const navSections: NavSection[] = [
     title: 'Insights',
     items: [
       { label: 'SSR', href: '/reports/ssr', icon: BarChart3, requires: { anyOf: ['ssr:read'] } },
+      { label: 'Order Booker Report', href: '/reports/order-booker', icon: ClipboardList, requires: { anyOf: ['sales:read'] } },
     ],
   },
   {

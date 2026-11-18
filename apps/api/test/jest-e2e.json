@@ -6,7 +6,7 @@
   ],
   "rootDir": ".",
   "testEnvironment": "node",
-  "testRegex": "(tenant-isolation|ssr|invoice-edit).*\\.e2e-spec\\.ts$",
+  "testRegex": "(tenant-isolation|ssr|invoice-edit|cash-receipt).*\\.e2e-spec\\.ts$",
   "testTimeout": 60000,
   "transform": {
     "^.+\\.ts$": [

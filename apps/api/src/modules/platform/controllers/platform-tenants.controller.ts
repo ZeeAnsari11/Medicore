@@ -91,6 +91,13 @@ export class PlatformTenantsController {
   }
 
   @Roles(SystemRole.SUPER_ADMIN)
+  @Patch(':id/reactivate')
+  async reactivate(@Param('id') id: string) {
+    const tenant = await this.tenantsService.reactivate(id);
+    return this.tenantsService.toTenantResponse(tenant);
+  }
+
+  @Roles(SystemRole.SUPER_ADMIN)
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateTenantDto) {
     const tenant = await this.tenantsService.update(id, dto.name);

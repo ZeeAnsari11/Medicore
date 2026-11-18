@@ -54,4 +54,10 @@ export class Account {
 export const AccountSchema = SchemaFactory.createForClass(Account);
 
 AccountSchema.index({ tenantId: 1, code: 1 }, { unique: true });
-AccountSchema.index({ tenantId: 1, systemKey: 1 }, { unique: true, sparse: true });
+// A compound `sparse` index only skips a document when EVERY indexed field is absent, and tenantId is always
+// present, so accounts without a systemKey (all user-created ones) would collide after the first. A partial
+// index on "systemKey is a string" is what sparse was meant to express (same fix as Product.barcode).
+AccountSchema.index(
+  { tenantId: 1, systemKey: 1 },
+  { unique: true, partialFilterExpression: { systemKey: { $type: 'string' } } },
+);

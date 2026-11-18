@@ -260,11 +260,10 @@ export default function PurchasesPage() {
             </SelectContent>
           </Select>
         </label>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear filters
-          </Button>
-        )}
+        <Button
+          disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
+          Clear filters
+        </Button>
       </div>
 
       {isLoading ? (
@@ -280,6 +279,7 @@ export default function PurchasesPage() {
           searchPlaceholder="Search by PO #..."
           emptyMessage="No purchases match the current filters."
           search={{ value: searchInput, onChange: setSearchInput }}
+          hideClearFilters
           pagination={{
             pageIndex,
             pageSize,

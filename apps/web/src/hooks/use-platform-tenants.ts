@@ -44,6 +44,10 @@ async function setTenantStatus(id: string, status: TenantStatus): Promise<Tenant
   });
 }
 
+async function reactivateTenant(id: string): Promise<Tenant> {
+  return apiFetch<Tenant>(`/platform/tenants/${id}/reactivate`, { method: 'PATCH' });
+}
+
 async function impersonateTenant(id: string): Promise<AuthResponse> {
   return apiFetch<AuthResponse>(`/platform/tenants/${id}/impersonate`, { method: 'POST' });
 }
@@ -84,8 +88,10 @@ export function usePlatformTenants() {
     },
   });
 
+  // `status` omitted = reactivate: the API restores whatever status the tenant had before suspension.
   const setStatusMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: TenantStatus }) => setTenantStatus(id, status),
+    mutationFn: ({ id, status }: { id: string; status?: TenantStatus }) =>
+      status ? setTenantStatus(id, status) : reactivateTenant(id),
     onSuccess: (tenant) => {
       queryClient.setQueryData(PLATFORM_TENANTS_QUERY_KEY, (old: Tenant[] | undefined) =>
         old ? old.map((t) => (t.id === tenant.id ? tenant : t)) : [tenant],
@@ -115,6 +121,7 @@ export function usePlatformTenants() {
     isUpdating: updateMutation.isPending,
     updateError: updateMutation.error,
     setStatus: (id: string, status: TenantStatus) => setStatusMutation.mutateAsync({ id, status }),
+    reactivate: (id: string) => setStatusMutation.mutateAsync({ id }),
     isSettingStatus: setStatusMutation.isPending,
     impersonate: impersonateMutation.mutateAsync,
   };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Printer, Trash2 } from 'lucide-react';
 import { PaymentMethod } from '@medicore/shared-types';
 import { TopbarContent } from '@/components/layout/topbar-slot';
@@ -18,23 +18,34 @@ import {
   TableRow,
   toast,
 } from '@medicore/ui';
+import { ApiError } from '@/lib/api-client';
+import { OpenFromUrl } from '@/components/open-from-url';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { BranchFilter } from '@/components/branch-filter';
 import { useDocumentPdf } from '@/hooks/use-document-pdf';
 import {
+  normalizeTransactionNumber,
   rowErrorsOf,
   useInvoiceLookup,
+  useCashTransactionsPage,
+  useLoadCashTransaction,
   useSaveCashReceipt,
+  useUpdateCashTransaction,
   type CashReceiptResult,
+  type CashTransaction,
   type LookupInvoice,
 } from '@/hooks/use-cash-receipts';
 
 const METHOD = PaymentMethod.CASH;
+/** The Transaction # box always starts with this, so only the digits need typing. */
+const TX_PREFIX = 'T-';
 
 interface SheetRow {
   key: string;
+  /** Set for an entry loaded from a saved transaction; absent for a row added in this session. */
+  entryId?: string;
   invoiceId: string;
   invoiceNumber: string;
   customerId: string;
@@ -48,6 +59,33 @@ interface SheetRow {
   amount: string;
   error?: string;
 }
+
+/** A transaction being edited: its number and the version the edit was loaded at. */
+interface Editing {
+  number: string;
+  version: number;
+  voucherNumber: string;
+}
+
+const VOIDED = 'Its payment was voided elsewhere; remove this entry';
+
+const rowsOfTransaction = (tx: CashTransaction): SheetRow[] =>
+  tx.rows.map((r) => ({
+    key: r.entryId,
+    entryId: r.entryId,
+    invoiceId: r.invoiceId,
+    invoiceNumber: r.invoiceNumber,
+    customerId: r.customerId,
+    customerName: r.customerName,
+    customerBalance: r.customerBalance,
+    saleDate: r.saleDate,
+    voucherAmount: r.voucherAmount,
+    received: r.received,
+    // The most this entry can be set to: what is still owed plus its own amount.
+    balance: r.balance,
+    amount: String(r.amount),
+    error: r.paymentVoided ? VOIDED : undefined,
+  }));
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB');
@@ -76,6 +114,12 @@ export default function CashReceiptPage() {
   const [batchId, setBatchId] = useState(() => crypto.randomUUID());
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [saved, setSaved] = useState<CashReceiptResult | null>(null);
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const [transactionInput, setTransactionInput] = useState(TX_PREFIX);
+  const [txOpen, setTxOpen] = useState(false);
+  const [txQuery, setTxQuery] = useState('');
+  const [txHighlight, setTxHighlight] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [voucherInput, setVoucherInput] = useState('');
   const [voucherQuery, setVoucherQuery] = useState('');
@@ -93,7 +137,14 @@ export default function CashReceiptPage() {
 
   const storageKey = `cash-receipt-sheet:${user?.tenantId ?? ''}`;
   const save = useSaveCashReceipt();
+  const loadTransaction = useLoadCashTransaction();
+  const updateTransaction = useUpdateCashTransaction();
   const { data: matches = [], isFetching } = useInvoiceLookup(voucherQuery, branchId);
+  // Saved transactions matching what is typed after "T-"; the latest few while nothing is typed yet.
+  const { transactions: txMatches, isFetching: txFetching } = useCashTransactionsPage(
+    { branchId, q: txQuery === TX_PREFIX ? undefined : txQuery || undefined, page: 1, limit: 8 },
+    txOpen,
+  );
 
   useEffect(() => {
     voucherRef.current?.focus();
@@ -107,6 +158,15 @@ export default function CashReceiptPage() {
   useEffect(() => {
     setHighlight(0);
   }, [matches]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setTxQuery(transactionInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [transactionInput]);
+
+  useEffect(() => {
+    setTxHighlight(0);
+  }, [txMatches]);
 
   // Restore an unsaved sheet after a refresh. Storage can be unavailable, so every access is guarded.
   useEffect(() => {
@@ -127,12 +187,13 @@ export default function CashReceiptPage() {
   useEffect(() => {
     if (!restored) return;
     try {
-      if (rows.length === 0) window.sessionStorage.removeItem(storageKey);
+      // An edit session is never kept as a draft: it reloads from the saved transaction.
+      if (rows.length === 0 || editing) window.sessionStorage.removeItem(storageKey);
       else window.sessionStorage.setItem(storageKey, JSON.stringify({ rows, batchId, branchId }));
     } catch {
       // ignore
     }
-  }, [restored, rows, batchId, branchId, storageKey]);
+  }, [restored, rows, batchId, branchId, storageKey, editing]);
 
   useEffect(() => {
     if (rows.length === 0) return;
@@ -245,7 +306,87 @@ export default function CashReceiptPage() {
   const updateRow = (key: string, patch: Partial<SheetRow>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch, error: undefined } : r)));
 
+  const openTransaction = (tx: CashTransaction) => {
+    setRows(rowsOfTransaction(tx));
+    setEditing({ number: tx.transactionNumber, version: tx.version, voucherNumber: tx.voucherNumber });
+    setTransactionInput(tx.transactionNumber);
+    setSelectedKey(null);
+    setSaved(null);
+    if (isAdmin) setBranchId(tx.branchId);
+    resetForm();
+  };
+
+  const handleLoad = async (raw = transactionInput) => {
+    setTxOpen(false);
+    const number = normalizeTransactionNumber(raw);
+    if (!number) {
+      toast.error('Enter a transaction number like T-0001');
+      return;
+    }
+    if (rows.length > 0 && !window.confirm('Discard the entries on screen and load this transaction?')) return;
+    try {
+      openTransaction(await loadTransaction.mutateAsync(number));
+      setNotice(null);
+    } catch {
+      // toasted by the hook
+    }
+  };
+
+  // A link from the transactions list (`?transaction=T-0001`) opens that transaction straight away.
+  const handleLoadRef = useRef(handleLoad);
+  handleLoadRef.current = handleLoad;
+  const openFromUrl = useCallback((number: string) => {
+    setTransactionInput(number);
+    void handleLoadRef.current(number);
+  }, []);
+
+  const exitEditing = () => {
+    setEditing(null);
+    setTransactionInput(TX_PREFIX);
+    setRows([]);
+    setSelectedKey(null);
+    setNotice(null);
+    resetForm();
+  };
+
+  const handleSaveEdits = useCallback(async () => {
+    if (!editing || rows.length === 0 || updateTransaction.isPending) return;
+    const withErrors = rows.map((r) => ({ ...r, error: r.error === VOIDED ? VOIDED : amountError(r.amount, r.balance) }));
+    if (withErrors.some((r) => r.error)) {
+      setRows(withErrors);
+      toast.error('Fix the highlighted rows before saving');
+      return;
+    }
+    try {
+      const tx = await updateTransaction.mutateAsync({
+        number: editing.number,
+        dto: {
+          expectedVersion: editing.version,
+          rows: rows.map((r) => ({ entryId: r.entryId, invoiceId: r.invoiceId, amount: Number(r.amount) })),
+        },
+      });
+      openTransaction(tx);
+      setNotice(`Saved edits to ${tx.transactionNumber} (version ${tx.version}), total Rs. ${money(tx.total)}`);
+    } catch (error) {
+      const errs = rowErrorsOf(error);
+      if (errs.length) {
+        setRows((prev) => prev.map((r) => ({ ...r, error: errs.find((e) => e.invoiceId === r.invoiceId)?.reason })));
+        toast.error('Nothing was saved. Some rows failed validation.');
+      } else if (error instanceof ApiError && error.status === 409) {
+        // Someone else changed it first: show their version instead of overwriting it.
+        try {
+          openTransaction(await loadTransaction.mutateAsync(editing.number));
+        } catch {
+          // toasted by the hook
+        }
+      }
+    }
+    // openTransaction only sets state and does not change between renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, rows, updateTransaction, loadTransaction]);
+
   const handleSave = useCallback(async () => {
+    if (editing) return handleSaveEdits();
     if (rows.length === 0 || save.isPending) return;
     const withErrors = rows.map((r) => ({ ...r, error: amountError(r.amount, r.balance) }));
     if (withErrors.some((r) => r.error)) {
@@ -265,6 +406,7 @@ export default function CashReceiptPage() {
         rows: rows.map((r) => ({ invoiceId: r.invoiceId, amount: Number(r.amount) })),
       });
       setSaved(result);
+      setNotice(null);
       setRows([]);
       setSelectedKey(null);
       setBatchId(crypto.randomUUID());
@@ -276,7 +418,7 @@ export default function CashReceiptPage() {
         toast.error('Nothing was saved. Some rows failed validation.');
       }
     }
-  }, [rows, save, branchId, batchId]);
+  }, [rows, save, branchId, batchId, editing, handleSaveEdits]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -293,6 +435,25 @@ export default function CashReceiptPage() {
   useEffect(() => {
     suggestionsRef.current?.querySelector<HTMLElement>(`[data-index="${highlight}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [highlight]);
+
+  const onTransactionKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setTxHighlight((h) => Math.min(h + 1, txMatches.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setTxHighlight((h) => Math.max(h - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // An exact number wins, otherwise the highlighted suggestion; with no suggestions, what was typed.
+      const typed = normalizeTransactionNumber(transactionInput);
+      const pick = txMatches.find((t) => t.transactionNumber === typed) ?? txMatches[txHighlight];
+      if (pick) setTransactionInput(pick.transactionNumber);
+      void handleLoad(pick?.transactionNumber ?? transactionInput);
+    } else if (e.key === 'Escape') {
+      setTxOpen(false);
+    }
+  };
 
   const onVoucherKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
@@ -359,6 +520,7 @@ export default function CashReceiptPage() {
       {saved && (
         <Alert className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <span>
+            {saved.transactionNumber && <b>{saved.transactionNumber}: </b>}
             {saved.count} receipt{saved.count === 1 ? '' : 's'} saved, total Rs. {money(saved.total)} (
             {saved.voucherNumber})
           </span>
@@ -384,8 +546,90 @@ export default function CashReceiptPage() {
         </Alert>
       )}
 
+      {notice && (
+        <Alert className="mb-6 flex items-center justify-between gap-3">
+          <span>{notice}</span>
+          <Button size="sm" variant="ghost" onClick={() => setNotice(null)}>
+            Dismiss
+          </Button>
+        </Alert>
+      )}
+
+      {editing && (
+        <Alert className="mb-4 flex flex-wrap items-center justify-between gap-3 border-primary">
+          <span>
+            Editing <b>{editing.number}</b> ({editing.voucherNumber}, version {editing.version}). Changes update the saved
+            payments in place.
+          </span>
+          <Button size="sm" variant="outline" onClick={exitEditing}>
+            Exit edit
+          </Button>
+        </Alert>
+      )}
+
       <div className="mb-4 rounded-lg border bg-card p-4">
         <div className="mb-3 flex flex-wrap items-end gap-3">
+          <div className="relative w-64">
+            <label className="mb-1 block text-sm font-medium">Transaction #</label>
+            <div className="flex gap-1">
+              <Input
+                value={transactionInput}
+                placeholder="T-0001"
+                className={editing ? 'border-primary ring-1 ring-primary' : undefined}
+                onChange={(e) => {
+                  // Keep the "T-" in front: typing just digits, or pasting "1", still reads as a T- number.
+                  const v = e.target.value.toUpperCase();
+                  setTransactionInput(v.startsWith(TX_PREFIX) ? v : `${TX_PREFIX}${v.replace(/^T-?/, '')}`);
+                  setTxOpen(true);
+                }}
+                onFocus={() => setTxOpen(true)}
+                onBlur={() => setTimeout(() => setTxOpen(false), 150)}
+                onKeyDown={onTransactionKeyDown}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={transactionInput.trim() === TX_PREFIX || loadTransaction.isPending}
+                onClick={() => void handleLoad()}
+              >
+                Load
+              </Button>
+            </div>
+            {txOpen && (
+              <div className="absolute z-20 mt-1 max-h-64 w-[28rem] max-w-[90vw] overflow-auto rounded-md border bg-popover shadow-md">
+                {txMatches.length === 0 ? (
+                  <div className="p-3 text-sm text-muted-foreground">
+                    {txFetching ? 'Searching...' : 'No transactions found'}
+                  </div>
+                ) : (
+                  txMatches.map((t, i) => (
+                    <button
+                      type="button"
+                      key={t.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setTransactionInput(t.transactionNumber);
+                        void handleLoad(t.transactionNumber);
+                      }}
+                      className={`flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm ${
+                        i === txHighlight ? 'bg-accent' : ''
+                      }`}
+                    >
+                      <span className="min-w-0">
+                        <span className="font-medium">{t.transactionNumber}</span>
+                        <span className="ml-2 text-muted-foreground">{t.voucherNumber}</span>
+                        <span className="block truncate text-xs text-muted-foreground">
+                          {fmtDate(t.date)} · {t.customers.join(', ')}
+                        </span>
+                      </span>
+                      <span className="tabular-nums">{money(t.total)}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
           <div className="relative min-w-48 flex-1">
             <label className="mb-1 block text-sm font-medium">Voucher #</label>
             <Input
@@ -511,7 +755,7 @@ export default function CashReceiptPage() {
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                  No entries yet. Type a voucher number above.
+                  No entries yet. Type a voucher number above, or load a transaction.
                 </TableCell>
               </TableRow>
             )}
@@ -567,10 +811,22 @@ export default function CashReceiptPage() {
       </div>
 
       <div className="mt-4 flex justify-end">
-        <Button onClick={handleSave} disabled={!has('cash_receipt:create') || rows.length === 0 || save.isPending}>
-          {save.isPending ? 'Saving...' : 'Save'}
+        <Button
+          onClick={handleSave}
+          disabled={
+            !has(editing ? 'cash_receipt:update' : 'cash_receipt:create') ||
+            rows.length === 0 ||
+            save.isPending ||
+            updateTransaction.isPending
+          }
+        >
+          {save.isPending || updateTransaction.isPending ? 'Saving...' : editing ? 'Save edits' : 'Save'}
         </Button>
       </div>
+
+      <Suspense fallback={null}>
+        <OpenFromUrl param="transaction" onOpen={openFromUrl} />
+      </Suspense>
     </PageAccessGuard>
   );
 }

@@ -230,6 +230,48 @@ describe('tenant isolation (e2e)', () => {
     });
   });
 
+  describe('tenant suspension', () => {
+    it('a switched-off tenant cannot log in, keep a session or be impersonated, and comes back as it was', async () => {
+      const platform = { token: env.platformToken };
+      const created = (
+        await api()
+          .post('/api/platform/tenants')
+          .set(auth(platform))
+          .send({
+            tenantName: 'Epsilon Pharmacy',
+            adminFullName: 'Eps Admin',
+            adminUsername: 'eps-admin',
+          })
+          .expect(201)
+      ).body;
+      const id = created.tenant.id;
+      expect(created.tenant.status).toBe('TRIAL');
+      const credentials = { username: 'eps-admin', password: created.temporaryPassword };
+      const token = (await api().post('/api/auth/login').send(credentials).expect(200)).body
+        .accessToken;
+
+      const suspended = (
+        await api()
+          .patch(`/api/platform/tenants/${id}/status`)
+          .set(auth(platform))
+          .send({ status: 'SUSPENDED' })
+          .expect(200)
+      ).body;
+      expect(suspended.status).toBe('SUSPENDED');
+      const refused = await api().post('/api/auth/login').send(credentials).expect(401);
+      expect(refused.body.message).toMatch(/suspended/i);
+      await api().get('/api/users').set(auth({ token })).expect(403);
+      await api().post(`/api/platform/tenants/${id}/impersonate`).set(auth(platform)).expect(400);
+
+      const back = (
+        await api().patch(`/api/platform/tenants/${id}/reactivate`).set(auth(platform)).expect(200)
+      ).body;
+      expect(back.status).toBe('TRIAL');
+      await api().post('/api/auth/login').send(credentials).expect(200);
+      await api().get('/api/users').set(auth({ token })).expect(200);
+    });
+  });
+
   describe('client-supplied tenantId is ignored or rejected', () => {
     it('forbidNonWhitelisted rejects tenantId in the body', async () => {
       await api().post('/api/customers').set(auth(A)).send({ name: 'Sneaky', tenantId: B.tenantId }).expect(400);

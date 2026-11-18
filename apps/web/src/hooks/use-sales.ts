@@ -50,8 +50,7 @@ export interface SaleListParams {
   limit: number;
 }
 
-async function fetchSalesPage(p: SaleListParams): Promise<PaginatedSales> {
-  const params = new URLSearchParams({ page: String(p.page), limit: String(p.limit) });
+function salesFilterParams(p: SaleListParams, params: URLSearchParams): URLSearchParams {
   if (p.branchId) params.set('branchId', p.branchId);
   if (p.customerId) params.set('customerId', p.customerId);
   if (p.orderBookerId) params.set('orderBookerId', p.orderBookerId);
@@ -60,8 +59,16 @@ async function fetchSalesPage(p: SaleListParams): Promise<PaginatedSales> {
   if (p.startDate) params.set('startDate', p.startDate);
   if (p.endDate) params.set('endDate', p.endDate);
   if (p.search) params.set('search', p.search);
+  return params;
+}
+
+async function fetchSalesPage(p: SaleListParams): Promise<PaginatedSales> {
+  const params = salesFilterParams(p, new URLSearchParams({ page: String(p.page), limit: String(p.limit) }));
   return apiFetch<PaginatedSales>(`/sales?${params}`);
 }
+
+/** PDF of every sale matching the filters (paging is ignored). */
+export const salesReportPath = (p: SaleListParams) => `/sales/report/pdf?${salesFilterParams(p, new URLSearchParams())}`;
 
 /** Server-side filtered and paginated list for the Sales page. */
 export function useSalesPage(params: SaleListParams) {
@@ -74,6 +81,7 @@ export function useSalesPage(params: SaleListParams) {
   return {
     sales: query.data?.items ?? [],
     total: query.data?.total ?? 0,
+    summary: query.data?.summary,
     isLoading: query.isLoading,
     error: query.error,
   };

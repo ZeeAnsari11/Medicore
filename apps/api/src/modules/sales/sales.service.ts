@@ -30,6 +30,7 @@ import { AccountingPostingService, round2 } from '../accounting/accounting-posti
 import { PaymentsService } from '../accounting/payments.service';
 import { OrderBookersService, type OrderBooker } from './order-bookers.service';
 import { NOT_PENDING } from './not-pending';
+import { buildSalesReportPdf } from './sales-report-pdf';
 import { orderDayRange, sortOrdersForConfirmation } from './order-processing.util';
 import {
   InvoiceType,
@@ -45,8 +46,11 @@ import type {
   PendingOrderRow,
   Sale as SaleType,
   SalePaymentRow,
+  SalesSummary,
 } from '@medicore/shared-types';
 
+/** Most sales one PDF report lists; the totals always cover every match. */
+const SALES_REPORT_LIMIT = 2000;
 
 interface PlannedLine {
   productId: string;
@@ -137,7 +141,9 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const filter = this.buildListFilter(tenantId, branchId, query);
-    const [items, total] = await Promise.all([
+    // Totals across every matching invoice, only when the list is narrowed to one customer or Order Booker.
+    const wantsSummary = !!(query.customerId || query.orderBookerId);
+    const [items, total, summary] = await Promise.all([
       this.saleModel
         .find(filter)
         .populate('customerId', 'name')
@@ -145,8 +151,107 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         .skip((page - 1) * limit)
         .limit(limit),
       this.saleModel.countDocuments(filter),
+      wantsSummary ? this.summarize(filter) : undefined,
     ]);
-    return { items, total, page, limit };
+    return { items, total, page, limit, ...(summary ? { summary } : {}) };
+  }
+
+  /** Orders, gross, returned, net, paid and remaining for the sales matching `filter`. */
+  private async summarize(filter: Record<string, unknown>): Promise<SalesSummary> {
+    const [row] = await this.saleModel.aggregate<
+      Omit<SalesSummary, 'remaining'> & { remaining: number }
+    >([
+      { $match: filter },
+      {
+        $project: {
+          grandTotal: 1,
+          returned: { $ifNull: ['$returnedTotal', 0] },
+          paid: { $ifNull: ['$amountPaid', 0] },
+          refunded: { $ifNull: ['$refundedTotal', 0] },
+        },
+      },
+      {
+        $project: {
+          grandTotal: 1,
+          returned: 1,
+          paid: 1,
+          net: { $subtract: ['$grandTotal', '$returned'] },
+          // Per invoice and never below 0, like the Remaining Bal column.
+          remaining: {
+            $max: [
+              0,
+              {
+                $subtract: [
+                  { $subtract: ['$grandTotal', '$returned'] },
+                  { $subtract: ['$paid', '$refunded'] },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          orders: { $sum: 1 },
+          gross: { $sum: '$grandTotal' },
+          returned: { $sum: '$returned' },
+          net: { $sum: '$net' },
+          paid: { $sum: '$paid' },
+          remaining: { $sum: '$remaining' },
+        },
+      },
+    ]);
+    return {
+      orders: row?.orders ?? 0,
+      gross: round2(row?.gross ?? 0),
+      returned: round2(row?.returned ?? 0),
+      net: round2(row?.net ?? 0),
+      paid: round2(row?.paid ?? 0),
+      remaining: round2(row?.remaining ?? 0),
+    };
+  }
+
+  /** One PDF of every sale matching the list filters (capped), with the same totals as the on-screen summary. */
+  async buildReportPdf(tenantId: string, branchId: string | null, query: ListSalesQueryDto) {
+    const filter = this.buildListFilter(tenantId, branchId, query);
+    const [docs, total, summary, tenant, branch, customer] = await Promise.all([
+      this.saleModel
+        .find(filter)
+        .populate('customerId', 'name')
+        .sort({ saleDate: -1, createdAt: -1 })
+        .limit(SALES_REPORT_LIMIT),
+      this.saleModel.countDocuments(filter),
+      this.summarize(filter),
+      this.tenantsService.findById(tenantId),
+      branchId ? this.branchModel.findById(branchId) : null,
+      query.customerId ? this.customerModel.findById(query.customerId) : null,
+    ]);
+    const rows = docs.map((d) => this.toSaleResponse(d));
+    const filters: string[] = [];
+    if (query.customerId) filters.push(`Customer: ${customer?.name ?? 'Selected customer'}`);
+    if (query.orderBookerId)
+      filters.push(`Order Booker: ${rows[0]?.orderBookerName ?? 'Selected Order Booker'}`);
+    if (query.paymentStatus) filters.push(`Payment: ${query.paymentStatus}`);
+    if (query.returnStatus) filters.push(`Returns: ${query.returnStatus}`);
+    if (query.search?.trim()) filters.push(`Invoice search: ${query.search.trim()}`);
+    filters.push(
+      query.startDate || query.endDate
+        ? `Period: ${query.startDate ?? 'Start'} to ${query.endDate ?? 'Today'}`
+        : 'Period: All dates',
+    );
+    return buildSalesReportPdf({
+      companyName: tenant?.name ?? 'Medicore',
+      branchName: branch?.name ?? 'All branches',
+      filters,
+      generatedAt: new Date(),
+      summary,
+      rows,
+      truncatedNote:
+        total > rows.length
+          ? `Showing the latest ${rows.length} of ${total} sales. Totals above cover all ${total}.`
+          : undefined,
+    });
   }
 
   private buildListFilter(tenantId: string, branchId: string | null, query: ListSalesQueryDto) {

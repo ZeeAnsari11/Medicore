@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Plus, Receipt } from 'lucide-react';
+import { AlertCircle, FileText, Plus, Receipt } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -20,7 +20,8 @@ import {
   SelectValue,
   type ColumnDef,
 } from '@medicore/ui';
-import { useOrderBookers, useSale, useSalesPage } from '@/hooks/use-sales';
+import { salesReportPath, useOrderBookers, useSale, useSalesPage } from '@/hooks/use-sales';
+import { useDocumentPdf } from '@/hooks/use-document-pdf';
 import { OpenFromUrl } from '@/components/open-from-url';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { useCustomers } from '@/hooks/use-customers';
@@ -30,6 +31,9 @@ import { SaleDetailDialog } from './components/sale-detail-dialog';
 import type { Sale } from '@medicore/shared-types';
 
 const ALL = '__all__';
+// Marks a filter that is currently narrowing the list.
+const ACTIVE = 'border-primary ring-1 ring-primary';
+const active = (on: boolean) => (on ? ACTIVE : '');
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
 
 const paymentVariant: Record<PaymentStatus, 'default' | 'secondary' | 'warning'> = {
@@ -37,6 +41,11 @@ const paymentVariant: Record<PaymentStatus, 'default' | 'secondary' | 'warning'>
   PARTIAL: 'warning',
   UNPAID: 'secondary',
 };
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+const netOf = (s: Sale) => round2(s.grandTotal - (s.returnedTotal ?? 0));
+// Same formula as the sale detail dialog's outstanding amount.
+const remainingOf = (s: Sale) => Math.max(round2(netOf(s) - (s.amountPaid - (s.refundedTotal ?? 0))), 0);
 
 export default function SalesPage() {
   const router = useRouter();
@@ -76,7 +85,7 @@ export default function SalesPage() {
     setPageIndex(0);
   }, [selectedBranchId, customerId, orderBookerId, paymentStatus, returnStatus, startDate, endDate, search, pageSize]);
 
-  const { sales, total, isLoading, error } = useSalesPage({
+  const filterParams = {
     branchId: selectedBranchId,
     customerId: customerId === ALL ? undefined : customerId,
     orderBookerId: orderBookerId === ALL ? undefined : orderBookerId,
@@ -85,9 +94,9 @@ export default function SalesPage() {
     startDate: startDate || undefined,
     endDate: endDate || undefined,
     search: search || undefined,
-    page: pageIndex + 1,
-    limit: pageSize,
-  });
+  };
+  const { sales, total, summary, isLoading, error } = useSalesPage({ ...filterParams, page: pageIndex + 1, limit: pageSize });
+  const { openPdf, isOpening } = useDocumentPdf();
 
   const customerOptions = useMemo(
     () => [{ value: ALL, label: 'All customers' }, ...customers.map((c) => ({ value: c.id, label: c.name }))],
@@ -111,7 +120,12 @@ export default function SalesPage() {
 
   const columns = useMemo<ColumnDef<Sale>[]>(
     () => [
-      { accessorKey: 'invoiceNumber', header: 'Invoice #' },
+      { accessorKey: 'invoiceNumber', header: 'Inv #' },
+      {
+        accessorKey: 'saleDate',
+        header: 'Date',
+        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
       {
         id: 'customer',
         header: 'Customer',
@@ -127,23 +141,33 @@ export default function SalesPage() {
           ]
         : []),
       {
-        accessorKey: 'saleDate',
-        header: 'Date',
-        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
-      },
-      {
-        id: 'items',
-        header: 'Items',
-        cell: ({ row }) => row.original.items.length,
-      },
-      {
         accessorKey: 'grandTotal',
-        header: 'Total',
+        header: 'Gross Sale',
         cell: ({ getValue }) => (getValue() as number).toFixed(2),
       },
       {
+        id: 'saleReturn',
+        header: 'Sale Return',
+        cell: ({ row }) => (row.original.returnedTotal ?? 0).toFixed(2),
+      },
+      {
+        id: 'netSale',
+        header: 'Net Sale / Payable',
+        cell: ({ row }) => netOf(row.original).toFixed(2),
+      },
+      {
+        id: 'paid',
+        header: 'Paid',
+        cell: ({ row }) => row.original.amountPaid.toFixed(2),
+      },
+      {
+        id: 'remaining',
+        header: 'Remaining Bal',
+        cell: ({ row }) => remainingOf(row.original).toFixed(2),
+      },
+      {
         accessorKey: 'paymentStatus',
-        header: 'Payment',
+        header: 'Status',
         cell: ({ row, getValue }) => {
           const status = getValue() as PaymentStatus;
           return (
@@ -194,11 +218,11 @@ export default function SalesPage() {
           placeholder="All customers"
           searchPlaceholder="Search customers..."
           emptyMessage="No customers found."
-          className="w-52"
+          className={`w-52 ${active(customerId !== ALL)}`}
         />
         {canSeeAll && (
           <Select value={orderBookerId} onValueChange={setOrderBookerId}>
-            <SelectTrigger className="w-48" aria-label="Order Booker">
+            <SelectTrigger className={`w-48 ${active(orderBookerId !== ALL)}`} aria-label="Order Booker">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -212,7 +236,7 @@ export default function SalesPage() {
           </Select>
         )}
         <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-          <SelectTrigger className="w-40" aria-label="Payment status">
+          <SelectTrigger className={`w-40 ${active(paymentStatus !== ALL)}`} aria-label="Payment status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -225,7 +249,7 @@ export default function SalesPage() {
           </SelectContent>
         </Select>
         <Select value={returnStatus} onValueChange={setReturnStatus}>
-          <SelectTrigger className="w-56" aria-label="Return status">
+          <SelectTrigger className={`w-56 ${active(returnStatus !== ALL)}`} aria-label="Return status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -237,11 +261,11 @@ export default function SalesPage() {
         </Select>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           From
-          <Input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className="w-40" />
+          <Input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={`w-40 ${active(!!startDate)}`} />
         </label>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           To
-          <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className="w-40" />
+          <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className={`w-40 ${active(!!endDate)}`} />
         </label>
         <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
           Rows per page
@@ -258,12 +282,38 @@ export default function SalesPage() {
             </SelectContent>
           </Select>
         </label>
-        {hasFilters && (
-          <Button variant="ghost" size="sm" onClick={clearFilters}>
-            Clear filters
-          </Button>
-        )}
+        <Button
+          disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
+          Clear filters
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={isOpening || total === 0}
+          onClick={() => void openPdf(salesReportPath({ ...filterParams, page: 1, limit: 1 }))}
+        >
+          <FileText className="mr-2 h-4 w-4" />
+          Report (PDF)
+        </Button>
       </div>
+
+      {summary && (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {[
+            ['Orders', String(summary.orders)],
+            ['Gross Sale', summary.gross.toFixed(2)],
+            ['Sale Return', summary.returned.toFixed(2)],
+            ['Net Sale / Payable', summary.net.toFixed(2)],
+            ['Paid', summary.paid.toFixed(2)],
+            ['Remaining Bal', summary.remaining.toFixed(2)],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-md border p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+              <p className="text-lg font-semibold">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex h-96 items-center justify-center">
@@ -278,6 +328,7 @@ export default function SalesPage() {
           searchPlaceholder="Search by Invoice #..."
           emptyMessage="No sales match the current filters."
           search={{ value: searchInput, onChange: setSearchInput }}
+          hideClearFilters
           pagination={{
             pageIndex,
             pageSize,

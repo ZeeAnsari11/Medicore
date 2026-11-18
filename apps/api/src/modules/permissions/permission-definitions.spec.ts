@@ -83,4 +83,13 @@ describe('order booker permissions', () => {
   it('does not hand process_orders to legacy roles', () => {
     expect(expandLegacyPermissions(['sales:read'])).not.toContain('process_orders:read');
   });
+
+  it('editing a saved cash-receipt transaction is its own permission, not given to the receipt-entry roles', () => {
+    expect(isKnownKey('cash_receipt:update')).toBe(true);
+    for (const key of ['order_booker', 'cashier']) {
+      const permissions = ROLE_TEMPLATES.find((t) => t.key === key)?.permissions ?? [];
+      expect(permissions).not.toContain('cash_receipt:update');
+    }
+    expect(normalizePermissions(['cash_receipt:create'])).not.toContain('cash_receipt:update');
+  });
 });

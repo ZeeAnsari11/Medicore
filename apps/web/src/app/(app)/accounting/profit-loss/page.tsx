@@ -18,6 +18,7 @@ import {
   TableRow,
   TableHead,
   TableCell,
+  Button,
 } from '@medicore/ui';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { useProfitLoss } from '@/hooks/use-ledger-reports';
@@ -55,6 +56,17 @@ export default function ProfitLossPage() {
           <div className="flex items-center gap-3">
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" aria-label="From date" />
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" aria-label="To date" />
+            <Button
+              disabled={!((startDate !== daysAgoISO(30) || endDate !== todayISO()))}
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setStartDate(daysAgoISO(30));
+                setEndDate(todayISO());
+              }}
+            >
+              Clear filters
+            </Button>
           </div>
         }
       />

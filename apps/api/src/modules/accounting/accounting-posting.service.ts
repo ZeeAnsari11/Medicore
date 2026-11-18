@@ -1,4 +1,9 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Model, Types } from 'mongoose';
 import { Account, AccountDocument } from './schemas/account.schema';
@@ -642,6 +647,60 @@ export class AccountingPostingService {
       createdBy: params.createdBy,
       session: params.session,
     });
+  }
+
+  /**
+   * The one sanctioned in-place edit of a posted entry: a customer cash-receipt payment's own entry (cash debit,
+   * receivable credit) gets a new amount and, optionally, a new date. Anything else, such as an entry that was
+   * reversed, removed or has more lines, is refused so the immutable ledger is never touched by accident. The caller
+   * (a cash-receipt transaction edit) keeps the before/after in its own history.
+   */
+  async editReceiptPaymentEntry(
+    tenantId: string,
+    paymentId: string,
+    amount: number,
+    entryDate: Date | undefined,
+    session: ClientSession,
+  ): Promise<void> {
+    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session);
+    const debitLine = entry.lines.find((l) => l.debit > 0 && !l.partyId);
+    const creditLine = entry.lines.find((l) => l.credit > 0 && l.partyType === PartyType.CUSTOMER);
+    if (entry.lines.length !== 2 || !debitLine || !creditLine) {
+      throw new ConflictException("This payment's ledger posting cannot be edited in place");
+    }
+    debitLine.debit = amount;
+    creditLine.credit = amount;
+    entry.totalDebit = amount;
+    entry.totalCredit = amount;
+    if (entryDate) entry.entryDate = entryDate;
+    entry.markModified('lines');
+    await entry.save({ session });
+  }
+
+  /** Takes a cash-receipt payment's entry out of the ledger (soft delete); see `editReceiptPaymentEntry`. */
+  async removeReceiptPaymentEntry(
+    tenantId: string,
+    paymentId: string,
+    session: ClientSession,
+  ): Promise<void> {
+    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session);
+    entry.deletedAt = new Date();
+    await entry.save({ session });
+  }
+
+  private async findLiveReceiptEntry(tenantId: string, paymentId: string, session: ClientSession) {
+    const entry = await this.journalEntryModel
+      .findOne({
+        tenantId: new Types.ObjectId(tenantId),
+        sourceType: JournalEntrySourceType.PAYMENT_RECEIVED,
+        sourceId: paymentId,
+        status: JournalEntryStatus.POSTED,
+        deletedAt: null,
+      })
+      .session(session);
+    if (!entry)
+      throw new ConflictException("This payment's ledger posting was already reversed or removed");
+    return entry;
   }
 
   private async reverseEntry(
