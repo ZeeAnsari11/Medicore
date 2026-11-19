@@ -107,6 +107,8 @@ export type {
   ReturnableSaleItem,
   ReturnablePurchaseItem,
   LedgerReference,
+  LedgerInvoiceRef,
+  LedgerReceiptRef,
   LedgerRow,
   LedgerPage,
   PartyLedgerSummary,
@@ -134,4 +136,5 @@ export type {
   CashTransactionHistoryEntry,
   CashTransactionSummary,
   PaginatedCashTransactions,
+  LastCashTransactionResponse,
 } from './cash-receipt';

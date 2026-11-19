@@ -55,8 +55,7 @@ export default function CashReceiptTransactionsPage() {
 
   const columns = useMemo<ColumnDef<CashTransactionSummary>[]>(
     () => [
-      { accessorKey: 'transactionNumber', header: 'Transaction #' },
-      { accessorKey: 'voucherNumber', header: 'Voucher #' },
+      { accessorKey: 'transactionNumber', header: 'CR Transaction #' },
       { accessorKey: 'date', header: 'Date', cell: ({ getValue }) => fmtDate(getValue() as string) },
       {
         id: 'customers',
@@ -135,7 +134,7 @@ export default function CashReceiptTransactionsPage() {
         <DataTable
           columns={columns}
           data={transactions}
-          searchPlaceholder="Search by T-0001, CR-000001, customer or invoice #..."
+          searchPlaceholder="Search by T-0001, customer or invoice #..."
           emptyMessage="No transactions match the current filters."
           search={{ value: searchInput, onChange: setSearchInput }}
           hideClearFilters

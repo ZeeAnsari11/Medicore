@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Pencil } from 'lucide-react';
 import {
@@ -43,6 +43,10 @@ interface SaleDetailDialogProps {
   onOpenChange: (open: boolean) => void;
   sale: Sale;
   branchId: string | null;
+  /** Opened from the ledger: nothing can be changed (no payment, return, edit or reassign). */
+  readOnly?: boolean;
+  /** The payment to mark in the Payments table (a ledger payment row). */
+  highlightPaymentId?: string | null;
 }
 
 const paymentVariant: Record<PaymentStatus, 'default' | 'secondary' | 'warning'> = {
@@ -74,7 +78,7 @@ function paymentDateTime(day: string): string {
   return new Date(y, m - 1, d, now.getHours(), now.getMinutes(), now.getSeconds()).toISOString();
 }
 
-export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branchId }: SaleDetailDialogProps) {
+export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branchId, readOnly = false, highlightPaymentId = null }: SaleDetailDialogProps) {
   // Prefer the live record so amount paid / status refresh right after a payment.
   const { sale: liveSale } = useSale(initialSale.id, branchId);
   const sale = liveSale ?? initialSale;
@@ -106,9 +110,17 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
   const router = useRouter();
   // Editable only while no payment or return exists; the server decides and says why when it is not.
   // ...and only by the sale's Order Booker or an admin.
-  const canEdit = sale.isEditable === true && has('sales:update') && (isAdmin || sale.orderBookerId === user?.userId);
-  const lockNote = sale.isEditable === false ? sale.lockReason : undefined;
-  const canReturn = sale.returnStatus !== ReturnStatus.FULL && has('sales:return');
+  const canEdit = !readOnly && sale.isEditable === true && has('sales:update') && (isAdmin || sale.orderBookerId === user?.userId);
+  const lockNote = !readOnly && sale.isEditable === false ? sale.lockReason : undefined;
+  const canReturn = !readOnly && sale.returnStatus !== ReturnStatus.FULL && has('sales:return');
+
+  // Bring the highlighted payment into view once the payments have loaded.
+  useEffect(() => {
+    if (highlightPaymentId && payments.length > 0) {
+      const t = setTimeout(() => document.querySelector('.payment-highlight')?.scrollIntoView({ block: 'center' }), 50);
+      return () => clearTimeout(t);
+    }
+  }, [highlightPaymentId, payments]);
   const [paymentAmount, setPaymentAmount] = useState<number>(outstanding);
   const [method, setMethod] = useState<PaymentMethod>(sale.paymentMethod ?? PaymentMethod.CASH);
   const [paymentDay, setPaymentDay] = useState<string>(todayIso());
@@ -144,6 +156,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
         </DialogHeader>
 
         <div className="space-y-4">
+          {readOnly && <p className="text-sm text-muted-foreground">Opened from the ledger. View only: nothing can be changed here.</p>}
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
             <span>{sale.customerName ?? 'Walk-in customer'}</span>
             <span>·</span>
@@ -159,7 +172,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               <span className="text-muted-foreground">Order Booker:</span>{' '}
               <span className="font-medium">{sale.orderBookerName ?? '—'}</span>
             </span>
-            {isAdmin && !reassigning && (
+            {isAdmin && !reassigning && !readOnly && (
               <Button variant="ghost" size="sm" onClick={() => setReassigning(true)}>
                 Reassign
               </Button>
@@ -279,7 +292,14 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                   </TableHeader>
                   <TableBody>
                     {payments.map((payment) => (
-                      <TableRow key={payment.id}>
+                      <TableRow
+                        key={payment.id}
+                        className={
+                          payment.id === highlightPaymentId
+                            ? 'payment-highlight bg-primary/10 [&>td:first-child]:border-l-4 [&>td:first-child]:border-primary'
+                            : undefined
+                        }
+                      >
                         <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleString()}</TableCell>
                         <TableCell className="tabular-nums">{payment.isRefund ? '-' : ''}{payment.amount.toFixed(2)}</TableCell>
                         <TableCell className="text-sm">
@@ -315,7 +335,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               </div>
               {outstanding <= 0.01 ? (
                 <p className="text-sm text-muted-foreground">This invoice is fully paid.</p>
-              ) : (
+              ) : readOnly ? null : (
                 <div className="space-y-1.5">
                   <Label>Record a payment</Label>
                   <div className="flex gap-2">
@@ -400,7 +420,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               {isOpening ? 'Preparing...' : 'View invoice PDF'}
             </Button>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
-            {has('sales:record_payment') && outstanding > 0.01 && (
+            {!readOnly && has('sales:record_payment') && outstanding > 0.01 && (
               <Button onClick={handleSavePayment} disabled={isUpdatingPayment || invalidAmount || !paymentDay}>
                 {isUpdatingPayment ? 'Saving...' : 'Record payment'}
               </Button>

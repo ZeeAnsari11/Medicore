@@ -13,6 +13,7 @@ import { Branch, BranchDocument } from '../branches/schemas/branch.schema';
 import { Tenant, TenantDocument } from '../tenants/schemas/tenant.schema';
 import { round2 } from './accounting-posting.service';
 import { REVERSAL_DESCRIPTION } from './reversal-labels';
+import { PaymentLinksService, paymentNumber, type PaymentLinks } from './payment-links.service';
 import { JournalEntrySourceType, JournalEntryStatus } from '@medicore/shared-types';
 import type {
   GeneralLedgerResponse,
@@ -85,7 +86,7 @@ function documentTypeLabel(
   }
   switch (sourceType) {
     case JournalEntrySourceType.SALE:
-      return 'Invoice';
+      return 'Sale invoice';
     case JournalEntrySourceType.SALE_RETURN:
       return 'Sale return';
     case JournalEntrySourceType.SALE_CANCELLATION:
@@ -113,6 +114,17 @@ function documentTypeLabel(
   }
 }
 
+/** What a payment row says: the invoice(s) it was made against and, if typed, its reference. The PMT- number is in the document column. */
+function paymentDescription(kind: Kind, links: PaymentLinks): string {
+  const numbers = links.invoices.map((i) => i.number).join(', ');
+  const base = numbers
+    ? `Against ${kind === 'CUSTOMER' ? 'invoice' : 'purchase'} ${numbers}`
+    : kind === 'CUSTOMER'
+      ? 'Payment received'
+      : 'Payment made';
+  return links.reference ? `${base} · ref: ${links.reference}` : base;
+}
+
 @Injectable()
 export class LedgersService {
   constructor(
@@ -120,6 +132,7 @@ export class LedgersService {
     @InjectModel(JournalEntry.name) private readonly journalEntryModel: Model<JournalEntryDocument>,
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Vendor.name) private readonly vendorModel: Model<VendorDocument>,
+    private readonly paymentLinks: PaymentLinksService,
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
     @InjectModel(Purchase.name) private readonly purchaseModel: Model<PurchaseDocument>,
     @InjectModel(Payment.name) private readonly paymentModel: Model<PaymentDocument>,
@@ -525,23 +538,35 @@ export class LedgersService {
     const closing = opening + signed(p.direction, totalDebit, totalCredit);
 
     const references = await this.resolveReferences(p.tenantId, pageRows);
+    // Payment rows say which invoice(s) they settled.
+    const T = JournalEntrySourceType;
+    const paymentLinks = await this.paymentLinks.forPaymentIds(
+      p.tenantId,
+      pageRows.filter((r) => r.sourceId && (r.sourceType === T.PAYMENT_RECEIVED || r.sourceType === T.PAYMENT_MADE)).map((r) => r.sourceId!),
+    );
     let running = opening + prior;
     const rows: LedgerRow[] = pageRows.map((r) => {
       running += signed(p.direction, r.debit, r.credit);
+      const documentType = documentTypeLabel(
+        p.kind,
+        r.sourceType,
+        !!p.advanceAccountId && r.lineAccountId === p.advanceAccountId,
+        r.debit,
+        r.credit,
+      );
+      const links =
+        documentType === 'Payment' && r.sourceId ? paymentLinks.get(r.sourceId) : undefined;
       return {
         entryId: r.entryId,
         entryNumber: r.entryNumber,
         date: r.entryDate.toISOString(),
         sourceType: r.sourceType,
-        documentType: documentTypeLabel(
-          p.kind,
-          r.sourceType,
-          !!p.advanceAccountId && r.lineAccountId === p.advanceAccountId,
-          r.debit,
-          r.credit,
-        ),
-        description: REVERSAL_DESCRIPTION[r.sourceType as JournalEntrySourceType] ?? r.description,
+        documentType,
+        description: links
+          ? paymentDescription(p.kind, links)
+          : (REVERSAL_DESCRIPTION[r.sourceType as JournalEntrySourceType] ?? r.description),
         reference: r.sourceId ? references.get(`${r.sourceType}:${r.sourceId}`) : undefined,
+        ...(links?.invoices.length ? { invoices: links.invoices } : {}),
         debit: round2(r.debit),
         credit: round2(r.credit),
         runningBalance: round2(running),
@@ -591,14 +616,17 @@ export class LedgersService {
         ? this.purchaseModel.find({ ...tenantFilter, _id: { $in: [...ids.purchase] } }).select('purchaseNumber')
         : [],
       ids.payment.size
-        ? this.paymentModel.find({ ...tenantFilter, _id: { $in: [...ids.payment] } }).select('reference')
+        ? this.paymentModel.find({ ...tenantFilter, _id: { $in: [...ids.payment] } }).select('paymentSeq')
         : [],
       ids.expense.size ? this.expenseModel.find({ ...tenantFilter, _id: { $in: [...ids.expense] } }).select('_id') : [],
     ]);
     const saleNo = new Map<string, string>(sales.map((s): [string, string] => [s.id as string, s.invoiceNumber]));
     const purchaseNo = new Map<string, string>(purchases.map((s): [string, string] => [s.id as string, s.purchaseNumber]));
     const paymentNo = new Map<string, string>(
-      payments.map((s): [string, string] => [s.id as string, s.reference || `PMT-${(s.id as string).slice(-6).toUpperCase()}`]),
+      payments.flatMap((s): Array<[string, string]> => {
+        const n = paymentNumber(s.paymentSeq);
+        return n ? [[s.id as string, n]] : [];
+      }),
     );
     const expenseIds = new Set(expenses.map((e) => e.id as string));
 

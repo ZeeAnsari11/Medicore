@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AlertCircle, Printer, Trash2 } from 'lucide-react';
 import { PaymentMethod } from '@medicore/shared-types';
 import { TopbarContent } from '@/components/layout/topbar-slot';
@@ -30,6 +31,7 @@ import {
   rowErrorsOf,
   useInvoiceLookup,
   useCashTransactionsPage,
+  useLastCashTransaction,
   useLoadCashTransaction,
   useSaveCashReceipt,
   useUpdateCashTransaction,
@@ -120,6 +122,11 @@ export default function CashReceiptPage() {
   const [txQuery, setTxQuery] = useState('');
   const [txHighlight, setTxHighlight] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  // Opened from the ledger (`readonly=1`): nothing on the page can be changed, and one entry is highlighted.
+  const [readOnly, setReadOnly] = useState(false);
+  const [highlightInvoiceId, setHighlightInvoiceId] = useState<string | null>(null);
+  const router = useRouter();
 
   const [voucherInput, setVoucherInput] = useState('');
   const [voucherQuery, setVoucherQuery] = useState('');
@@ -140,6 +147,8 @@ export default function CashReceiptPage() {
   const loadTransaction = useLoadCashTransaction();
   const updateTransaction = useUpdateCashTransaction();
   const { data: matches = [], isFetching } = useInvoiceLookup(voucherQuery, branchId);
+  const lastTransaction = useLastCashTransaction(branchId);
+  const lastNumber = lastTransaction?.transactionNumber ?? null;
   // Saved transactions matching what is typed after "T-"; the latest few while nothing is typed yet.
   const { transactions: txMatches, isFetching: txFetching } = useCashTransactionsPage(
     { branchId, q: txQuery === TX_PREFIX ? undefined : txQuery || undefined, page: 1, limit: 8 },
@@ -168,6 +177,13 @@ export default function CashReceiptPage() {
     setTxHighlight(0);
   }, [txMatches]);
 
+  // My last created or edited transaction goes into the box, ready to Load. It never overwrites something typed or loaded.
+  useEffect(() => {
+    if (lastNumber) setTransactionInput((current) => (current === TX_PREFIX && !editing ? lastNumber : current));
+    // Only when the last number itself changes, so clearing the box by hand sticks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastNumber]);
+
   // Restore an unsaved sheet after a refresh. Storage can be unavailable, so every access is guarded.
   useEffect(() => {
     try {
@@ -195,15 +211,16 @@ export default function CashReceiptPage() {
     }
   }, [restored, rows, batchId, branchId, storageKey, editing]);
 
+  // Only an unsaved new sheet is worth a warning; an edit session just reloads from the saved transaction.
   useEffect(() => {
-    if (rows.length === 0) return;
+    if (rows.length === 0 || editing) return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
-  }, [rows.length]);
+  }, [rows.length, editing]);
 
   // Customer balance as of each row: the base balance minus the amounts entered in rows above for the same customer.
   const computed = useMemo(() => {
@@ -298,15 +315,24 @@ export default function CashReceiptPage() {
   };
 
   const removeRow = useCallback((key: string) => {
+    if (readOnly) return;
     setRows((prev) => prev.filter((r) => r.key !== key));
     setSelectedKey(null);
     voucherRef.current?.focus();
   }, []);
 
   const updateRow = (key: string, patch: Partial<SheetRow>) =>
+    !readOnly &&
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch, error: undefined } : r)));
 
+  // Bring the highlighted entry into view.
+  useEffect(() => {
+    if (readOnly && highlightInvoiceId) document.querySelector('.cr-highlight')?.scrollIntoView({ block: 'center' });
+  }, [readOnly, highlightInvoiceId, rows]);
+
   const openTransaction = (tx: CashTransaction) => {
+    setReadOnly(false);
+    setHighlightInvoiceId(null);
     setRows(rowsOfTransaction(tx));
     setEditing({ number: tx.transactionNumber, version: tx.version, voucherNumber: tx.voucherNumber });
     setTransactionInput(tx.transactionNumber);
@@ -316,33 +342,51 @@ export default function CashReceiptPage() {
     resetForm();
   };
 
-  const handleLoad = async (raw = transactionInput) => {
+  /** Resolves true when the transaction was loaded. */
+  const handleLoad = async (raw = transactionInput): Promise<boolean> => {
     setTxOpen(false);
+    setLoadError(null);
     const number = normalizeTransactionNumber(raw);
     if (!number) {
       toast.error('Enter a transaction number like T-0001');
-      return;
+      return false;
     }
-    if (rows.length > 0 && !window.confirm('Discard the entries on screen and load this transaction?')) return;
+    if (rows.length > 0 && !window.confirm('Discard the entries on screen and load this transaction?')) return false;
     try {
       openTransaction(await loadTransaction.mutateAsync(number));
       setNotice(null);
-    } catch {
-      // toasted by the hook
+      return true;
+    } catch (error) {
+      // Also toasted by the hook; kept on the page so a failed load is never silent.
+      setLoadError(error instanceof ApiError ? `${number}: ${error.message}` : `${number}: could not be loaded`);
+      return false;
     }
   };
 
   // A link from the transactions list (`?transaction=T-0001`) opens that transaction straight away.
   const handleLoadRef = useRef(handleLoad);
   handleLoadRef.current = handleLoad;
-  const openFromUrl = useCallback((number: string) => {
-    setTransactionInput(number);
-    void handleLoadRef.current(number);
-  }, []);
+  const openFromUrl = useCallback(
+    async (number: string, params: URLSearchParams) => {
+      setTransactionInput(number);
+      const loaded = await handleLoadRef.current(number);
+      // From the ledger: view only, with the entry of that ledger row highlighted.
+      if (loaded && params.get('readonly') === '1') {
+        setReadOnly(true);
+        setHighlightInvoiceId(params.get('invoice'));
+      }
+      // Clear the link so opening the same transaction again from the list loads it again.
+      router.replace('/sales/cash-receipt');
+    },
+    [router],
+  );
 
   const exitEditing = () => {
+    setReadOnly(false);
+    setHighlightInvoiceId(null);
     setEditing(null);
-    setTransactionInput(TX_PREFIX);
+    setTransactionInput(lastNumber ?? TX_PREFIX);
+    setLoadError(null);
     setRows([]);
     setSelectedKey(null);
     setNotice(null);
@@ -350,7 +394,7 @@ export default function CashReceiptPage() {
   };
 
   const handleSaveEdits = useCallback(async () => {
-    if (!editing || rows.length === 0 || updateTransaction.isPending) return;
+    if (readOnly || !editing || rows.length === 0 || updateTransaction.isPending) return;
     const withErrors = rows.map((r) => ({ ...r, error: r.error === VOIDED ? VOIDED : amountError(r.amount, r.balance) }));
     if (withErrors.some((r) => r.error)) {
       setRows(withErrors);
@@ -365,8 +409,16 @@ export default function CashReceiptPage() {
           rows: rows.map((r) => ({ entryId: r.entryId, invoiceId: r.invoiceId, amount: Number(r.amount) })),
         },
       });
-      openTransaction(tx);
-      setNotice(`Saved edits to ${tx.transactionNumber} (version ${tx.version}), total Rs. ${money(tx.total)}`);
+      // Back to a clean sheet, like after a new receipt: the number stays in the box, ready to Load again.
+      setEditing(null);
+      setRows([]);
+      setSelectedKey(null);
+      setLoadError(null);
+      setNotice(null);
+      setSaved(null);
+      setTransactionInput(tx.transactionNumber);
+      resetForm();
+      toast.success(`Saved edits to ${tx.transactionNumber} (version ${tx.version}), total Rs. ${money(tx.total)}`);
     } catch (error) {
       const errs = rowErrorsOf(error);
       if (errs.length) {
@@ -383,9 +435,10 @@ export default function CashReceiptPage() {
     }
     // openTransaction only sets state and does not change between renders
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, rows, updateTransaction, loadTransaction]);
+  }, [editing, readOnly, rows, updateTransaction, loadTransaction]);
 
   const handleSave = useCallback(async () => {
+    if (readOnly) return;
     if (editing) return handleSaveEdits();
     if (rows.length === 0 || save.isPending) return;
     const withErrors = rows.map((r) => ({ ...r, error: amountError(r.amount, r.balance) }));
@@ -406,6 +459,7 @@ export default function CashReceiptPage() {
         rows: rows.map((r) => ({ invoiceId: r.invoiceId, amount: Number(r.amount) })),
       });
       setSaved(result);
+      if (result.transactionNumber) setTransactionInput(result.transactionNumber);
       setNotice(null);
       setRows([]);
       setSelectedKey(null);
@@ -418,7 +472,7 @@ export default function CashReceiptPage() {
         toast.error('Nothing was saved. Some rows failed validation.');
       }
     }
-  }, [rows, save, branchId, batchId, editing, handleSaveEdits]);
+  }, [rows, save, branchId, batchId, editing, readOnly, handleSaveEdits]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -489,7 +543,7 @@ export default function CashReceiptPage() {
       e.preventDefault();
       const next = rows[Math.min(Math.max(idx + (e.key === 'ArrowDown' ? 1 : -1), 0), rows.length - 1)];
       if (next) focusRow(next.key);
-    } else if (e.key === 'Delete' && !inInput && selectedKey) {
+    } else if (e.key === 'Delete' && !inInput && selectedKey && !readOnly) {
       e.preventDefault();
       removeRow(selectedKey);
     } else if (e.key === 'Enter' && inInput) {
@@ -546,6 +600,21 @@ export default function CashReceiptPage() {
         </Alert>
       )}
 
+      {loadTransaction.isPending && (
+        <Alert className="mb-4">
+          <span>Loading {normalizeTransactionNumber(transactionInput) ?? 'transaction'}...</span>
+        </Alert>
+      )}
+
+      {loadError && (
+        <Alert variant="destructive" className="mb-4 flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <Button size="sm" variant="ghost" onClick={() => setLoadError(null)}>
+            Dismiss
+          </Button>
+        </Alert>
+      )}
+
       {notice && (
         <Alert className="mb-6 flex items-center justify-between gap-3">
           <span>{notice}</span>
@@ -555,7 +624,19 @@ export default function CashReceiptPage() {
         </Alert>
       )}
 
-      {editing && (
+      {editing && readOnly && (
+        <Alert className="mb-4 flex flex-wrap items-center justify-between gap-3 border-primary">
+          <span>
+            Viewing <b>{editing.number}</b> ({editing.voucherNumber}, version {editing.version}) from the ledger. View only:
+            nothing can be changed here.
+          </span>
+          <Button size="sm" variant="outline" onClick={exitEditing}>
+            Close
+          </Button>
+        </Alert>
+      )}
+
+      {editing && !readOnly && (
         <Alert className="mb-4 flex flex-wrap items-center justify-between gap-3 border-primary">
           <span>
             Editing <b>{editing.number}</b> ({editing.voucherNumber}, version {editing.version}). Changes update the saved
@@ -567,7 +648,7 @@ export default function CashReceiptPage() {
         </Alert>
       )}
 
-      <div className="mb-4 rounded-lg border bg-card p-4">
+      <div className={`mb-4 rounded-lg border bg-card p-4 ${readOnly ? 'hidden' : ''}`}>
         <div className="mb-3 flex flex-wrap items-end gap-3">
           <div className="relative w-64">
             <label className="mb-1 block text-sm font-medium">Transaction #</label>
@@ -582,7 +663,11 @@ export default function CashReceiptPage() {
                   setTransactionInput(v.startsWith(TX_PREFIX) ? v : `${TX_PREFIX}${v.replace(/^T-?/, '')}`);
                   setTxOpen(true);
                 }}
-                onFocus={() => setTxOpen(true)}
+                onFocus={(e) => {
+                  setTxOpen(true);
+                  // Typing replaces a prefilled number; the T- prefix is put back by onChange.
+                  e.currentTarget.select();
+                }}
                 onBlur={() => setTimeout(() => setTxOpen(false), 150)}
                 onKeyDown={onTransactionKeyDown}
               />
@@ -763,7 +848,13 @@ export default function CashReceiptPage() {
               <TableRow
                 key={r.key}
                 data-state={r.key === selectedKey ? 'selected' : undefined}
-                className={r.key === selectedKey ? 'bg-muted' : undefined}
+                className={
+                  readOnly && r.invoiceId === highlightInvoiceId
+                    ? 'cr-highlight bg-primary/10 [&>td:first-child]:border-l-4 [&>td:first-child]:border-primary'
+                    : r.key === selectedKey
+                      ? 'bg-muted'
+                      : undefined
+                }
                 onClick={() => setSelectedKey(r.key)}
               >
                 <TableCell>{i + 1}</TableCell>
@@ -773,6 +864,9 @@ export default function CashReceiptPage() {
                 <TableCell className="text-right tabular-nums">{money(r.voucherAmount)}</TableCell>
                 <TableCell className="text-right tabular-nums">{money(r.received)}</TableCell>
                 <TableCell className="text-right">
+                  {readOnly ? (
+                    <span className="tabular-nums">{money(Number(r.amount))}</span>
+                  ) : (
                   <Input
                     ref={(el) => {
                       rowInputs.current.set(r.key, el);
@@ -786,15 +880,18 @@ export default function CashReceiptPage() {
                     onFocus={() => setSelectedKey(r.key)}
                     onChange={(e) => updateRow(r.key, { amount: e.target.value })}
                   />
-                  {(r.error || amountError(r.amount, r.balance)) && (
+                  )}
+                  {!readOnly && (r.error || amountError(r.amount, r.balance)) && (
                     <div className="mt-1 text-xs text-destructive">{r.error ?? amountError(r.amount, r.balance)}</div>
                   )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{money(computed[i].finalBal)}</TableCell>
                 <TableCell>
-                  <Button variant="ghost" size="sm" aria-label="Remove row" onClick={() => removeRow(r.key)}>
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  {!readOnly && (
+                    <Button variant="ghost" size="sm" aria-label="Remove row" onClick={() => removeRow(r.key)}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -810,6 +907,7 @@ export default function CashReceiptPage() {
         </div>
       </div>
 
+      {!readOnly && (
       <div className="mt-4 flex justify-end">
         <Button
           onClick={handleSave}
@@ -823,9 +921,11 @@ export default function CashReceiptPage() {
           {save.isPending || updateTransaction.isPending ? 'Saving...' : editing ? 'Save edits' : 'Save'}
         </Button>
       </div>
+      )}
 
       <Suspense fallback={null}>
-        <OpenFromUrl param="transaction" onOpen={openFromUrl} />
+        {/* Wait for the unsaved draft to be restored first, so the load replaces it knowingly. */}
+        {restored && <OpenFromUrl param="transaction" onOpen={openFromUrl} />}
       </Suspense>
     </PageAccessGuard>
   );

@@ -498,4 +498,126 @@ describe('cash receipt transactions (e2e)', () => {
     expect(list.items).toEqual([]);
     expect(list.total).toBe(0);
   });
+
+  it('knows each user\'s own last created or edited transaction (/last)', async () => {
+    const last = async (token = headers()) => (await get('sales/cash-receipts/last', token)).transaction;
+
+    // A tenant with nothing saved by this user has no last transaction; so does another tenant.
+    expect(await last(as({ token: env.B.token }))).toBeNull();
+
+    const w = await world();
+    const [a, b] = [await w.invoice(10), await w.invoice(10)];
+    const first = await receipt([{ invoiceId: a.id, amount: 20 }]);
+    expect((await last()).transactionNumber).toBe(first.transactionNumber);
+    const second = await receipt([{ invoiceId: b.id, amount: 20 }]);
+    expect((await last()).transactionNumber).toBe(second.transactionNumber);
+
+    // Editing the older one makes it the last again.
+    await patchTx(first.transactionNumber, { expectedVersion: 1, rows: [{ entryId: first.rows[0].entryId, invoiceId: a.id, amount: 25 }] }).expect(200);
+    expect((await last()).transactionNumber).toBe(first.transactionNumber);
+
+    // An edit that changes nothing does not move it.
+    await patchTx(second.transactionNumber, { expectedVersion: 1, rows: [{ entryId: second.rows[0].entryId, invoiceId: b.id, amount: 20 }] }).expect(200);
+    expect((await last()).transactionNumber).toBe(first.transactionNumber);
+
+    // Another user's activity is not mine.
+    const role = (
+      await api().post('/api/roles').set(headers()).send({ name: 'Cash clerk', allowedModules: ['cash_receipt:read', 'cash_receipt:create', 'sales:read', 'sales:view_all'] }).expect(201)
+    ).body;
+    const created = (
+      await api()
+        .post('/api/users')
+        .set(headers())
+        .send({ username: 'clerk1', fullName: 'Clerk One', territory: 'North', city: 'Kasur', address: '1 Mall Road', branchId: K, tenantRole: 'TENANT_USER', roleId: role.id })
+        .expect(201)
+    ).body;
+    const clerk = as({ token: (await api().post('/api/auth/login').send({ username: 'clerk1', password: created.temporaryPassword }).expect(200)).body.accessToken });
+    expect(await last(clerk)).toBeNull();
+    const c = await w.invoice(4);
+    const mine = (await api().post('/api/sales/cash-receipts').set(clerk).send({ batchId: randomUUID(), date: new Date().toISOString(), method: 'CASH', rows: [{ invoiceId: c.id, amount: 10 }] }).expect(201)).body;
+    expect((await last(clerk)).transactionNumber).toBe(mine.transactionNumber);
+    expect((await last()).transactionNumber).toBe(first.transactionNumber);
+  });
+
+  describe('what a payment was for (ledger and Payments page)', () => {
+    const ledger = async (customerId: string) => (await get(`accounting/customers/${customerId}/ledger?branchId=${K}&limit=200`)).rows as any[];
+
+    it('a cash-receipt payment row shows its PMT id and names its invoice, and the sale row says Sale invoice', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      const saved = await receipt([{ invoiceId: inv.id, amount: 40 }]);
+
+      const rows = await ledger(w.customerId);
+      const saleRow = rows.find((r) => r.sourceType === 'SALE');
+      expect(saleRow.documentType).toBe('Sale invoice');
+      expect(saleRow.reference.number).toBe(inv.invoiceNumber);
+
+      const pay = rows.find((r) => r.documentType === 'Payment');
+      expect(pay.invoices).toEqual([expect.objectContaining({ type: 'SALE', number: inv.invoiceNumber, amount: 40 })]);
+      expect(pay.receipt).toBeUndefined();
+      expect(pay.description).toBe(`Against invoice ${inv.invoiceNumber}`);
+      expect(pay.description).not.toContain(saved.transactionNumber);
+      expect(pay.reference.number).toMatch(/^[1-9]\d*$/);
+    });
+
+    it('a direct payment across two invoices lists both and shows its typed reference', async () => {
+      const w = await world();
+      const [a, b] = [await w.invoice(10), await w.invoice(10)];
+      const accounts = rows(await get('accounting/accounts'));
+      const accountId = (accounts.find((x: any) => x.systemKey === 'CASH') ?? accounts[0]).id;
+      await post('accounting/payments', {
+        partyType: 'CUSTOMER',
+        partyId: w.customerId,
+        amount: 100,
+        method: 'CASH',
+        accountId,
+        reference: 'CHQ-77',
+        allocations: [
+          { invoiceType: 'SALE', invoiceId: a.id, amount: 60 },
+          { invoiceType: 'SALE', invoiceId: b.id, amount: 40 },
+        ],
+      });
+      const pay = (await ledger(w.customerId)).find((r) => r.documentType === 'Payment');
+      expect(pay.invoices.map((i: any) => i.number).sort()).toEqual([a.invoiceNumber, b.invoiceNumber].sort());
+      expect(pay.receipt).toBeUndefined();
+      expect(pay.description).toBe(`Against invoice ${[a.invoiceNumber, b.invoiceNumber].join(', ')} · ref: CHQ-77`);
+    });
+
+    it('the Payments list and detail carry party, account, invoice numbers and the receipt', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      const saved = await receipt([{ invoiceId: inv.id, amount: 30 }]);
+      const paymentId = (await ledger(w.customerId)).find((r) => r.documentType === 'Payment').reference.id;
+
+      const listed = rows(await get(`accounting/payments?branchId=${K}&partyType=CUSTOMER&partyId=${w.customerId}`));
+      const p = listed.find((x: any) => x.id === paymentId);
+      expect(p).toMatchObject({
+        partyName: `Customer ${seq}`,
+        amount: 30,
+        displayReference: saved.transactionNumber,
+        paymentNumber: expect.stringMatching(/^[1-9]\d*$/),
+        receipt: { transactionNumber: saved.transactionNumber, voucherNumber: saved.voucherNumber },
+      });
+      expect(p.accountName).toBeTruthy();
+      expect(p.allocations[0]).toMatchObject({ invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, amount: 30 });
+
+      const one = await get(`accounting/payments/${paymentId}?branchId=${K}`);
+      expect(one.id).toBe(paymentId);
+      expect(one.allocations[0].invoiceNumber).toBe(inv.invoiceNumber);
+      await api().get(`/api/accounting/payments/${paymentId}`).set(as({ token: env.B.token })).expect(404);
+      await api().get('/api/accounting/payments/does-not-exist').set(headers()).expect(404);
+    });
+
+    it('the ledger CSV says Invoice # and puts the PMT id on a payment row, the invoice in its description', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      await receipt([{ invoiceId: inv.id, amount: 25 }]);
+      const csv = (await api().get(`/api/accounting/customers/${w.customerId}/ledger/export?branchId=${K}&format=csv`).set(headers()).buffer(true).expect(200)).text as string;
+      expect(csv).toContain('"Invoice #"');
+      expect(csv).not.toContain('"Doc #"');
+      const paymentLine = csv.split('\r\n').find((l) => l.startsWith('"') && l.includes('"Payment"'))!;
+      expect(paymentLine).toMatch(/"Payment","\d+",/);
+      expect(paymentLine).toContain(`"Against invoice ${inv.invoiceNumber}"`);
+    });
+  });
 });

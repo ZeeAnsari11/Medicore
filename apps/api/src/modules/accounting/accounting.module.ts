@@ -15,12 +15,14 @@ import { Vendor, VendorSchema } from '../vendors/schemas/vendor.schema';
 import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Branch, BranchSchema } from '../branches/schemas/branch.schema';
 import { Tenant, TenantSchema } from '../tenants/schemas/tenant.schema';
+import { CashReceipt, CashReceiptSchema } from '../sales/schemas/cash-receipt.schema';
 import { SequenceModule } from '../../common/sequence/sequence.module';
 import { AccountingPostingService } from './accounting-posting.service';
 import { AccountsService } from './accounts.service';
 import { AccountsController } from './accounts.controller';
 import { PartyBalanceService } from './party-balance.service';
 import { PaymentsService } from './payments.service';
+import { PaymentLinksService } from './payment-links.service';
 import { PaymentsController } from './payments.controller';
 import { ExpensesService } from './expenses.service';
 import { ExpensesController } from './expenses.controller';
@@ -54,6 +56,7 @@ import { RolesModule } from '../roles/roles.module';
       { name: Product.name, schema: ProductSchema },
       { name: Branch.name, schema: BranchSchema },
       { name: Tenant.name, schema: TenantSchema },
+      { name: CashReceipt.name, schema: CashReceiptSchema },
     ]),
     SequenceModule,
     RolesModule,
@@ -62,6 +65,7 @@ import { RolesModule } from '../roles/roles.module';
     AccountingPostingService,
     AccountsService,
     PartyBalanceService,
+    PaymentLinksService,
     PaymentsService,
     ExpensesService,
     JournalEntriesService,

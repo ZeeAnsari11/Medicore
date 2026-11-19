@@ -39,7 +39,18 @@ export class PaymentsController {
       partyType,
       partyId,
     );
-    return payments.map((p) => this.paymentsService.toPaymentResponse(p));
+    return this.paymentsService.toResponses(user.tenantId, payments);
+  }
+
+  @RequirePermission('acc_payments:read')
+  @Get(':id')
+  async findOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Query('branchId') branchId?: string,
+  ) {
+    const payment = await this.paymentsService.findOneForTenant(user.tenantId, resolveBranchScope(user, branchId), id);
+    return (await this.paymentsService.toResponses(user.tenantId, [payment]))[0];
   }
 
   @RequirePermission('acc_payments:create')
@@ -63,7 +74,7 @@ export class PaymentsController {
       user.userId,
       dto,
     );
-    return this.paymentsService.toPaymentResponse(payment);
+    return (await this.paymentsService.toResponses(user.tenantId, [payment]))[0];
   }
 
   @RequirePermission('acc_payments:void')
@@ -88,6 +99,6 @@ export class PaymentsController {
     const scope = resolveBranchScope(user, branchId);
     if (!scope) throw new BadRequestException('branchId is required to allocate a payment');
     const payment = await this.paymentsService.allocate(user.tenantId, scope, user.userId, id, dto);
-    return this.paymentsService.toPaymentResponse(payment);
+    return (await this.paymentsService.toResponses(user.tenantId, [payment]))[0];
   }
 }

@@ -323,6 +323,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
           {extras.length > 0 && <p className="text-sm text-muted-foreground">{extras.join(' · ')}</p>}
           <LedgerTable
             variant="party"
+            partyKind={config.kind}
             ledger={ledger}
             closingLabel={`Closing balance — ${closing >= 0 ? config.positiveHint.toLowerCase() : config.negativeHint.toLowerCase()}`}
             isFetching={isFetching}

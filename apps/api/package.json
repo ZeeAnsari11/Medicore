@@ -33,6 +33,7 @@
     "migrate:product-prices": "ts-node scripts/product-prices-migration.ts",
     "migrate:account-system-key-index": "ts-node scripts/account-system-key-index.ts",
     "migrate:cash-receipt-transactions": "ts-node scripts/cash-receipt-transaction-numbers.ts",
+    "migrate:payment-numbers": "ts-node scripts/payment-numbers.ts",
     "seed:demo": "ts-node scripts/seed-demo.ts",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json"

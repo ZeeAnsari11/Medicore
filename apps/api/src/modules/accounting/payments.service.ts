@@ -10,6 +10,8 @@ import { Customer, CustomerDocument } from '../customers/schemas/customer.schema
 import { Vendor, VendorDocument } from '../vendors/schemas/vendor.schema';
 import { runWithoutBranchScope } from '../../common/tenancy/tenant-context';
 import { PartyBalanceService } from './party-balance.service';
+import { SequenceService } from '../../common/sequence/sequence.service';
+import { PaymentLinksService, paymentNumber, type PaymentLinks } from './payment-links.service';
 import { AccountingPostingService, round2, type PostLineInput } from './accounting-posting.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { AllocatePaymentDto } from './dto/allocate-payment.dto';
@@ -29,6 +31,9 @@ import type { Payment as PaymentType } from '@medicore/shared-types';
  * services). Nothing else in the codebase is allowed to post a
  * PAYMENT_RECEIVED/PAYMENT_MADE journal entry.
  */
+/** A cash receipt's voucher number, which older receipts stored as the payment reference; never shown. */
+const CR_VOUCHER = /^CR-\d+$/;
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -41,6 +46,8 @@ export class PaymentsService {
     @InjectConnection() private readonly connection: Connection,
     private readonly postingService: AccountingPostingService,
     private readonly partyBalanceService: PartyBalanceService,
+    private readonly paymentLinks: PaymentLinksService,
+    private readonly sequenceService: SequenceService,
   ) {}
 
   async listForTenant(
@@ -57,6 +64,21 @@ export class PaymentsService {
     if (partyType) filter.partyType = partyType;
     if (partyId) filter.partyId = partyId;
     return this.paymentModel.find(filter).sort({ paymentDate: -1 });
+  }
+
+  /** One payment, or 404; same tenant and branch scope as the list. */
+  async findOneForTenant(tenantId: string, branchId: string | null, id: string): Promise<PaymentDocument> {
+    const filter: Record<string, unknown> = { _id: id, tenantId: new Types.ObjectId(tenantId), deletedAt: null };
+    if (branchId) filter.branchId = new Types.ObjectId(branchId);
+    const payment = await this.paymentModel.findOne(filter);
+    if (!payment) throw new NotFoundException('Payment not found');
+    return payment;
+  }
+
+  /** Responses with the party and account names, the invoice numbers and the cash receipt filled in (batched lookups). */
+  async toResponses(tenantId: string, payments: PaymentDocument[]): Promise<PaymentType[]> {
+    const links = await this.paymentLinks.forPayments(tenantId, payments, true);
+    return payments.map((p) => this.toPaymentResponse(p, links.get(p.id as string)));
   }
 
   /** Payments with an allocation to this invoice, oldest first. */
@@ -189,10 +211,13 @@ export class PaymentsService {
         }
 
         const orderBooker = await this.saleOrderBooker(tenantId, allocations, session);
+        // One running number per tenant (not per branch), so every tenant starts at 1.
+        const paymentSeq = await this.sequenceService.next(tenantId, null, 'payment', session);
         const [created] = await this.paymentModel.create(
           [
             {
               _id: paymentId,
+              paymentSeq,
               tenantId: new Types.ObjectId(tenantId),
               branchId: new Types.ObjectId(branchId),
               partyType: dto.partyType,
@@ -668,7 +693,7 @@ export class PaymentsService {
     }
   }
 
-  toPaymentResponse(payment: PaymentDocument): PaymentType {
+  toPaymentResponse(payment: PaymentDocument, links?: PaymentLinks): PaymentType {
     const obj = payment.toObject() as any;
     const allocated = (obj.allocations as { amount: number }[]).reduce(
       (sum, a) => sum + a.amount,
@@ -680,14 +705,23 @@ export class PaymentsService {
       branchId: obj.branchId.toString(),
       partyType: obj.partyType,
       partyId: obj.partyId,
+      partyName: links?.partyName,
       amount: obj.amount,
       method: obj.method,
       accountId: obj.accountId,
+      accountName: links?.accountName,
       paymentDate: obj.paymentDate.toISOString(),
       reference: obj.reference,
       notes: obj.notes,
-      allocations: obj.allocations,
+      allocations: (obj.allocations as PaymentType['allocations']).map((a) => ({
+        ...a,
+        invoiceNumber: links?.invoices.find((i) => i.id === a.invoiceId)?.number ?? a.invoiceNumber,
+      })),
       unallocatedAmount: round2(obj.amount - allocated),
+      receipt: links?.receipt,
+      paymentNumber: paymentNumber(obj.paymentSeq),
+      // The cash-receipt transaction id only (never the CR- voucher number), else the typed reference.
+      displayReference: links?.receipt?.transactionNumber || (CR_VOUCHER.test(obj.reference ?? '') ? undefined : obj.reference || undefined),
       journalEntryId: obj.journalEntryId,
       createdBy: obj.createdBy.toString(),
       orderBookerName: obj.orderBookerName,

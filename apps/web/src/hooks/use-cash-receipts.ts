@@ -6,6 +6,7 @@ import type {
   CashReceiptResult,
   CashReceiptRowError,
   CashTransaction,
+  LastCashTransactionResponse,
   LookupInvoice,
   PaginatedCashTransactions,
   UpdateCashTransactionRequest,
@@ -135,4 +136,14 @@ export function useCashTransactionsPage(p: CashTransactionListParams, enabled = 
     isFetching: query.isFetching,
     error: query.error,
   };
+}
+
+/** `GET /sales/cash-receipts/last`: my most recently created or edited transaction, to prefill the Transaction # box. */
+export function useLastCashTransaction(branchId: string | null) {
+  const query = useTenantQuery<LastCashTransactionResponse>({
+    queryKey: ['sales', 'cash-transactions', 'last', branchId],
+    queryFn: () => apiFetch<LastCashTransactionResponse>(withBranch('/sales/cash-receipts/last', branchId)),
+    staleTime: 0,
+  });
+  return query.data?.transaction ?? null;
 }

@@ -134,3 +134,8 @@ export interface PaginatedCashTransactions {
   page: number;
   limit: number;
 }
+
+/** `GET /sales/cash-receipts/last`: the caller's own most recently created or edited transaction, if any. */
+export interface LastCashTransactionResponse {
+  transaction: CashTransactionSummary | null;
+}

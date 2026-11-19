@@ -139,6 +139,12 @@ export interface Payment extends BranchOwnedEntity {
   notes?: string;
   allocations: PaymentAllocation[];
   unallocatedAmount: number;
+  /** The cash-receipt transaction this payment came from, if any. */
+  receipt?: LedgerReceiptRef;
+  /** The payment's own id: a per-tenant running number ("1", "2", ...). Absent on payments saved before numbering. */
+  paymentNumber?: string;
+  /** What to show as the reference: the cash-receipt transaction id (T-0001), else the typed reference. */
+  displayReference?: string;
   journalEntryId: string;
   createdBy: string;
   /** Inherited from the sale it belongs to; absent on older records. */
@@ -368,16 +374,36 @@ export interface LedgerReference {
   number: string;
 }
 
+/** An invoice (or purchase) a payment was applied to, with the amount applied. */
+export interface LedgerInvoiceRef {
+  type: 'SALE' | 'PURCHASE';
+  id: string;
+  number: string;
+  amount: number;
+}
+
+/** The cash-receipt transaction a payment came from. */
+export interface LedgerReceiptRef {
+  /** T-0001; absent on a receipt saved before transactions were numbered. */
+  transactionNumber?: string;
+  /** CR-000003. */
+  voucherNumber: string;
+}
+
 /** One posted journal line. Returns, voids, cancellations and advances are their own rows. */
 export interface LedgerRow {
   entryId: string;
   entryNumber: string;
   date: string;
   sourceType: JournalEntrySourceType;
-  /** Human label, e.g. Invoice, Payment, Advance, Sale return, Void. */
+  /** Human label, e.g. Sale invoice, Payment, Advance, Sale return, Void. */
   documentType: string;
   description: string;
   reference?: LedgerReference;
+  /** Payment rows: the invoice(s) the payment was applied to. */
+  invoices?: LedgerInvoiceRef[];
+  /** Not sent on ledger rows any more (a payment row shows its PMT id and invoice); optional for old clients. */
+  receipt?: LedgerReceiptRef;
   debit: number;
   credit: number;
   runningBalance: number;

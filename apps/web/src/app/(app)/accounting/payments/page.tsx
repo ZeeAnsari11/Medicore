@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowLeft, Plus } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -24,10 +25,12 @@ import {
 } from '@medicore/ui';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
-import { usePayments } from '@/hooks/use-payments';
-import { PartyType } from '@medicore/shared-types';
+import { OpenFromUrl } from '@/components/open-from-url';
+import { usePayment, usePayments } from '@/hooks/use-payments';
+import { InvoiceType, PartyType } from '@medicore/shared-types';
 import type { Payment } from '@medicore/shared-types';
 import { PaymentDialog } from './components/payment-dialog';
+import { PaymentDetailDialog } from './components/payment-detail-dialog';
 
 const ALL_TYPES = '__all__';
 
@@ -40,6 +43,16 @@ export default function PaymentsPage() {
   const [partyTypeFilter, setPartyTypeFilter] = useState<PartyType | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [voidTarget, setVoidTarget] = useState<Payment | null>(null);
+  const [detail, setDetail] = useState<Payment | null>(null);
+  // Opened from a link elsewhere (?open=<paymentId>), e.g. a ledger row.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const { payment: linkedPayment } = usePayment(openId, selectedBranchId);
+  useEffect(() => {
+    if (linkedPayment) {
+      setDetail(linkedPayment);
+      setOpenId(null);
+    }
+  }, [linkedPayment]);
 
   const { payments, isLoading, error, voidPayment, isVoiding } = usePayments(selectedBranchId, partyTypeFilter ?? undefined);
   const canVoid = has('acc_payments:void');
@@ -47,6 +60,12 @@ export default function PaymentsPage() {
 
   const columns = useMemo<ColumnDef<Payment>[]>(
     () => [
+      {
+        accessorKey: 'paymentNumber',
+        header: 'Payment ID',
+        // Numeric, so 10 sorts after 9 rather than after 1.
+        sortingFn: (a, b) => Number(a.original.paymentNumber ?? 0) - Number(b.original.paymentNumber ?? 0),
+      },
       { accessorKey: 'paymentDate', header: 'Date', cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString() },
       {
         accessorKey: 'partyType',
@@ -57,7 +76,44 @@ export default function PaymentsPage() {
       { accessorKey: 'amount', header: 'Amount', cell: ({ getValue }) => (getValue() as number).toFixed(2) },
       { accessorKey: 'method', header: 'Method' },
       { accessorKey: 'accountName', header: 'Account' },
-      { accessorKey: 'reference', header: 'Reference' },
+      {
+        // The invoice(s) this payment settled; also what searching for an invoice number matches.
+        id: 'invoices',
+        header: 'Invoice(s)',
+        accessorFn: (p) => p.allocations.map((a) => a.invoiceNumber ?? '').filter(Boolean).join(', '),
+        cell: ({ row }) =>
+          row.original.allocations.length === 0 ? (
+            <span className="text-muted-foreground">—</span>
+          ) : (
+            <span className="flex flex-wrap gap-x-2">
+              {row.original.allocations.map((a) => (
+                <Link
+                  key={a.invoiceId}
+                  href={a.invoiceType === InvoiceType.SALE ? `/sales?open=${a.invoiceId}` : `/purchases?open=${a.invoiceId}`}
+                  className="text-primary hover:underline"
+                >
+                  {a.invoiceNumber ?? a.invoiceId}
+                </Link>
+              ))}
+            </span>
+          ),
+      },
+      {
+        // The cash receipt it came from (T-0001), else the typed reference.
+        accessorKey: 'displayReference',
+        header: 'Reference',
+        cell: ({ row }) =>
+          row.original.receipt?.transactionNumber ? (
+            <Link
+              href={`/sales/cash-receipt?transaction=${encodeURIComponent(row.original.receipt.transactionNumber)}`}
+              className="text-primary hover:underline"
+            >
+              {row.original.displayReference}
+            </Link>
+          ) : (
+            (row.original.displayReference ?? '')
+          ),
+      },
       {
         accessorKey: 'unallocatedAmount',
         header: 'Advance/Unallocated',
@@ -131,6 +187,7 @@ export default function PaymentsPage() {
           searchPlaceholder="Search payments..."
           filtersActive={partyTypeFilter !== null}
           onClearFilters={() => setPartyTypeFilter(null)}
+          onRowClick={(row) => setDetail(row)}
         />
       )}
 
@@ -165,6 +222,12 @@ export default function PaymentsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Suspense fallback={null}>
+        <OpenFromUrl onOpen={setOpenId} />
+      </Suspense>
+
+      <PaymentDetailDialog payment={detail} onOpenChange={(open) => !open && setDetail(null)} />
 
       <PaymentDialog open={dialogOpen} branchId={selectedBranchId} onOpenChange={setDialogOpen} />
     </PageAccessGuard>

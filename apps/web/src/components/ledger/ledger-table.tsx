@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import {
@@ -19,6 +20,7 @@ import {
   TableRow,
 } from '@medicore/ui';
 import type { LedgerPage, LedgerReference, LedgerRow } from '@medicore/shared-types';
+import type { PartyKind } from '@/hooks/use-ledgers';
 
 const PAGE_SIZES = [25, 50, 100, 200];
 const money = (n: number) => n.toFixed(2);
@@ -31,7 +33,7 @@ export function documentHref(ref: LedgerReference): string {
     case 'PURCHASE':
       return `/purchases?open=${ref.id}`;
     case 'PAYMENT':
-      return '/accounting/payments';
+      return `/accounting/payments?open=${ref.id}`;
     default:
       return '/accounting/expenses';
   }
@@ -39,6 +41,8 @@ export function documentHref(ref: LedgerReference): string {
 
 interface LedgerTableProps {
   variant: 'gl' | 'party';
+  /** Party ledgers only: names the document column after what the party is billed with. */
+  partyKind?: PartyKind;
   ledger: LedgerPage;
   closingLabel: string;
   isFetching?: boolean;
@@ -46,7 +50,7 @@ interface LedgerTableProps {
   onLimitChange: (limit: number) => void;
 }
 
-export function LedgerTable({ variant, ledger, closingLabel, isFetching, onPageChange, onLimitChange }: LedgerTableProps) {
+export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetching, onPageChange, onLimitChange }: LedgerTableProps) {
   const pageCount = Math.max(1, Math.ceil(ledger.total / ledger.limit));
   const columnCount = variant === 'gl' ? 7 : 7;
 
@@ -64,6 +68,38 @@ export function LedgerTable({ variant, ledger, closingLabel, isFetching, onPageC
       <span className="text-muted-foreground">—</span>
     );
 
+  /** A payment row's invoice number, linked: a customer payment opens its invoice view-only with that payment marked. */
+  const invoiceLink = (row: LedgerRow, inv: NonNullable<LedgerRow['invoices']>[number]) => (
+    <Link
+      key={inv.id}
+      href={
+        inv.type === 'SALE' && row.reference?.type === 'PAYMENT'
+          ? `/sales?open=${inv.id}&readonly=1&payment=${row.reference.id}`
+          : documentHref({ type: inv.type, id: inv.id, number: inv.number })
+      }
+      className="text-primary hover:underline"
+    >
+      {inv.number}
+    </Link>
+  );
+
+  /** "Against invoice 0004": each invoice number in a payment's description is the link to that invoice. */
+  const descriptionCell = (row: LedgerRow) => {
+    if (!row.invoices?.length) return row.description;
+    const parts: ReactNode[] = [];
+    let rest = row.description;
+    for (const inv of row.invoices) {
+      const at = rest.indexOf(inv.number);
+      if (at < 0) continue;
+      parts.push(rest.slice(0, at), invoiceLink(row, inv));
+      rest = rest.slice(at + inv.number.length);
+    }
+    return parts.length ? <>{parts}{rest}</> : row.description;
+  };
+
+  /** The document column: the invoice, purchase or payment (PMT-) number, else the journal entry. */
+  const documentCell = (row: LedgerRow) => (row.reference ? referenceLink(row) : entryLink(row));
+
   return (
     <div className={isFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
       <div className="rounded-lg border">
@@ -80,7 +116,7 @@ export function LedgerTable({ variant, ledger, closingLabel, isFetching, onPageC
               ) : (
                 <>
                   <TableHead>Type</TableHead>
-                  <TableHead>Doc #</TableHead>
+                  <TableHead>{partyKind === 'vendors' ? 'Purchase #' : 'Invoice #'}</TableHead>
                   <TableHead>Description</TableHead>
                 </>
               )}
@@ -117,8 +153,8 @@ export function LedgerTable({ variant, ledger, closingLabel, isFetching, onPageC
                       <TableCell>
                         <Badge variant="outline">{row.documentType}</Badge>
                       </TableCell>
-                      <TableCell>{row.reference ? referenceLink(row) : entryLink(row)}</TableCell>
-                      <TableCell>{row.description}</TableCell>
+                      <TableCell>{documentCell(row)}</TableCell>
+                      <TableCell>{descriptionCell(row)}</TableCell>
                     </>
                   )}
                   <TableCell className="text-right tabular-nums">{row.debit ? money(row.debit) : ''}</TableCell>

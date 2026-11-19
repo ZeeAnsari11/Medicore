@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, FileText, Plus, Receipt } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -57,6 +57,12 @@ export default function SalesPage() {
   const [detailSale, setDetailSale] = useState<Sale | null>(null);
   // Opened from a link elsewhere (?open=<id>), e.g. a ledger row.
   const [openId, setOpenId] = useState<string | null>(null);
+  // From a ledger payment row (`readonly=1&payment=<id>`): the invoice opens view-only with that payment marked.
+  const [linkMode, setLinkMode] = useState<{ paymentId: string | null } | null>(null);
+  const openFromUrl = useCallback((id: string, params: URLSearchParams) => {
+    setLinkMode(params.get('readonly') === '1' ? { paymentId: params.get('payment') } : null);
+    setOpenId(id);
+  }, []);
   const { sale: linkedSale } = useSale(openId, selectedBranchId);
   useEffect(() => {
     if (linkedSale) {
@@ -341,14 +347,21 @@ export default function SalesPage() {
       )}
 
       <Suspense fallback={null}>
-        <OpenFromUrl onOpen={setOpenId} />
+        <OpenFromUrl onOpen={openFromUrl} />
       </Suspense>
 
       {detailSale && (
         <SaleDetailDialog
           key={detailSale.id}
           open={detailSale !== null}
-          onOpenChange={(open) => !open && setDetailSale(null)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setDetailSale(null);
+              setLinkMode(null);
+            }
+          }}
+          readOnly={!!linkMode}
+          highlightPaymentId={linkMode?.paymentId ?? null}
           sale={detailSale}
           branchId={selectedBranchId}
         />

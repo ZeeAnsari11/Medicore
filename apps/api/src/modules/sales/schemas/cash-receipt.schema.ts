@@ -100,6 +100,8 @@ export const CashReceiptSchema = SchemaFactory.createForClass(CashReceipt);
 
 CashReceiptSchema.index({ tenantId: 1, branchId: 1, batchId: 1 }, { unique: true });
 CashReceiptSchema.index({ tenantId: 1, branchId: 1, voucherNumber: 1 }, { unique: true });
+// Finds the receipt a payment came from (ledger and Payments page).
+CashReceiptSchema.index({ tenantId: 1, 'rows.paymentId': 1 });
 CashReceiptSchema.index(
   { tenantId: 1, transactionNumber: 1 },
   { unique: true, partialFilterExpression: { transactionNumber: { $type: 'string' } } },

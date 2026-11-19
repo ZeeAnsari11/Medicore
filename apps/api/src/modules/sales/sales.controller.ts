@@ -131,6 +131,14 @@ export class SalesController {
     return this.cashReceiptsService.create(user.tenantId, scope, user.userId, dto);
   }
 
+  /** The caller's own most recently created or edited transaction (or null), to prefill the Transaction # box. */
+  @RequirePermission('cash_receipt:read')
+  @Get('cash-receipts/last')
+  async lastCashTransaction(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string) {
+    const scope = resolveBranchScope(user, branchId);
+    return { transaction: await this.cashReceiptsService.lastTransaction(user.tenantId, scope, user.userId) };
+  }
+
   @RequirePermission('cash_receipt:read')
   @Get('cash-receipts')
   async listCashTransactions(@CurrentUser() user: AuthenticatedUser, @Query() query: ListCashTransactionsQueryDto) {

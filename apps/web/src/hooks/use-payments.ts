@@ -31,6 +31,16 @@ async function voidPayment(branchId: string | null, id: string): Promise<void> {
   await apiFetch(`/accounting/payments/${id}${query}`, { method: 'DELETE' });
 }
 
+/** One payment by id (for a link from the ledger); disabled until there is an id. */
+export function usePayment(id: string | null, branchId: string | null) {
+  const query = useTenantQuery({
+    queryKey: [...PAYMENTS_QUERY_KEY, 'detail', id, branchId],
+    queryFn: () => apiFetch<Payment>(`/accounting/payments/${id}${branchId ? `?branchId=${branchId}` : ''}`),
+    enabled: !!id,
+  });
+  return { payment: query.data ?? null, isLoading: query.isLoading, error: query.error };
+}
+
 export function usePayments(branchId: string | null, partyType?: PartyType, partyId?: string) {
   const queryClient = useTenantQueryClient();
 

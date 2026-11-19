@@ -11,6 +11,7 @@ import type {
   CashTransaction,
   CashTransactionHistoryEntry,
   CashTransactionRow,
+  CashTransactionSummary,
   PaginatedCashTransactions,
 } from '@medicore/shared-types';
 import { InvoiceType, PartyType } from '@medicore/shared-types';
@@ -337,22 +338,37 @@ export class CashReceiptsService {
         this.receiptModel.countDocuments(filter),
       ]),
     );
+    return { items: docs.map((r) => this.toSummary(r)), total, page, limit };
+  }
+
+  /**
+   * The current user's most recently created or edited transaction, or null. An edit moves `updatedAt`; an edit that
+   * changes nothing is rolled back, so it does not count. Same branch read scope as the list.
+   */
+  async lastTransaction(tenantId: string, branchId: string | null, userId: string) {
+    const me = new Types.ObjectId(userId);
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      transactionNumber: { $type: 'string' },
+      $or: [{ createdBy: me }, { updatedBy: me }],
+    };
+    if (branchId) filter.branchId = new Types.ObjectId(branchId);
+    const doc = await runWithoutBranchScope(() => this.receiptModel.findOne(filter).sort({ updatedAt: -1, _id: -1 }));
+    return doc ? this.toSummary(doc) : null;
+  }
+
+  private toSummary(r: CashReceiptDocument): CashTransactionSummary {
     return {
-      items: docs.map((r) => ({
-        id: r.id as string,
-        transactionNumber: r.transactionNumber ?? '',
-        voucherNumber: r.voucherNumber,
-        branchId: String(r.branchId),
-        date: r.date.toISOString(),
-        count: r.rows.length,
-        total: r.total,
-        customers: [...new Set(r.rows.map((x) => x.customerName))],
-        version: r.version ?? 1,
-        editedAt: (r.version ?? 1) > 1 ? (r as unknown as { updatedAt: Date }).updatedAt.toISOString() : null,
-      })),
-      total,
-      page,
-      limit,
+      id: r.id as string,
+      transactionNumber: r.transactionNumber ?? '',
+      voucherNumber: r.voucherNumber,
+      branchId: String(r.branchId),
+      date: r.date.toISOString(),
+      count: r.rows.length,
+      total: r.total,
+      customers: [...new Set(r.rows.map((x) => x.customerName))],
+      version: r.version ?? 1,
+      editedAt: (r.version ?? 1) > 1 ? (r as unknown as { updatedAt: Date }).updatedAt.toISOString() : null,
     };
   }
 

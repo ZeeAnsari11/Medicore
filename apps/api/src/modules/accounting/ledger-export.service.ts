@@ -30,7 +30,7 @@ interface Column {
 const money = (n: number) => n.toFixed(2);
 const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB');
 
-function columnsFor(kind: 'GL' | 'PARTY'): Column[] {
+function columnsFor(kind: 'GL' | 'PARTY', subjectLabel: string): Column[] {
   const debit: Column = { header: 'Debit', width: 58, align: 'right', value: (r) => (r.debit ? money(r.debit) : '') };
   const credit: Column = { header: 'Credit', width: 58, align: 'right', value: (r) => (r.credit ? money(r.credit) : '') };
   const balance: Column = { header: 'Balance', width: 72, align: 'right', value: (r) => money(r.runningBalance) };
@@ -48,9 +48,15 @@ function columnsFor(kind: 'GL' | 'PARTY'): Column[] {
   }
   return [
     date,
-    { header: 'Type', width: 78, align: 'left', value: (r) => r.documentType },
-    { header: 'Doc #', width: 66, align: 'left', value: (r) => r.reference?.number ?? r.entryNumber },
-    { header: 'Description', width: 127, align: 'left', value: (r) => r.description },
+    { header: 'Type', width: 72, align: 'left', value: (r) => r.documentType },
+    {
+      // A payment row shows its payment number; the invoice(s) it settled are in the description.
+      header: subjectLabel === 'Vendor' ? 'Purchase #' : 'Invoice #',
+      width: 80,
+      align: 'left',
+      value: (r) => r.reference?.number ?? r.entryNumber,
+    },
+    { header: 'Description', width: 119, align: 'left', value: (r) => r.description },
     debit,
     credit,
     balance,
@@ -61,7 +67,7 @@ function columnsFor(kind: 'GL' | 'PARTY'): Column[] {
 export class LedgerExportService {
   /** UTF-8 BOM so Excel opens it with the right encoding. */
   buildCsv(spec: LedgerExportSpec): string {
-    const cols = columnsFor(spec.kind);
+    const cols = columnsFor(spec.kind, spec.subjectLabel);
     const cell = (v: string) => `"${v.replace(/"/g, '""')}"`;
     const line = (values: string[]) => values.map(cell).join(',');
     const blank = (label: string, balance: number, debit = '', credit = '') =>
@@ -83,7 +89,7 @@ export class LedgerExportService {
 
   build(spec: LedgerExportSpec): PDFKit.PDFDocument {
     const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
-    const cols = columnsFor(spec.kind);
+    const cols = columnsFor(spec.kind, spec.subjectLabel);
     const left = doc.page.margins.left;
     const bottom = doc.page.height - doc.page.margins.bottom - 20;
 
