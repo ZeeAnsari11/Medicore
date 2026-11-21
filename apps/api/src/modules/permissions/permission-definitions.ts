@@ -29,6 +29,7 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
   { key: 'dashboard', label: 'Dashboard', group: 'Overview', actions: [VIEW] },
   { key: 'manufacturers', label: 'Manufacturers', group: 'Catalog', actions: [VIEW, CREATE, EDIT] },
   { key: 'vendors', label: 'Vendors', group: 'Catalog', actions: [VIEW, CREATE, EDIT] },
+  { key: 'locations', label: 'Cities & Territories', group: 'Catalog', actions: [VIEW, CREATE, EDIT] },
   {
     key: 'products',
     label: 'Products',
@@ -66,6 +67,8 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
       { key: 'return', label: 'Return' },
       { key: 'record_payment', label: 'Record payment' },
       { key: 'discount', label: 'Discount' },
+      // Shows the product's TP / CP / RP on the new sale screen; nobody gets it by default.
+      { key: 'view_prices', label: 'View TP / CP / RP' },
       // Without view_all a user is an Order Booker: they only see and edit the sales they booked.
       { key: 'view_all', label: 'View all sales' },
       { key: 'book_for_others', label: 'Create sales for other Order Bookers' },
@@ -173,6 +176,8 @@ export const ROLE_TEMPLATES: Array<{ key: string; label: string; permissions: st
       'dashboard:read',
       'customers:read',
       'customers:create',
+      'locations:read',
+      'locations:create',
       'products:read',
       'inventory:read',
       'sales:read',
@@ -189,6 +194,8 @@ export const ROLE_TEMPLATES: Array<{ key: string; label: string; permissions: st
       'dashboard:read',
       'customers:read',
       'customers:create',
+      'locations:read',
+      'locations:create',
       'products:read',
       'inventory:read',
       'sales:read',

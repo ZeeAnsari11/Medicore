@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogFooter,
   Button,
+  ComboboxWithCreate,
   Input,
   Label,
   Alert,
@@ -22,15 +23,12 @@ import {
 import { useUsers } from '@/hooks/use-users';
 import { useRoles } from '@/hooks/use-roles';
 import { useBranches } from '@/hooks/use-branches';
+import { useLocations } from '@/hooks/use-locations';
+import { usePermissions } from '@/hooks/use-permissions';
+import { CityQuickCreateDialog, TerritoryQuickCreateDialog } from '../../../customers/components/location-quick-create-dialogs';
 import { ApiError } from '@/lib/api-client';
 import { TenantRole } from '@medicore/shared-types';
 import type { User, UpdateUserRequest } from '@medicore/shared-types';
-
-const LOCATION_FIELDS = [
-  { name: 'territory', label: 'Territory', placeholder: 'e.g. Lahore North' },
-  { name: 'city', label: 'City', placeholder: 'e.g. Lahore' },
-  { name: 'address', label: 'Address', placeholder: 'Street, area' },
-] as const;
 
 const RequiredMark = () => <span className="text-destructive">*</span>;
 
@@ -66,6 +64,7 @@ export function UserDialog({
   const { branches } = useBranches();
   const {
     register,
+    control,
     handleSubmit,
     reset,
     watch,
@@ -84,6 +83,26 @@ export function UserDialog({
       branchId: user?.branchId ?? '',
     },
   });
+
+  const { has } = usePermissions();
+  const [cityDialogOpen, setCityDialogOpen] = React.useState(false);
+  const [territoryDialogOpen, setTerritoryDialogOpen] = React.useState(false);
+  const formBranchId = watch('branchId');
+  // The lists belong to the user's branch (the form's own Branch field), so they wait for it.
+  const { cities, territories } = useLocations(open && !!formBranchId, formBranchId);
+  const cityValue = watch('city');
+  const territoryValue = watch('territory');
+  const sameName = (a?: string, b?: string) => !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+  const selectedCity = cities.find((c) => sameName(c.name, cityValue)) ?? null;
+  // Active entries only, plus what the user already has (an older spelling stays selectable).
+  const withCurrent = (names: string[], current?: string) =>
+    [...new Set([...names, ...(current?.trim() && !names.some((n) => sameName(n, current)) ? [current.trim()] : [])])];
+  const cityOptions = withCurrent(cities.filter((c) => c.isActive).map((c) => c.name), cityValue).map((n) => ({ value: n, label: n }));
+  const territoryOptions = withCurrent(
+    territories.filter((t) => t.isActive && t.cityId === selectedCity?.id).map((t) => t.name),
+    territoryValue,
+  ).map((n) => ({ value: n, label: n }));
+  const canCreateLocations = has('locations:create');
 
   const currentRoleId = watch('roleId');
   const currentTenantRole = watch('tenantRole');
@@ -137,7 +156,7 @@ export function UserDialog({
       const dto: UpdateUserRequest = {};
       if (values.fullName !== user.fullName) dto.fullName = values.fullName;
       if ((values.phone ?? '') !== (user.phone ?? '')) dto.phone = values.phone ?? '';
-      for (const { name } of LOCATION_FIELDS) {
+      for (const name of ['territory', 'city', 'address'] as const) {
         const next = values[name].trim();
         if (next !== user[name]) dto[name] = next;
       }
@@ -234,20 +253,71 @@ export function UserDialog({
             <Input id="phone" placeholder="Optional" {...register('phone')} />
           </div>
 
-          {LOCATION_FIELDS.map(({ name, label, placeholder }) => (
-            <div key={name} className="space-y-1.5">
-              <Label htmlFor={name}>
-                {label} <RequiredMark />
-              </Label>
-              <Input
-                id={name}
-                placeholder={placeholder}
-                aria-invalid={!!errors[name]}
-                {...register(name, { validate: (value) => !!value?.trim() || `${label} is required` })}
-              />
-              {errors[name] && <p className="text-xs text-destructive">{errors[name]?.message}</p>}
-            </div>
-          ))}
+          <div className="space-y-1.5">
+            <Label htmlFor="city">
+              City <RequiredMark />
+            </Label>
+            <Controller
+              control={control}
+              name="city"
+              rules={{ validate: (v) => !!v?.trim() || 'City is required' }}
+              render={({ field: { value, onChange } }) => (
+                <ComboboxWithCreate
+                  id="city"
+                  value={value}
+                  onChange={(v) => {
+                    if (v !== value) setValue('territory', '', { shouldValidate: false });
+                    onChange(v);
+                  }}
+                  options={cityOptions}
+                  disabled={!formBranchId}
+                  placeholder={formBranchId ? 'Select city' : 'Select a branch first'}
+                  searchPlaceholder="Search cities..."
+                  onCreateNew={canCreateLocations && formBranchId ? () => setCityDialogOpen(true) : undefined}
+                  createLabel={() => 'Create new city'}
+                />
+              )}
+            />
+            {errors.city && <p className="text-xs text-destructive">{errors.city.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="territory">
+              Territory <RequiredMark />
+            </Label>
+            <Controller
+              control={control}
+              name="territory"
+              rules={{ validate: (v) => !!v?.trim() || 'Territory is required' }}
+              render={({ field: { value, onChange } }) => (
+                <ComboboxWithCreate
+                  id="territory"
+                  value={value}
+                  onChange={onChange}
+                  options={territoryOptions}
+                  disabled={!cityValue?.trim()}
+                  placeholder={cityValue?.trim() ? 'Select territory' : 'Select a city first'}
+                  searchPlaceholder="Search territories..."
+                  onCreateNew={canCreateLocations && selectedCity ? () => setTerritoryDialogOpen(true) : undefined}
+                  createLabel={() => 'Create new territory'}
+                />
+              )}
+            />
+            {errors.territory && <p className="text-xs text-destructive">{errors.territory.message}</p>}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label htmlFor="address">
+              Address <RequiredMark />
+            </Label>
+            <Input
+              id="address"
+              placeholder="Street, area"
+              aria-invalid={!!errors.address}
+              {...register('address', { validate: (value) => !!value?.trim() || 'Address is required' })}
+            />
+            {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
+          </div>
 
           <div className="space-y-1.5">
             <Label htmlFor="tenantRole">
@@ -307,6 +377,22 @@ export function UserDialog({
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      <CityQuickCreateDialog
+        open={cityDialogOpen}
+        branchId={formBranchId || null}
+        onOpenChange={setCityDialogOpen}
+        onCreated={(name) => {
+          setValue('city', name, { shouldValidate: true });
+          setValue('territory', '');
+        }}
+      />
+      <TerritoryQuickCreateDialog
+        open={territoryDialogOpen}
+        city={selectedCity}
+        onOpenChange={setTerritoryDialogOpen}
+        onCreated={(name) => setValue('territory', name, { shouldValidate: true })}
+      />
     </Dialog>
   );
 }

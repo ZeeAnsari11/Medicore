@@ -30,6 +30,7 @@ import { PlatformSettingsModule } from './modules/platform-settings/platform-set
 import { BranchesModule } from './modules/branches/branches.module';
 import { ManufacturersModule } from './modules/manufacturers/manufacturers.module';
 import { CategoriesModule } from './modules/categories/categories.module';
+import { LocationsModule } from './modules/locations/locations.module';
 import { ProductsModule } from './modules/products/products.module';
 import { VendorsModule } from './modules/vendors/vendors.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -72,6 +73,7 @@ import { AccountingModule } from './modules/accounting/accounting.module';
     BranchesModule,
     ManufacturersModule,
     CategoriesModule,
+    LocationsModule,
     ProductsModule,
     VendorsModule,
     InventoryModule,

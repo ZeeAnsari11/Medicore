@@ -36,7 +36,7 @@ export class SaleReturnsController {
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser, @Query('saleId') saleId?: string) {
     const returns = await this.returnsService.listSaleReturns(user.tenantId, saleId, await this.ownScope(user));
-    return returns.map((r) => this.returnsService.toSaleReturnResponse(r));
+    return this.returnsService.toSaleReturnResponses(user.tenantId, returns);
   }
 
   @RequirePermission('acc_returns:create')

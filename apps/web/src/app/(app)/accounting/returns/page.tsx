@@ -31,6 +31,7 @@ import { useSales } from '@/hooks/use-sales';
 import { usePurchases } from '@/hooks/use-purchases';
 import { useReturnableSaleItems, useReturnablePurchaseItems, useSaleReturns, usePurchaseReturns, useReturnsList } from '@/hooks/use-returns';
 import { ApiError } from '@/lib/api-client';
+import { SaleReturnsTable } from './components/sale-returns-table';
 import type { CreateSaleReturnItemRequest, CreatePurchaseReturnItemRequest, SaleReturn, PurchaseReturn } from '@medicore/shared-types';
 
 
@@ -254,34 +255,38 @@ export default function ReturnsPage() {
 
       <div className="mt-8 space-y-2">
         <h2 className="text-sm font-medium">Recorded {mode === 'sale' ? 'sale' : 'purchase'} returns</h2>
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Return #</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Reason</TableHead>
-                <TableHead>Amount</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {history.length === 0 ? (
+        {mode === 'sale' ? (
+          <SaleReturnsTable returns={history as SaleReturn[]} />
+        ) : (
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">No returns recorded yet</TableCell>
+                  <TableHead>Return #</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Reason</TableHead>
+                  <TableHead>Amount</TableHead>
                 </TableRow>
-              ) : (
-                history.map((r) => (
-                  <TableRow key={r.id}>
-                    <TableCell className="font-medium">{r.returnNumber ?? '—'}</TableCell>
-                    <TableCell className="text-sm">{new Date(r.returnDate).toLocaleDateString()}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">{r.reason ?? '—'}</TableCell>
-                    <TableCell className="tabular-nums">{(r.total ?? 0).toFixed(2)}</TableCell>
+              </TableHeader>
+              <TableBody>
+                {history.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">No returns recorded yet</TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                ) : (
+                  history.map((r) => (
+                    <TableRow key={r.id}>
+                      <TableCell className="font-medium">{r.returnNumber ?? '—'}</TableCell>
+                      <TableCell className="text-sm">{new Date(r.returnDate).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{r.reason ?? '—'}</TableCell>
+                      <TableCell className="tabular-nums">{(r.total ?? 0).toFixed(2)}</TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
     </PageAccessGuard>
   );

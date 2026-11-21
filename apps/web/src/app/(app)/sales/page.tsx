@@ -28,6 +28,7 @@ import { useCustomers } from '@/hooks/use-customers';
 import { usePermissions } from '@/hooks/use-permissions';
 import { PaymentStatus, ReturnStatus } from '@medicore/shared-types';
 import { SaleDetailDialog } from './components/sale-detail-dialog';
+import { SupplyReportsDialog } from './components/supply-reports-dialog';
 import type { Sale } from '@medicore/shared-types';
 
 const ALL = '__all__';
@@ -70,6 +71,7 @@ export default function SalesPage() {
       setOpenId(null);
     }
   }, [linkedSale]);
+  const [supplyOpen, setSupplyOpen] = useState(false);
   const [customerId, setCustomerId] = useState(ALL);
   const [orderBookerId, setOrderBookerId] = useState(ALL);
   const [paymentStatus, setPaymentStatus] = useState(ALL);
@@ -301,6 +303,11 @@ export default function SalesPage() {
           <FileText className="mr-2 h-4 w-4" />
           Report (PDF)
         </Button>
+        <Button variant="outline" size="sm" onClick={() => setSupplyOpen(true)}>
+          <FileText className="mr-2 h-4 w-4" />
+          Supply reports
+        </Button>
+        <SupplyReportsDialog open={supplyOpen} onOpenChange={setSupplyOpen} branchId={selectedBranchId} canPickBranch={branchFilter.showDropdown} canPickBookers={canSeeAll} />
       </div>
 
       {summary && (

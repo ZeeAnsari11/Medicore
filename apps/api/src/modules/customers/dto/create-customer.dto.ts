@@ -1,4 +1,7 @@
-import { IsBoolean, IsMongoId, IsOptional, IsString, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
 export class CreateCustomerDto {
   @IsString()
@@ -14,9 +17,30 @@ export class CreateCustomerDto {
   @IsOptional()
   phone?: string;
 
+  /** Required with territory and city so every customer can be filtered and grouped on the supply reports. */
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(300)
+  address: string;
+
+  /** Printed on the supply summary; unique per tenant when set. */
   @IsString()
   @IsOptional()
-  address?: string;
+  @MaxLength(40)
+  code?: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  territory: string;
+
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(80)
+  city: string;
 
   @IsBoolean()
   @IsOptional()

@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   Factory,
+  MapPin,
   Truck,
   Pill,
   ShoppingCart,
@@ -82,6 +83,7 @@ export const navSections: NavSection[] = [
       { label: 'Branches', href: '/administration/branches', icon: Building2, requires: { anyOf: ['branches:read'] } },
       { label: 'Roles', href: '/administration/roles', icon: Shield, requires: { anyOf: ['roles:read'] } },
       { label: 'Users', href: '/administration/users', icon: LockKeyhole, requires: { anyOf: ['users:read'] } },
+      { label: 'Cities & Territories', href: '/locations', icon: MapPin, requires: { anyOf: ['locations:read'] } },
     ],
   },
   {

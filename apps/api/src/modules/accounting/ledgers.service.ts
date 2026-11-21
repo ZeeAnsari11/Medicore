@@ -4,6 +4,7 @@ import { Model, PipelineStage, Types } from 'mongoose';
 import { Account, AccountDocument } from './schemas/account.schema';
 import { JournalEntry, JournalEntryDocument, LEDGER_VISIBLE_STATUSES } from './schemas/journal-entry.schema';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
+import { SaleReturn, SaleReturnDocument } from './schemas/sale-return.schema';
 import { Expense, ExpenseDocument } from './schemas/expense.schema';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Vendor, VendorDocument } from '../vendors/schemas/vendor.schema';
@@ -134,6 +135,7 @@ export class LedgersService {
     @InjectModel(Vendor.name) private readonly vendorModel: Model<VendorDocument>,
     private readonly paymentLinks: PaymentLinksService,
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
+    @InjectModel(SaleReturn.name) private readonly saleReturnModel: Model<SaleReturnDocument>,
     @InjectModel(Purchase.name) private readonly purchaseModel: Model<PurchaseDocument>,
     @InjectModel(Payment.name) private readonly paymentModel: Model<PaymentDocument>,
     @InjectModel(Expense.name) private readonly expenseModel: Model<ExpenseDocument>,
@@ -544,6 +546,15 @@ export class LedgersService {
       p.tenantId,
       pageRows.filter((r) => r.sourceId && (r.sourceType === T.PAYMENT_RECEIVED || r.sourceType === T.PAYMENT_MADE)).map((r) => r.sourceId!),
     );
+    // A sale return row shows the return's own id (SR-…) and the invoice it was against, as payments do.
+    const returnRows = pageRows.filter((r) => r.sourceType === T.SALE_RETURN && r.sourceId);
+    const returns = returnRows.length
+      ? await this.saleReturnModel
+          .find({ tenantId: new Types.ObjectId(p.tenantId), journalEntryId: { $in: returnRows.map((r) => r.entryId) } })
+          .select('returnNumber journalEntryId saleId')
+          .lean()
+      : [];
+    const returnOfEntry = new Map(returns.map((x) => [x.journalEntryId, x]));
     let running = opening + prior;
     const rows: LedgerRow[] = pageRows.map((r) => {
       running += signed(p.direction, r.debit, r.credit);
@@ -556,6 +567,23 @@ export class LedgersService {
       );
       const links =
         documentType === 'Payment' && r.sourceId ? paymentLinks.get(r.sourceId) : undefined;
+      const ret = returnOfEntry.get(r.entryId);
+      const sale = ret ? references.get(`${r.sourceType}:${r.sourceId}`) : undefined;
+      if (ret?.returnNumber && sale) {
+        return {
+          entryId: r.entryId,
+          entryNumber: r.entryNumber,
+          date: r.entryDate.toISOString(),
+          sourceType: r.sourceType,
+          documentType,
+          description: `Against invoice ${sale.number}`,
+          reference: { type: 'SALE_RETURN' as const, id: ret._id as string, number: ret.returnNumber },
+          invoices: [{ type: 'SALE' as const, id: sale.id, number: sale.number, amount: round2(Math.max(r.debit, r.credit)) }],
+          debit: round2(r.debit),
+          credit: round2(r.credit),
+          runningBalance: round2(running),
+        };
+      }
       return {
         entryId: r.entryId,
         entryNumber: r.entryNumber,

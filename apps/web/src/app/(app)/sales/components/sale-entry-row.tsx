@@ -15,6 +15,7 @@ import {
 } from '@medicore/ui';
 import { useProductBatches } from '@/hooks/use-inventory';
 import { useLastSalePrices } from '@/hooks/use-sales';
+import { usePermissions } from '@/hooks/use-permissions';
 import { LastPriceHint } from '@/components/last-price-hint';
 import { ProductDialog } from '../../products/components/product-dialog';
 import type { Product } from '@medicore/shared-types';
@@ -104,6 +105,7 @@ export function SaleEntryRow({
   const [pickToken, setPickToken] = useState(0);
 
   const product = products.find((p) => p.id === draft.productId);
+  const canViewPrices = usePermissions().has('sales:view_prices');
   const { batches, isLoading: batchesLoading } = useProductBatches(draft.productId || null, branchId);
   const available = useMemo(
     () => withRemainingStock(eligibleBatches(restoreStock(batches, restoreByBatch)), usedByBatch(lines, editing?.groupId)),
@@ -269,6 +271,11 @@ export function SaleEntryRow({
             createLabel={() => 'Create new product'}
             className={`h-9 text-sm ${invalid('product') ? 'border-destructive' : ''}`}
           />
+          {canViewPrices && product && (
+            <p className="text-xs font-semibold leading-tight text-foreground">
+              TP {product.tp.toFixed(2)} · CP {product.cp.toFixed(2)} · RP {product.rp.toFixed(2)}
+            </p>
+          )}
         </div>
 
         <div className="col-span-6 space-y-1 lg:col-span-1">

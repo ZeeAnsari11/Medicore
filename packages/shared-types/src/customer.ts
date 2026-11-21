@@ -9,6 +9,10 @@ export interface Customer extends TenantOwnedEntity {
   name: string;
   phone?: string;
   address?: string;
+  /** Optional customer code (printed on the supply summary); unique per tenant when set. */
+  code?: string;
+  territory?: string;
+  city?: string;
   isDealer: boolean;
   /**
    * @deprecated Not the source of truth for anything financial. Left in
@@ -33,7 +37,11 @@ export interface CreateCustomerRequest {
   branchId?: string;
   name: string;
   phone?: string;
-  address?: string;
+  /** Address, territory and city are required so customers can be filtered on the supply reports. */
+  address: string;
+  code?: string;
+  territory: string;
+  city: string;
   isDealer?: boolean;
 }
 
@@ -41,5 +49,8 @@ export interface UpdateCustomerRequest {
   name?: string;
   phone?: string;
   address?: string;
+  code?: string;
+  territory?: string;
+  city?: string;
   isDealer?: boolean;
 }

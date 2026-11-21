@@ -1,4 +1,5 @@
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 let env: TestEnv;
 const api = () => env.api();
@@ -56,7 +57,7 @@ async function seed(t: TenantCtx, buyQty: number, buyPrice: number, sellQty: num
   ).id;
   const vendorId = (await post(t, 'vendors', { company: 'Acme Distributors', branchId })).id;
   const vendorProductId = (await post(t, 'vendor-products', { vendorId, productId, purchasePrice: buyPrice })).id;
-  const customerId = (await post(t, 'customers', { name: 'Walk In Customer', phone: '0300', branchId })).id;
+  const customerId = (await post(t, 'customers', { ...CUSTOMER_LOCATION, name: 'Walk In Customer', phone: '0300', branchId })).id;
 
   const accounts = rows(await get(t, 'accounting/accounts'));
   const cash = accounts.find((a) => a.systemKey === 'CASH') ?? accounts.find((a) => /cash/i.test(a.name));

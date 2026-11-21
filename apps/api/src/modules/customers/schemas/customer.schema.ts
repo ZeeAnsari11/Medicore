@@ -30,6 +30,16 @@ export class Customer {
   @Prop({ trim: true })
   address?: string;
 
+  /** Optional customer code (printed on the supply summary); unique per tenant when set. */
+  @Prop({ trim: true })
+  code?: string;
+
+  @Prop({ trim: true })
+  territory?: string;
+
+  @Prop({ trim: true })
+  city?: string;
+
   @Prop({ required: true, default: false })
   isDealer: boolean;
 
@@ -43,3 +53,5 @@ export class Customer {
 export const CustomerSchema = SchemaFactory.createForClass(Customer);
 
 CustomerSchema.index({ tenantId: 1, branchId: 1, phone: 1 });
+CustomerSchema.index({ tenantId: 1, branchId: 1, territory: 1 });
+CustomerSchema.index({ tenantId: 1, code: 1 }, { unique: true, partialFilterExpression: { code: { $type: 'string' } } });

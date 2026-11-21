@@ -392,13 +392,13 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
         ) : (
         <>
         {lockNote && <p className="text-xs text-muted-foreground">Not editable: {lockNote}</p>}
-        <DialogFooter className="flex items-center justify-between sm:justify-between">
+        <DialogFooter className="flex flex-wrap items-center justify-between gap-2 sm:justify-between">
           {canReturn && ret.canFullReturn ? (
             <Button variant="destructive" onClick={() => setConfirmFullReturn(true)}>
               Full Return
             </Button>
           ) : <span />}
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
             {canEdit && (
               <Button
                 variant="outline"

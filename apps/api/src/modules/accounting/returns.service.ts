@@ -9,6 +9,7 @@ import { Batch, BatchDocument } from '../inventory/schemas/batch.schema';
 import { StockMovement, StockMovementDocument } from '../inventory/schemas/stock-movement.schema';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Branch, BranchDocument } from '../branches/schemas/branch.schema';
+import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { SequenceService } from '../../common/sequence/sequence.service';
 import { runWithoutBranchScope } from '../../common/tenancy/tenant-context';
 import { AccountingPostingService, round2 } from './accounting-posting.service';
@@ -75,6 +76,7 @@ export class ReturnsService {
     private readonly stockMovementModel: Model<StockMovementDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Branch.name) private readonly branchModel: Model<BranchDocument>,
+    @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly postingService: AccountingPostingService,
     private readonly sequenceService: SequenceService,
@@ -300,13 +302,14 @@ export class ReturnsService {
     branchId: string,
     type: 'sale-return' | 'purchase-return',
   ): Promise<string> {
+    // Sale returns run 1, 2, 3 per tenant, like payments.
+    if (type === 'sale-return') return String(await this.sequenceService.next(tenantId, null, 'sale-return-seq', session));
     const branch = await this.branchModel
       .findOne({ _id: new Types.ObjectId(branchId), tenantId: new Types.ObjectId(tenantId) })
       .session(session);
     if (!branch) throw new NotFoundException('Branch not found');
     const seq = await this.sequenceService.next(tenantId, branchId, type, session);
-    const prefix = type === 'sale-return' ? 'SR' : 'PR';
-    return `${prefix}-${branch.code}-${new Date().getFullYear()}-${String(seq).padStart(6, '0')}`;
+    return `PR-${branch.code}-${new Date().getFullYear()}-${String(seq).padStart(6, '0')}`;
   }
 
   private async applySaleReturn(
@@ -877,6 +880,30 @@ export class ReturnsService {
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt,
     };
+  }
+
+  /** The history list: each return with its invoice number and customer (two lookups for the whole list). */
+  async toSaleReturnResponses(tenantId: string, returns: SaleReturnDocument[]): Promise<SaleReturnType[]> {
+    const tenantOid = new Types.ObjectId(tenantId);
+    const saleIds = [...new Set(returns.map((r) => r.saleId))];
+    const sales = saleIds.length
+      ? await this.saleModel.find({ tenantId: tenantOid, _id: { $in: saleIds } }).select('invoiceNumber customerId').lean()
+      : [];
+    const customerIds = [...new Set(sales.map((s) => s.customerId).filter((c): c is string => !!c))];
+    const customers = customerIds.length
+      ? await this.customerModel.find({ tenantId: tenantOid, _id: { $in: customerIds } }).select('name').lean()
+      : [];
+    const nameOf = new Map(customers.map((c): [string, string] => [String(c._id), c.name]));
+    const saleOf = new Map(sales.map((s) => [String(s._id), s]));
+    return returns.map((r) => {
+      const sale = saleOf.get(r.saleId);
+      return {
+        ...this.toSaleReturnResponse(r),
+        invoiceNumber: sale?.invoiceNumber,
+        customerId: sale?.customerId,
+        customerName: sale?.customerId ? nameOf.get(sale.customerId) : undefined,
+      };
+    });
   }
 
   toPurchaseReturnResponse(ret: PurchaseReturnDocument): PurchaseReturnType {

@@ -47,6 +47,13 @@ describe('permission definitions', () => {
   });
 });
 
+describe('view_prices permission', () => {
+  it('is a known sales action and is not in any role template by default', () => {
+    expect(isKnownKey('sales:view_prices')).toBe(true);
+    for (const t of ROLE_TEMPLATES) expect(t.permissions).not.toContain('sales:view_prices');
+  });
+});
+
 describe('order booker permissions', () => {
   it('defines view_all and book_for_others on sales, and an order_booker template without view_all', () => {
     expect(isKnownKey('sales:view_all')).toBe(true);

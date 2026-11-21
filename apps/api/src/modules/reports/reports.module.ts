@@ -17,6 +17,10 @@ import { ReportsController } from './reports.controller';
 import { SsrController } from './ssr/ssr.controller';
 import { SsrService } from './ssr/ssr.service';
 import { SsrExportService } from './ssr/ssr-export.service';
+import { Account, AccountSchema } from '../accounting/schemas/account.schema';
+import { JournalEntry, JournalEntrySchema } from '../accounting/schemas/journal-entry.schema';
+import { SupplyReportsController } from './supply/supply-reports.controller';
+import { SupplyReportsService } from './supply/supply-reports.service';
 import { TenantsModule } from '../tenants/tenants.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { RolesModule } from '../roles/roles.module';
@@ -37,10 +41,12 @@ import { RolesModule } from '../roles/roles.module';
       { name: Customer.name, schema: CustomerSchema },
       { name: Branch.name, schema: BranchSchema },
       { name: User.name, schema: UserSchema },
+      { name: Account.name, schema: AccountSchema },
+      { name: JournalEntry.name, schema: JournalEntrySchema },
     ]),
     InventoryModule,
   ],
-  providers: [ReportsService, DashboardService, SsrService, SsrExportService],
-  controllers: [ReportsController, SsrController],
+  providers: [ReportsService, DashboardService, SsrService, SsrExportService, SupplyReportsService],
+  controllers: [ReportsController, SsrController, SupplyReportsController],
 })
 export class ReportsModule {}

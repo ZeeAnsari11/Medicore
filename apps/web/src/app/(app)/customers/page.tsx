@@ -18,9 +18,11 @@ import {
   type ColumnDef,
 } from '@medicore/ui';
 import { useCustomers } from '@/hooks/use-customers';
+import { useLocations } from '@/hooks/use-locations';
 import { useRouter } from 'next/navigation';
 import { usePermissions } from '@/hooks/use-permissions';
 import { ApiError } from '@/lib/api-client';
+import { MultiSelect } from '@/components/ssr/multi-select';
 import { CustomerDialog } from './components/customer-dialog';
 import type { Customer } from '@medicore/shared-types';
 
@@ -32,6 +34,30 @@ export default function CustomersPage() {
   const { has } = usePermissions();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const locations = useLocations();
+  const [cities, setCities] = useState<string[]>([]);
+  const [territories, setTerritories] = useState<string[]>([]);
+
+  const distinct = (pick: (c: Customer) => string | undefined) =>
+    [...new Set(customers.map((c) => pick(c)?.trim()).filter((v): v is string => !!v))].sort((a, b) => a.localeCompare(b));
+  // The shared lists (active ones), plus any spelling a customer still has that is not in them.
+  const merged = (listed: string[], used: string[]) =>
+    [...new Set([...listed, ...used])].sort((a, b) => a.localeCompare(b)).map((v) => ({ value: v, label: v }));
+  const cityOptions = useMemo(
+    () => merged(locations.cities.filter((c) => c.isActive).map((c) => c.name), distinct((c) => c.city)),
+    [customers, locations.cities], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const territoryOptions = useMemo(
+    () => merged(locations.territories.filter((t) => t.isActive).map((t) => t.name), distinct((c) => c.territory)),
+    [customers, locations.territories], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const visible = useMemo(
+    () =>
+      customers.filter(
+        (c) => (cities.length === 0 || cities.includes(c.city?.trim() ?? '')) && (territories.length === 0 || territories.includes(c.territory?.trim() ?? '')),
+      ),
+    [customers, cities, territories],
+  );
 
   const selected = selectedId ? customers.find((c) => c.id === selectedId) : undefined;
 
@@ -65,6 +91,9 @@ export default function CustomersPage() {
         header: 'Contact',
         cell: ({ row }) => row.original.phone || '—',
       },
+      { id: 'address', header: 'Address', accessorFn: (c) => c.address ?? '', cell: ({ getValue }) => (getValue() as string) || '—' },
+      { id: 'territory', header: 'Territory', accessorFn: (c) => c.territory ?? '', cell: ({ getValue }) => (getValue() as string) || '—' },
+      { id: 'city', header: 'City', accessorFn: (c) => c.city ?? '', cell: ({ getValue }) => (getValue() as string) || '—' },
       {
         accessorKey: 'isDealer',
         header: 'Type',
@@ -143,7 +172,18 @@ export default function CustomersPage() {
       ) : (
         <DataTable
           columns={columns}
-          data={customers}
+          data={visible}
+          toolbar={
+            <div className="flex flex-wrap gap-2">
+              <MultiSelect label="City" allLabel="All cities" options={cityOptions} value={cities} onChange={setCities} />
+              <MultiSelect label="Territory" allLabel="All territories" options={territoryOptions} value={territories} onChange={setTerritories} />
+            </div>
+          }
+          filtersActive={cities.length > 0 || territories.length > 0}
+          onClearFilters={() => {
+            setCities([]);
+            setTerritories([]);
+          }}
           searchPlaceholder="Search customers..."
           onRowClick={(row) => has('customers:update') && handleOpenEdit(row.id)}
         />

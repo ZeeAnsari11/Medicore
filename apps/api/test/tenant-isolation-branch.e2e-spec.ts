@@ -1,4 +1,5 @@
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 /**
  * Branch separation on top of tenant isolation: two tenants, tenant A has two branches
@@ -64,8 +65,8 @@ describe('branch separation (e2e)', () => {
       .expect(200);
     userK = login.body.accessToken;
 
-    custK = (await post(as(A, K), 'customers', { name: 'Ali Traders', phone: '0300', branchId: K })).id;
-    custL = (await post(as(A, L), 'customers', { name: 'Ali Traders', phone: '0300', branchId: L })).id; // same name, other branch
+    custK = (await post(as(A, K), 'customers', { ...CUSTOMER_LOCATION, name: 'Ali Traders', phone: '0300', branchId: K })).id;
+    custL = (await post(as(A, L), 'customers', { ...CUSTOMER_LOCATION, name: 'Ali Traders', phone: '0300', branchId: L })).id; // same name, other branch
     const vendK = (await post(as(A, K), 'vendors', { company: 'Acme', branchId: K })).id;
     const vendL = (await post(as(A, L), 'vendors', { company: 'Acme', branchId: L })).id;
     prodId = (
@@ -118,7 +119,7 @@ describe('branch separation (e2e)', () => {
 
   it('admin creating without a branchId in the body is a 400 on branchId, whatever the top bar says', async () => {
     for (const headers of [as(A), as(A, K)]) {
-      const res = await api().post('/api/customers').set(headers).send({ name: 'Nowhere' }).expect(400);
+      const res = await api().post('/api/customers').set(headers).send({ ...CUSTOMER_LOCATION, name: 'Nowhere' }).expect(400);
       expect(JSON.stringify(res.body.message)).toContain('branchId');
     }
     await api().post('/api/vendors').set(as(A, K)).send({ company: 'Nowhere' }).expect(400);
@@ -213,18 +214,18 @@ describe('branch separation (e2e)', () => {
   it('a branch with data cannot be deleted; an inactive branch is readable but takes no new documents', async () => {
     await api().delete(`/api/branches/${K}`).set(as(A)).expect(409);
     const extra = (await post(as(A), 'branches', { name: 'Okara', code: 'OKR' })).id;
-    await post(as(A, extra), 'customers', { name: 'Okara Customer', branchId: extra });
+    await post(as(A, extra), 'customers', { ...CUSTOMER_LOCATION, name: 'Okara Customer', branchId: extra });
     await api().patch(`/api/branches/${extra}/status`).set(as(A)).send({ isActive: false }).expect(200);
     expect(await list(as(A, extra), 'customers')).toHaveLength(1); // still readable
-    await api().post('/api/customers').set(as(A, extra)).send({ name: 'Too late', branchId: extra }).expect(403);
+    await api().post('/api/customers').set(as(A, extra)).send({ ...CUSTOMER_LOCATION, name: 'Too late', branchId: extra }).expect(403);
     // the top-bar branch never decides: pointing it at the inactive branch but naming an active one works
-    await post(as(A, extra), 'customers', { name: 'Named active branch', branchId: K });
+    await post(as(A, extra), 'customers', { ...CUSTOMER_LOCATION, name: 'Named active branch', branchId: K });
   });
 
 
   it('creates take the branch from the body: header on All or on another branch makes no difference', async () => {
-    const onAll = await post(as(A), 'customers', { name: 'Stamped L (All)', branchId: L });
-    const onK = await post(as(A, K), 'customers', { name: 'Stamped L (header K)', branchId: L });
+    const onAll = await post(as(A), 'customers', { ...CUSTOMER_LOCATION, name: 'Stamped L (All)', branchId: L });
+    const onK = await post(as(A, K), 'customers', { ...CUSTOMER_LOCATION, name: 'Stamped L (header K)', branchId: L });
     expect(await list(as(A, L), 'customers')).toEqual(expect.arrayContaining([expect.objectContaining({ id: onAll.id }), expect.objectContaining({ id: onK.id })]));
     expect((await list(as(A, K), 'customers')).map((c: any) => c.id)).not.toContain(onK.id);
     const vendor = await post(as(A, K), 'vendors', { company: 'Header K, body L', branchId: L });
@@ -234,17 +235,17 @@ describe('branch separation (e2e)', () => {
   });
 
   it('a branch user is pinned to their own branch: foreign branchId is 403, none given lands in their branch', async () => {
-    await api().post('/api/customers').set(authAs(userK)).send({ name: 'Sneaky', branchId: L }).expect(403);
+    await api().post('/api/customers').set(authAs(userK)).send({ ...CUSTOMER_LOCATION, name: 'Sneaky', branchId: L }).expect(403);
     await api().post('/api/vendors').set(authAs(userK)).send({ company: 'Sneaky', branchId: L }).expect(403);
-    const own = await post(authAs(userK), 'customers', { name: 'Clerk made' });
+    const own = await post(authAs(userK), 'customers', { ...CUSTOMER_LOCATION, name: 'Clerk made' });
     expect(own.branchId).toBe(K);
   });
 
   it('an inactive or another tenant\'s branch is refused as a create target', async () => {
     const dead = (await post(as(A), 'branches', { name: 'Closed', code: 'CLS' })).id;
     await api().patch(`/api/branches/${dead}/status`).set(as(A)).send({ isActive: false }).expect(200);
-    await api().post('/api/customers').set(as(A, K)).send({ name: 'Closed branch', branchId: dead }).expect(403);
-    await api().post('/api/customers').set(as(A, K)).send({ name: 'Foreign branch', branchId: BB }).expect(403);
+    await api().post('/api/customers').set(as(A, K)).send({ ...CUSTOMER_LOCATION, name: 'Closed branch', branchId: dead }).expect(403);
+    await api().post('/api/customers').set(as(A, K)).send({ ...CUSTOMER_LOCATION, name: 'Foreign branch', branchId: BB }).expect(403);
     await api().post('/api/manufacturers').set(as(A, K)).send({ name: 'Closed branch', branchId: dead }).expect(403);
   });
 

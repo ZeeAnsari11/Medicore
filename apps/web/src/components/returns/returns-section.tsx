@@ -26,6 +26,15 @@ function quantityOf(ret: SaleReturn | PurchaseReturn): number {
   return ret.items.reduce((sum, i) => sum + i.batchAllocations.reduce((s, a) => s + a.quantity, 0), 0);
 }
 
+/** Distinct product names on a return, in order. */
+const namesOf = (ret: SaleReturn | PurchaseReturn): string[] => [...new Set(ret.items.map((i) => i.productName).filter((n): n is string => !!n))];
+
+/** The first two names, then "+N more" (the full list is the tooltip), so a many-line return doesn't widen the dialog. */
+function productsLabel(ret: SaleReturn | PurchaseReturn): string {
+  const names = namesOf(ret);
+  return names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+}
+
 /** The "Returns" block on a purchase / sale detail: one row per return with a printable slip. */
 export function ReturnsSection({ kind, docId, branchId, returns }: Props) {
   const { openPdf, isOpening } = useDocumentPdf();
@@ -44,6 +53,7 @@ export function ReturnsSection({ kind, docId, branchId, returns }: Props) {
           <TableHeader>
             <TableRow>
               <TableHead>Return #</TableHead>
+              <TableHead>Product</TableHead>
               <TableHead>Date</TableHead>
               <TableHead>Qty</TableHead>
               <TableHead>Amount</TableHead>
@@ -57,6 +67,7 @@ export function ReturnsSection({ kind, docId, branchId, returns }: Props) {
                   {ret.returnNumber ?? '—'}
                   {ret.kind === 'CANCELLATION' && <Badge variant="outline" className="ml-2">Remainder</Badge>}
                 </TableCell>
+                <TableCell className="max-w-48 truncate text-sm" title={namesOf(ret).join(', ')}>{productsLabel(ret) || '—'}</TableCell>
                 <TableCell className="text-sm">{new Date(ret.returnDate).toLocaleDateString()}</TableCell>
                 <TableCell>{quantityOf(ret)}</TableCell>
                 <TableCell className="tabular-nums">{(ret.total ?? 0).toFixed(2)}</TableCell>

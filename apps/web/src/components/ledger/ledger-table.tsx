@@ -34,6 +34,8 @@ export function documentHref(ref: LedgerReference): string {
       return `/purchases?open=${ref.id}`;
     case 'PAYMENT':
       return `/accounting/payments?open=${ref.id}`;
+    case 'SALE_RETURN':
+      return `/accounting/returns?open=${ref.id}`;
     default:
       return '/accounting/expenses';
   }

@@ -1,4 +1,5 @@
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 let env: TestEnv;
 const api = () => env.api();
@@ -35,7 +36,7 @@ describe('product prices: TP / CP / RP (e2e)', () => {
     branchId = (await post(A, 'branches', { name: 'Main', code: 'MAIN' })).id;
     A.branchId = branchId;
     manufacturerId = (await post(A, 'manufacturers', { name: 'Pfizer', branchId })).id;
-    customerId = (await post(A, 'customers', { name: 'Walk In Customer', phone: '0300', branchId })).id;
+    customerId = (await post(A, 'customers', { ...CUSTOMER_LOCATION, name: 'Walk In Customer', phone: '0300', branchId })).id;
     productId = (await product('Floored', {})).body.id;
     const vendorId = (await post(A, 'vendors', { company: 'Acme Distributors', branchId })).id;
     await post(A, 'vendor-products', { vendorId, productId, purchasePrice: 10 });

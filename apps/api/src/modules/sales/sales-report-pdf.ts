@@ -22,37 +22,35 @@ const remainingOf = (s: Sale) => {
   return Math.max(round2(net - (s.amountPaid - (s.refundedTotal ?? 0))), 0);
 };
 
-const statusOf = (s: Sale) =>
-  s.returnStatus === 'FULL'
-    ? `${s.paymentStatus} / Returned`
-    : s.returnStatus === 'PARTIAL'
-      ? `${s.paymentStatus} / Part. ret.`
-      : s.paymentStatus;
+const returnStatusOf = (s: Sale) => (s.returnStatus === 'FULL' ? 'Full return' : s.returnStatus === 'PARTIAL' ? 'Partial return' : '');
 
 interface Column {
   header: string;
   width: number;
   align: 'left' | 'right';
+  /** Left inset for a left-aligned column that follows a right-aligned one, so their text doesn't touch. */
+  pad?: number;
   value: (s: Sale) => string;
 }
 
 // Landscape A4 with 40pt margins leaves 762pt.
 const COLUMNS: Column[] = [
-  { header: 'Inv #', width: 55, align: 'left', value: (s) => s.invoiceNumber },
-  { header: 'Date', width: 58, align: 'left', value: (s) => day(s.saleDate) },
-  { header: 'Customer', width: 130, align: 'left', value: (s) => s.customerName ?? 'Walk-in' },
-  { header: 'Order Booker', width: 100, align: 'left', value: (s) => s.orderBookerName ?? '' },
-  { header: 'Gross Sale', width: 68, align: 'right', value: (s) => money(s.grandTotal) },
-  { header: 'Sale Return', width: 68, align: 'right', value: (s) => money(s.returnedTotal ?? 0) },
+  { header: 'Inv #', width: 50, align: 'left', value: (s) => s.invoiceNumber },
+  { header: 'Date', width: 56, align: 'left', value: (s) => day(s.saleDate) },
+  { header: 'Customer', width: 94, align: 'left', value: (s) => s.customerName ?? 'Walk-in' },
+  { header: 'Order Booker', width: 82, align: 'left', value: (s) => s.orderBookerName ?? '' },
+  { header: 'Gross Sale', width: 62, align: 'right', value: (s) => money(s.grandTotal) },
+  { header: 'Sale Return', width: 62, align: 'right', value: (s) => money(s.returnedTotal ?? 0) },
   {
     header: 'Net Sale / Payable',
     width: 80,
     align: 'right',
     value: (s) => money(round2(s.grandTotal - (s.returnedTotal ?? 0))),
   },
-  { header: 'Paid', width: 68, align: 'right', value: (s) => money(s.amountPaid) },
-  { header: 'Remaining Bal', width: 75, align: 'right', value: (s) => money(remainingOf(s)) },
-  { header: 'Status', width: 60, align: 'left', value: (s) => statusOf(s) },
+  { header: 'Paid', width: 62, align: 'right', value: (s) => money(s.amountPaid) },
+  { header: 'Remaining Bal', width: 72, align: 'right', value: (s) => money(remainingOf(s)) },
+  { header: 'Payment Status', width: 80, align: 'left', pad: 8, value: (s) => s.paymentStatus },
+  { header: 'Return Status', width: 62, align: 'left', value: (s) => returnStatusOf(s) },
 ];
 const TABLE_WIDTH = COLUMNS.reduce((w, c) => w + c.width, 0);
 
@@ -107,7 +105,7 @@ export function buildSalesReportPdf(spec: SalesReportSpec): PDFKit.PDFDocument {
     doc.fillColor('#000').font('Helvetica-Bold').fontSize(8);
     let x = left;
     for (const c of COLUMNS) {
-      doc.text(c.header, x + 2, y + 2, { width: c.width - 4, align: c.align, lineBreak: false });
+      doc.text(c.header, x + 2 + (c.pad ?? 0), y + 2, { width: c.width - 4 - (c.pad ?? 0), align: c.align, lineBreak: false });
       x += c.width;
     }
     doc.y = y + 18;
@@ -125,8 +123,8 @@ export function buildSalesReportPdf(spec: SalesReportSpec): PDFKit.PDFDocument {
       .fontSize(8);
     let x = left;
     COLUMNS.forEach((c, i) => {
-      doc.text(values[i] ?? '', x + 2, y, {
-        width: c.width - 4,
+      doc.text(values[i] ?? '', x + 2 + (c.pad ?? 0), y, {
+        width: c.width - 4 - (c.pad ?? 0),
         align: c.align,
         lineBreak: false,
         ellipsis: true,

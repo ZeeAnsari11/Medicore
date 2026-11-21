@@ -3,6 +3,7 @@ import { getConnectionToken } from '@nestjs/mongoose';
 import type { Connection } from 'mongoose';
 import { backfillTransactionNumbers } from '../scripts/cash-receipt-transaction-numbers';
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 /** Numbered cash-receipt transactions: create, load, edit in place, concurrency and rollback. All on tenant A, branch K. */
 let env: TestEnv;
@@ -48,7 +49,7 @@ async function world() {
   const vendorId = (await post('vendors', { company: `Vendor ${n}`, branchId: K })).id;
   await post('vendor-products', { vendorId, productId, purchasePrice: 10 });
   const customerId = (
-    await post('customers', { name: `Customer ${n}`, phone: '0300', branchId: K })
+    await post('customers', { ...CUSTOMER_LOCATION, name: `Customer ${n}`, phone: '0300', branchId: K })
   ).id;
   await post('purchases', {
     vendorId,

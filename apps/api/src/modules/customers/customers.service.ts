@@ -7,6 +7,7 @@ import { TenantScopedRepository } from '../../common/database/tenant-scoped.repo
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { PartyBalanceService } from '../accounting/party-balance.service';
+import { LocationsService } from '../locations/locations.service';
 import type { Customer as CustomerType } from '@medicore/shared-types';
 
 @Injectable()
@@ -14,17 +15,35 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
   constructor(
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     private readonly partyBalanceService: PartyBalanceService,
+    private readonly locations: LocationsService,
   ) {
     super(customerModel);
   }
 
   async createCustomer(tenantId: string, dto: CreateCustomerDto) {
-    return this.customerModel.create({
-      tenantId: new Types.ObjectId(tenantId),
-      ...dto,
-      branchId: new Types.ObjectId(dto.branchId),
-      totalDue: 0,
-    });
+    try {
+      const customer = new this.customerModel({
+        tenantId: new Types.ObjectId(tenantId),
+        ...dto,
+        code: dto.code?.trim() || undefined,
+        branchId: new Types.ObjectId(dto.branchId),
+        totalDue: 0,
+      });
+      // Checked first (branch, fields) so a refused customer leaves nothing behind in the lists.
+      await customer.validate();
+      // The city and territory are saved as they are spelled in the branch's lists (added there when new).
+      Object.assign(customer, await this.locations.ensure(tenantId, dto.branchId as string, dto.city, dto.territory));
+      return await customer.save();
+    } catch (err) {
+      throw this.duplicateCode(err);
+    }
+  }
+
+  /** A second customer with the same code is a 409, not a raw duplicate-key 500. */
+  private duplicateCode(err: unknown): unknown {
+    return (err as { code?: number }).code === 11000
+      ? new ConflictException('Another customer already uses this code')
+      : err;
   }
 
   async listForTenant(tenantId: string, search?: string) {
@@ -57,7 +76,20 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
       customer,
       Object.fromEntries(Object.entries(dto).filter(([, value]) => value !== undefined)),
     );
-    return customer.save();
+    // Changing the city or territory keeps the lists in step; a territory is only registered when one was sent.
+    const city = dto.city ?? customer.city;
+    if ((dto.city !== undefined || dto.territory !== undefined) && city?.trim()) {
+      const place = await this.locations.ensure(tenantId, String(customer.branchId), city, dto.territory);
+      customer.city = place.city;
+      if (place.territory !== undefined) customer.territory = place.territory;
+    }
+    // An emptied code is cleared (a blank string would still collide in the unique index).
+    if (dto.code !== undefined && !dto.code.trim()) customer.set('code', undefined);
+    try {
+      return await customer.save();
+    } catch (err) {
+      throw this.duplicateCode(err);
+    }
   }
 
   async deleteCustomer(tenantId: string, id: string) {
@@ -90,6 +122,9 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
       name: obj.name,
       phone: obj.phone,
       address: obj.address,
+      code: obj.code,
+      territory: obj.territory,
+      city: obj.city,
       isDealer: obj.isDealer,
       totalDue: obj.totalDue,
       outstandingBalance,

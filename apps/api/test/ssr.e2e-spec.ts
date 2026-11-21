@@ -1,4 +1,5 @@
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 let env: TestEnv;
 const api = () => env.api();
@@ -78,7 +79,7 @@ describe('SSR report (e2e)', () => {
     B = env.B;
     a = await seed(A, 15);
     b = await seed(B, 40);
-    const customerId = (await post(A, 'customers', { name: 'Acme Clinic', phone: '0300', branchId: a.branchId })).id;
+    const customerId = (await post(A, 'customers', { ...CUSTOMER_LOCATION, name: 'Acme Clinic', phone: '0300', branchId: a.branchId })).id;
     // S1: 10 x 15 with 10% discount = 135 (customer). S2: 5 x 20 = 100 (walk-in, opening-stock batch).
     const s1 = await post(A, 'sales', {
       branchId: a.branchId, customerId, paymentMethod: 'CASH', paymentStatus: 'PAID',

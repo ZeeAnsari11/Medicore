@@ -249,6 +249,9 @@ export interface SaleReturnItem {
 export interface SaleReturn extends BranchOwnedEntity {
   saleId: string;
   invoiceNumber?: string;
+  /** The returning customer; absent for walk-in sales. */
+  customerId?: string;
+  customerName?: string;
   returnNumber?: string;
   /** CANCELLATION rows are the remainder reversed by Void invoice. */
   kind?: 'RETURN' | 'CANCELLATION';
@@ -369,7 +372,8 @@ export interface ReturnablePurchaseItem {
 
 /** The document a ledger row came from, so the UI can open it. */
 export interface LedgerReference {
-  type: 'SALE' | 'PURCHASE' | 'PAYMENT' | 'EXPENSE';
+  /** SALE_RETURN: `number` is the return id (SR-…) and `id` the sale return; open it on the Returns page. */
+  type: 'SALE' | 'PURCHASE' | 'PAYMENT' | 'EXPENSE' | 'SALE_RETURN';
   id: string;
   number: string;
 }

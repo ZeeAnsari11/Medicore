@@ -1,4 +1,5 @@
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 /**
  * Editing sales/purchases until money is recorded against them, plus voiding payments.
@@ -42,7 +43,7 @@ async function world(cp = 10, tp = 15): Promise<World> {
   ).id;
   const vendorId = (await post('vendors', { company: `Vendor ${n}`, branchId: K })).id;
   await post('vendor-products', { vendorId, productId, purchasePrice: cp });
-  const customerId = (await post('customers', { name: `Customer ${n}`, phone: '0300', branchId: K })).id;
+  const customerId = (await post('customers', { ...CUSTOMER_LOCATION, name: `Customer ${n}`, phone: '0300', branchId: K })).id;
   return { productId, vendorId, customerId };
 }
 

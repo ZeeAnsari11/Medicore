@@ -4,6 +4,7 @@ import { getModelToken } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 
 import { auth, bootstrap, TenantCtx, TestEnv } from './helpers/bootstrap';
+import { CUSTOMER_LOCATION } from './helpers/customer';
 
 let env: TestEnv;
 let app: INestApplication;
@@ -42,7 +43,7 @@ describe('tenant isolation (e2e)', () => {
       ['branches', { name: 'Main', code: 'MAIN' }],
       ['vendors', { company: 'Acme Distributors' }],
       ['manufacturers', { name: 'Pfizer' }],
-      ['customers', { name: 'Walk In Customer', phone: '0300' }],
+      ['customers', { ...CUSTOMER_LOCATION, name: 'Walk In Customer', phone: '0300' }],
     ])('%s', async (path, body) => {
       await create(A, path, body, `${path}A`);
       await create(B, path, body, `${path}B`);
@@ -139,7 +140,7 @@ describe('tenant isolation (e2e)', () => {
       await api().post('/api/users').set(auth(A)).send({ username: 'emailer', email: 'e@x.com', fullName: 'Emailer', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(400);
       await api().post('/api/vendors').set(auth(A)).send({ branchId: (A as any).branchId, company: 'Mailco', contactEmail: 'e@x.com' }).expect(400);
       await api().post('/api/manufacturers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Mailfab', contactEmail: 'e@x.com' }).expect(400);
-      await api().post('/api/customers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Mail Cust', email: 'e@x.com' }).expect(400);
+      await api().post('/api/customers').set(auth(A)).send({ ...CUSTOMER_LOCATION, branchId: (A as any).branchId, name: 'Mail Cust', email: 'e@x.com' }).expect(400);
     });
     it('phone is optional and stored', async () => {
       const withPhone = (await api().post('/api/users').set(auth(A)).send({ username: 'phoneuser', phone: '0300-1234567', fullName: 'Phone User', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(201)).body;
@@ -147,7 +148,7 @@ describe('tenant isolation (e2e)', () => {
       await api().post('/api/users').set(auth(A)).send({ username: 'nophone', fullName: 'No Phone', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(201);
       await api().post('/api/vendors').set(auth(A)).send({ branchId: (A as any).branchId, company: 'Phone Vendor', contactPhone: '021-111' }).expect(201);
       await api().post('/api/manufacturers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Phone Maker', contactPhone: '021-222' }).expect(201);
-      await api().post('/api/customers').set(auth(A)).send({ branchId: (A as any).branchId, name: 'Phone Customer' }).expect(201);
+      await api().post('/api/customers').set(auth(A)).send({ ...CUSTOMER_LOCATION, branchId: (A as any).branchId, name: 'Phone Customer' }).expect(201);
     });
     it('usernames must be well formed', async () => {
       await api().post('/api/users').set(auth(A)).send({ username: 'a b', fullName: 'Bad Name', ...LOCATION, branchId: (A as any).branchId, tenantRole: 'TENANT_USER' }).expect(400);
@@ -274,7 +275,7 @@ describe('tenant isolation (e2e)', () => {
 
   describe('client-supplied tenantId is ignored or rejected', () => {
     it('forbidNonWhitelisted rejects tenantId in the body', async () => {
-      await api().post('/api/customers').set(auth(A)).send({ name: 'Sneaky', tenantId: B.tenantId }).expect(400);
+      await api().post('/api/customers').set(auth(A)).send({ ...CUSTOMER_LOCATION, name: 'Sneaky', tenantId: B.tenantId }).expect(400);
     });
     it('role/branch of another tenant cannot be attached to a user', async () => {
       await api()

@@ -153,3 +153,5 @@ SaleReturnSchema.index({ tenantId: 1, saleId: 1 });
 SaleReturnSchema.index({ tenantId: 1, branchId: 1, returnDate: -1 });
 SaleReturnSchema.index({ tenantId: 1, 'items.batchAllocations.batchId': 1 });
 SaleReturnSchema.index({ tenantId: 1, branchId: 1, returnNumber: 1 }, { unique: true, sparse: true });
+// Sale return numbers are 1, 2, 3 per tenant (sale-return-seq counter); old ones are renumbered by migrate:sale-return-numbers.
+SaleReturnSchema.index({ tenantId: 1, returnNumber: 1 }, { unique: true, partialFilterExpression: { returnNumber: { $type: 'string' } } });

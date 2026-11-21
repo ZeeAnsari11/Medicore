@@ -9,6 +9,14 @@ export type { Tenant } from './tenant';
 export type { Branch, CreateBranchRequest, UpdateBranchRequest, UpdateBranchStatusRequest } from './branch';
 export type { Manufacturer, CreateManufacturerRequest, UpdateManufacturerRequest, UpdateManufacturerStatusRequest } from './manufacturer';
 export type { Category, CreateCategoryRequest, UpdateCategoryRequest, UpdateCategoryStatusRequest } from './category';
+export type {
+  City,
+  Territory,
+  CreateCityRequest,
+  UpdateCityRequest,
+  CreateTerritoryRequest,
+  UpdateTerritoryRequest,
+} from './location';
 export type { Product, CreateProductRequest, UpdateProductRequest, UpdateProductStatusRequest } from './product';
 export type { Vendor, CreateVendorRequest, UpdateVendorRequest, UpdateVendorStatusRequest } from './vendor';
 export type {
@@ -138,3 +146,17 @@ export type {
   PaginatedCashTransactions,
   LastCashTransactionResponse,
 } from './cash-receipt';
+export type {
+  SupplyReportQuery,
+  SupplyReportFilters,
+  SupplyReportHeader,
+  SupplyReportAppliedFilters,
+  SupplyLedgerLine,
+  SupplyLedgerInvoice,
+  SupplyLedgerBooker,
+  SupplyLedgerReport,
+  SupplySummaryRow,
+  SupplySummaryArea,
+  SupplySummaryBooker,
+  SupplySummaryReport,
+} from './supply-report';
