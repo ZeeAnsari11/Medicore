@@ -38,7 +38,7 @@ export function PaymentDetailDialog({ payment, onOpenChange }: { payment: Paymen
           payment.receipt?.transactionNumber ? (
             <Link
               key="r"
-              href={`/sales/cash-receipt?transaction=${encodeURIComponent(payment.receipt.transactionNumber)}`}
+              href={`/sales/cash-receipt?transaction=${encodeURIComponent(payment.receipt.transactionNumber)}&readonly=1${payment.allocations[0] ? `&invoice=${payment.allocations[0].invoiceId}` : ''}`}
               className="text-primary hover:underline"
             >
               {payment.displayReference}

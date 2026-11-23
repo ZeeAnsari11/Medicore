@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Suspense, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, ArrowLeft } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -13,12 +13,6 @@ import {
   Input,
   Label,
   Select,
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -32,6 +26,8 @@ import { usePurchases } from '@/hooks/use-purchases';
 import { useReturnableSaleItems, useReturnablePurchaseItems, useSaleReturns, usePurchaseReturns, useReturnsList } from '@/hooks/use-returns';
 import { ApiError } from '@/lib/api-client';
 import { SaleReturnsTable } from './components/sale-returns-table';
+import { OpenFromUrl } from '@/components/open-from-url';
+import { PurchaseReturnsTable } from './components/purchase-returns-table';
 import type { CreateSaleReturnItemRequest, CreatePurchaseReturnItemRequest, SaleReturn, PurchaseReturn } from '@medicore/shared-types';
 
 
@@ -117,6 +113,10 @@ export default function ReturnsPage() {
 
   return (
     <PageAccessGuard requires="acc_returns:read">
+      {/* A ledger link to a purchase return arrives as ?mode=purchase&open=<id>. */}
+      <Suspense fallback={null}>
+        <OpenFromUrl param="mode" onOpen={(m) => m === 'purchase' && setMode('purchase')} />
+      </Suspense>
       <button onClick={() => router.push('/accounting')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" />
         Back to Accounting
@@ -258,34 +258,7 @@ export default function ReturnsPage() {
         {mode === 'sale' ? (
           <SaleReturnsTable returns={history as SaleReturn[]} />
         ) : (
-          <div className="rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Return #</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Reason</TableHead>
-                  <TableHead>Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {history.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground">No returns recorded yet</TableCell>
-                  </TableRow>
-                ) : (
-                  history.map((r) => (
-                    <TableRow key={r.id}>
-                      <TableCell className="font-medium">{r.returnNumber ?? '—'}</TableCell>
-                      <TableCell className="text-sm">{new Date(r.returnDate).toLocaleDateString()}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{r.reason ?? '—'}</TableCell>
-                      <TableCell className="tabular-nums">{(r.total ?? 0).toFixed(2)}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+          <PurchaseReturnsTable returns={history as PurchaseReturn[]} />
         )}
       </div>
     </PageAccessGuard>

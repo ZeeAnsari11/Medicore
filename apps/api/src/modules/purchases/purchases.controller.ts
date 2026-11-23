@@ -22,7 +22,7 @@ import { CreatePurchaseReturnDto } from '../accounting/dto/create-purchase-retur
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { resolveBranchScope, resolveCreateBranch } from '../../common/branch/branch-scope.util';
-import type { AuthenticatedUser } from '@medicore/shared-types';
+import type { AuthenticatedUser, VendorAdvanceResponse } from '@medicore/shared-types';
 
 @Controller('purchases')
 export class PurchasesController {
@@ -41,6 +41,18 @@ export class PurchasesController {
   }
 
   @RequirePermission('purchases:read', 'purchases:create')
+  /** The advance paid to this vendor and not yet spent: what the purchase form offers to apply to a new bill. */
+  @RequirePermission('purchases:create')
+  @Get('vendor-advance/:vendorId')
+  async vendorAdvance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('vendorId') vendorId: string,
+    @Query('branchId') branchId?: string,
+  ): Promise<VendorAdvanceResponse> {
+    const scope = resolveCreateBranch(user, branchId);
+    return { advanceBalance: await this.purchasesService.getVendorAdvance(user.tenantId, scope, vendorId) };
+  }
+
   @Get('last-price')
   async lastPrice(
     @CurrentUser() user: AuthenticatedUser,

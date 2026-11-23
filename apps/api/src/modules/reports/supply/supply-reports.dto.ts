@@ -7,12 +7,10 @@ const csv = ({ value }: { value: unknown }) =>
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 export class SupplyReportQueryDto {
-  /** Karachi calendar day, yyyy-mm-dd. */
-  @Matches(DAY)
-  from: string;
+  /** Karachi calendar day, yyyy-mm-dd. Required unless an invoice number range is given, which makes the dates not apply. */
+  @IsOptional() @Matches(DAY) from?: string;
 
-  @Matches(DAY)
-  to: string;
+  @IsOptional() @Matches(DAY) to?: string;
 
   @IsOptional() @IsMongoId() branchId?: string;
 
@@ -24,4 +22,5 @@ export class SupplyReportQueryDto {
   @IsOptional() @Transform(csv) @IsString({ each: true }) territory?: string[];
   @IsOptional() @Transform(csv) @IsMongoId({ each: true }) orderBookerIds?: string[];
   @IsOptional() @Transform(csv) @IsString({ each: true }) customerIds?: string[];
+  @IsOptional() @Transform(csv) @IsMongoId({ each: true }) manufacturerIds?: string[];
 }

@@ -259,7 +259,19 @@ function BookerOrders({
                     </button>
                   </TableCell>
                   <TableCell>{timeOf(o.placedAt)}</TableCell>
-                  <TableCell>{o.customerName ?? 'Walk-in customer'}</TableCell>
+                  <TableCell>
+                    {o.customerName ?? 'Walk-in customer'}
+                    {o.advanceWouldCover !== undefined && (
+                      <span
+                        className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary"
+                        title="This customer has an advance. Confirming pays the invoice from it."
+                      >
+                        {o.advanceWouldCover >= o.grandTotal - 0.005
+                          ? 'Paid from advance'
+                          : `Advance ${o.advanceWouldCover.toFixed(2)} applied`}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell>
                     {o.itemCount} {o.itemCount === 1 ? 'item' : 'items'}
                   </TableCell>
@@ -352,6 +364,7 @@ function OrdersPreviewDialog({
                     <TableHead>Product</TableHead>
                     <TableHead>Batch</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Bonus</TableHead>
                     <TableHead className="text-right">Price</TableHead>
                     <TableHead className="text-right">Disc %</TableHead>
                     <TableHead className="text-right">Total</TableHead>
@@ -365,6 +378,7 @@ function OrdersPreviewDialog({
                         {item.batchAllocations.map((a) => a.batchNumber).join(', ')}
                       </TableCell>
                       <TableCell className="text-right">{item.quantity}</TableCell>
+                      <TableCell className="text-right">{item.bonusQuantity || '—'}</TableCell>
                       <TableCell className="text-right">{money(item.unitPrice)}</TableCell>
                       <TableCell className="text-right">{item.discountPercent ?? 0}</TableCell>
                       <TableCell className="text-right">{money(item.lineTotal)}</TableCell>

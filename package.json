@@ -10,6 +10,8 @@
   "scripts": {
     "local": "bash scripts/local.sh",
     "share": "bash scripts/share.sh",
+    "share:pharmax": "bash scripts/share-pharmax.sh",
+    "share:pharmax:info": "bash scripts/share-pharmax-info.sh",
     "dev": "turbo run dev --filter=@medicore/api --filter=@medicore/web",
     "dev:api": "turbo run dev --filter=@medicore/api",
     "dev:web": "turbo run dev --filter=@medicore/web",

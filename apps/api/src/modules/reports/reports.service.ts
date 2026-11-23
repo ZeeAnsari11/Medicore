@@ -11,7 +11,6 @@ import { StockMovementType } from '@medicore/shared-types';
 import { NOT_PENDING } from '../sales/not-pending';
 import type {
   SalesReport,
-  OrderBookerReport,
   InventoryReport,
   InventoryReportMovementPoint,
 } from '@medicore/shared-types';
@@ -43,78 +42,6 @@ export class ReportsService {
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     private readonly batchesService: BatchesService,
   ) {}
-
-  /** Per Order Booker: sales, returns and collections in the range. `ownerId` limits the report to one person. */
-  async getOrderBookerReport(
-    tenantId: string,
-    branchId: string | null,
-    startDateStr?: string,
-    endDateStr?: string,
-    ownerId?: string | null,
-  ): Promise<OrderBookerReport> {
-    const { startDate, endDate } = resolveDateRange(startDateStr, endDateStr);
-    // A bare date (YYYY-MM-DD) means the whole day, as on the Sales list.
-    if (endDateStr && endDateStr.length <= 10) endDate.setUTCHours(23, 59, 59, 999);
-    const base: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId), deletedAt: null, ...NOT_PENDING };
-    if (branchId) base.branchId = new Types.ObjectId(branchId);
-    if (ownerId) base.orderBookerId = new Types.ObjectId(ownerId);
-
-    const [sales, returns] = await Promise.all([
-      this.saleModel.aggregate([
-        { $match: { ...base, saleDate: { $gte: startDate, $lte: endDate } } },
-        {
-          $group: {
-            _id: '$orderBookerId',
-            // Latest name wins when a user was renamed mid-range.
-            name: { $last: '$orderBookerName' },
-            totalSales: { $sum: '$grandTotal' },
-            salesCount: { $sum: 1 },
-            collected: { $sum: '$amountPaid' },
-          },
-        },
-      ]),
-      this.saleReturnModel.aggregate([
-        { $match: { ...base, kind: { $ne: 'CANCELLATION' }, returnDate: { $gte: startDate, $lte: endDate } } },
-        { $group: { _id: '$orderBookerId', name: { $last: '$orderBookerName' }, returns: { $sum: '$total' } } },
-      ]),
-    ]);
-
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-    const byId = new Map<string, OrderBookerReport['rows'][number]>();
-    const rowFor = (id: unknown, name?: string) => {
-      const key = String(id);
-      let row = byId.get(key);
-      if (!row) {
-        row = { orderBookerId: key, orderBookerName: name ?? '—', totalSales: 0, salesCount: 0, returns: 0, collected: 0 };
-        byId.set(key, row);
-      }
-      return row;
-    };
-    for (const s of sales) {
-      if (!s._id) continue;
-      Object.assign(rowFor(s._id, s.name), {
-        orderBookerName: s.name,
-        totalSales: round2(s.totalSales),
-        salesCount: s.salesCount,
-        collected: round2(s.collected),
-      });
-    }
-    for (const r of returns) {
-      if (!r._id) continue; // returns that predate the Order Booker field cannot be attributed
-      rowFor(r._id, r.name).returns = round2(r.returns ?? 0);
-    }
-    const rows = [...byId.values()].sort((a, b) => b.totalSales - a.totalSales);
-    const totals = rows.reduce(
-      (t, r) => ({
-        totalSales: round2(t.totalSales + r.totalSales),
-        salesCount: t.salesCount + r.salesCount,
-        returns: round2(t.returns + r.returns),
-        collected: round2(t.collected + r.collected),
-      }),
-      { totalSales: 0, salesCount: 0, returns: 0, collected: 0 },
-    );
-    return { rows, totals };
-  }
 
   async getSalesReport(
     tenantId: string,

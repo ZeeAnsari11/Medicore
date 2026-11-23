@@ -12,6 +12,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { PaymentMethod } from '@medicore/shared-types';
@@ -23,6 +24,12 @@ export class CashReceiptRowDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   amount: number;
+
+  /** Written off with the customer's agreement so the invoice is settled. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  difference?: number;
 
   @IsOptional()
   @IsEnum(PaymentMethod)

@@ -10,7 +10,16 @@ export interface PurchaseLine {
   sellingPrice: number;
   discountPercent?: number;
   taxPercent?: number;
+  /** Edit only: the batch this line sits on today, how many of its units are already sold or moved, and how many it had. */
+  sourceBatchId?: string;
+  sourceBatchNumber?: string;
+  sourceQuantity?: number;
+  soldQuantity?: number;
 }
+
+/** A line whose batch number was changed although some of its units are already sold: only the rest moves. */
+export const isBatchMove = (l: PurchaseLine) =>
+  !!l.sourceBatchId && (l.soldQuantity ?? 0) > 0 && l.batchNumber !== l.sourceBatchNumber;
 
 export function lineTotal(
   line: Pick<PurchaseLine, 'quantity' | 'purchasePrice' | 'discountPercent' | 'taxPercent'>,

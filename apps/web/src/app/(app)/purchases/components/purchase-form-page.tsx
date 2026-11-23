@@ -24,7 +24,7 @@ import {
 } from '@medicore/ui';
 import { TopbarContent } from '@/components/layout/topbar-slot';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
-import { usePurchases } from '@/hooks/use-purchases';
+import { usePurchases, useVendorAdvance } from '@/hooks/use-purchases';
 import { useVendors } from '@/hooks/use-vendors';
 import { useVendorProductsForVendor } from '@/hooks/use-vendor-products';
 import { useProducts } from '@/hooks/use-products';
@@ -36,7 +36,7 @@ import { PaymentStatus, type Purchase, type PurchasePriceUpdateRequest } from '@
 import { PriceChangeDialog, type PriceChangeRow } from './price-change-dialog';
 import { PurchaseEntryRow, type PurchaseEditTarget } from './purchase-entry-row';
 import { PurchaseLinesList } from './purchase-lines-list';
-import { lineTotal, type PurchaseLine } from './purchase-line-utils';
+import { isBatchMove, lineTotal, type PurchaseLine } from './purchase-line-utils';
 
 interface PurchaseFormValues {
   vendorId: string;
@@ -59,6 +59,10 @@ function linesFromPurchase(purchase: Purchase): PurchaseLine[] {
     sellingPrice: item.sellingPrice,
     discountPercent: item.discountPercent,
     taxPercent: item.taxPercent,
+    sourceBatchId: item.batchId,
+    sourceBatchNumber: item.batchNumber,
+    sourceQuantity: item.quantity,
+    soldQuantity: item.soldQuantity ?? 0,
   }));
 }
 
@@ -88,6 +92,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
   const [pendingPrices, setPendingPrices] = useState<{ values: PurchaseFormValues; rows: PriceChangeRow[] } | null>(null);
   const [lines, setLines] = useState<PurchaseLine[]>(() => (editPurchase ? linesFromPurchase(editPurchase) : []));
   const [editing, setEditing] = useState<PurchaseEditTarget | null>(null);
+  const [pendingMove, setPendingMove] = useState<PurchaseFormValues | null>(null);
   // Bumped after each received purchase to remount the entry row and clear it.
   const [resetToken, setResetToken] = useState(0);
 
@@ -114,6 +119,19 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
 
   // Totals come from the committed lines only, never from the entry row's preview.
   const grandTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
+
+  // An advance paid to this vendor (Accounting > Payments, no bill selected) can pay this bill; the user is always asked.
+  const { advanceBalance } = useVendorAdvance(branchId, isEdit ? undefined : vendorId || undefined);
+  const [applyAdvance, setApplyAdvance] = useState(false);
+  const [advancePrompt, setAdvancePrompt] = useState<{ values: PurchaseFormValues; priceUpdates?: PurchasePriceUpdateRequest[] } | null>(null);
+  const [advanceDeclined, setAdvanceDeclined] = useState(false);
+  useEffect(() => {
+    setApplyAdvance(false);
+    setAdvanceDeclined(false);
+  }, [vendorId]);
+  const advanceOffer = Math.min(advanceBalance, grandTotal);
+  const advanceOffered = !isEdit && advanceBalance > 0.005 && advanceOffer > 0.005;
+  const advanceUsed = applyAdvance && advanceOffered ? advanceOffer : 0;
 
   useEffect(() => {
     if (isEdit) return;
@@ -151,7 +169,14 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
   const handleCommit = (line: PurchaseLine, replaceKey: string | null) => {
     setLines((prev) =>
       replaceKey && prev.some((l) => l.key === replaceKey)
-        ? prev.map((l) => (l.key === replaceKey ? line : l))
+        ? prev.map((l) =>
+            // The edited line keeps what ties it to its current batch (unless the product itself changed).
+            l.key === replaceKey
+              ? l.productId === line.productId
+                ? { ...line, sourceBatchId: l.sourceBatchId, sourceBatchNumber: l.sourceBatchNumber, sourceQuantity: l.sourceQuantity, soldQuantity: l.soldQuantity }
+                : line
+              : l,
+          )
         : [...prev, line],
     );
     setEditing(null);
@@ -211,6 +236,35 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
     }
     setSubmitError(null);
     if (editPurchase) {
+      for (const l of lines.filter((x) => x.sourceBatchId && (x.soldQuantity ?? 0) > 0)) {
+        if (l.quantity < (l.soldQuantity ?? 0)) {
+          setSubmitError(`${l.productName}: ${l.soldQuantity} units of batch "${l.sourceBatchNumber}" are already sold, so the quantity cannot go below that.`);
+          return;
+        }
+        if (isBatchMove(l) && (l.soldQuantity ?? 0) >= (l.sourceQuantity ?? 0)) {
+          setSubmitError(`${l.productName}: all units of batch "${l.sourceBatchNumber}" are already sold, so its batch cannot be changed.`);
+          return;
+        }
+      }
+      // Moving part of a batch needs the user's acknowledgement first.
+      if (lines.some(isBatchMove)) {
+        setPendingMove(values);
+        return;
+      }
+      await saveEdit(values);
+      return;
+    }
+    const rows = buildPriceRows();
+    if (rows.length > 0) {
+      setPendingPrices({ values, rows });
+      return;
+    }
+    await submitPurchase(values);
+  };
+
+  const saveEdit = async (values: PurchaseFormValues) => {
+    if (!editPurchase) return;
+    {
       try {
         await update(editPurchase.id, {
           vendorId: values.vendorId,
@@ -225,6 +279,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
             sellingPrice: line.sellingPrice,
             discountPercent: line.discountPercent,
             taxPercent: line.taxPercent,
+            sourceBatchId: line.sourceBatchId,
           })),
         });
         goToPurchases();
@@ -233,18 +288,17 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
         // invoice. A locked one goes back to the list; a batch conflict keeps the form so it can be fixed.
         if (err instanceof ApiError && err.status === 409 && /locked/i.test(err.message)) goToPurchases();
       }
-      return;
     }
-    const rows = buildPriceRows();
-    if (rows.length > 0) {
-      setPendingPrices({ values, rows });
-      return;
-    }
-    await submitPurchase(values);
   };
 
-  const submitPurchase = async (values: PurchaseFormValues, priceUpdates?: PurchasePriceUpdateRequest[]) => {
+  const submitPurchase = async (values: PurchaseFormValues, priceUpdates?: PurchasePriceUpdateRequest[], applyOverride?: boolean) => {
     if (!branchId) return;
+    // Ask before posting: an advance already paid to this vendor should not be skipped by accident.
+    if (applyOverride === undefined && advanceOffered && !applyAdvance && !advanceDeclined) {
+      setAdvancePrompt({ values, priceUpdates });
+      return;
+    }
+    const useAdvance = (applyOverride ?? applyAdvance) && advanceOffered;
     let created;
     try {
       created = await create({
@@ -254,6 +308,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
         purchaseDate: values.purchaseDate,
         paymentStatus: values.paymentStatus,
         amountPaid: Number(values.amountPaid),
+        applyAdvance: useAdvance ? true : undefined,
         priceUpdates,
         items: lines.map((line) => ({
           productId: line.productId,
@@ -284,6 +339,8 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
     reset(freshFormValues());
     setLines([]);
     setEditing(null);
+    setApplyAdvance(false);
+    setAdvanceDeclined(false);
     setPendingVendorId(null);
     setResetToken((t) => t + 1);
     // Product is disabled until a vendor is picked, so the vendor field is next.
@@ -384,7 +441,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
             {isEdit ? `Edit Purchase ${editPurchase.purchaseNumber}` : 'New Purchase'}
           </h1>
           <p className="truncate text-xs leading-tight text-muted-foreground">
-            {isEdit ? 'Stock is adjusted; sold batches cannot be reduced' : branchName ? `Receiving stock at ${branchName}` : 'Receiving stock'}
+            {isEdit ? 'Stock is adjusted; changing the batch of a partly sold line moves only the units still in stock' : branchName ? `Receiving stock at ${branchName}` : 'Receiving stock'}
           </p>
         </div>
         <div className="ml-4 hidden items-end gap-3 xl:flex">{renderPurchaseFields(true)}</div>
@@ -437,6 +494,29 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
           </p>
         </div>
 
+        {advanceOffered && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
+            <p className="text-sm">
+              You have already paid this vendor <span className="font-semibold tabular-nums">{advanceBalance.toFixed(2)}</span> in advance.
+              {applyAdvance ? (
+                <>
+                  {' '}
+                  <span className="font-semibold tabular-nums">{advanceUsed.toFixed(2)}</span> will be paid from it
+                  {advanceBalance - advanceUsed > 0.005 && (
+                    <> and <span className="font-semibold tabular-nums">{(advanceBalance - advanceUsed).toFixed(2)}</span> stays as advance</>
+                  )}
+                  .
+                </>
+              ) : (
+                <> Do you want to adjust it in this purchase?</>
+              )}
+            </p>
+            <Button type="button" size="sm" variant={applyAdvance ? 'outline' : 'default'} onClick={() => setApplyAdvance((v) => !v)}>
+              {applyAdvance ? "Don't apply" : 'Apply advance'}
+            </Button>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border p-4">
           {isEdit ? (
             <p className="text-sm text-muted-foreground">Unpaid purchase: payment is recorded separately after saving.</p>
@@ -480,6 +560,46 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
         </div>
       </form>
 
+      {advancePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-lg border bg-background p-6 shadow-lg">
+            <h2 className="text-lg font-semibold">Apply vendor advance?</h2>
+            <p className="text-sm text-muted-foreground">
+              {vendors.find((v) => v.id === vendorId)?.company ?? 'This vendor'} has an advance of{' '}
+              <span className="font-semibold tabular-nums text-foreground">{advanceBalance.toFixed(2)}</span>. Apply{' '}
+              <span className="font-semibold tabular-nums text-foreground">{advanceOffer.toFixed(2)}</span> to this purchase?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isCreating}
+                onClick={() => {
+                  const { values, priceUpdates } = advancePrompt;
+                  setAdvancePrompt(null);
+                  setAdvanceDeclined(true);
+                  void submitPurchase(values, priceUpdates, false);
+                }}
+              >
+                No, keep unpaid
+              </Button>
+              <Button
+                type="button"
+                disabled={isCreating}
+                onClick={() => {
+                  const { values, priceUpdates } = advancePrompt;
+                  setAdvancePrompt(null);
+                  setApplyAdvance(true);
+                  void submitPurchase(values, priceUpdates, true);
+                }}
+              >
+                Apply advance
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {pendingPrices && (
         <PriceChangeDialog
           rows={pendingPrices.rows}
@@ -495,6 +615,36 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
           }}
         />
       )}
+
+      <Dialog open={pendingMove !== null} onOpenChange={(open) => !open && setPendingMove(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change batch of sold stock?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 text-sm">
+            {lines.filter(isBatchMove).map((l) => (
+              <p key={l.key}>
+                <span className="font-medium">{l.productName}</span>: {l.soldQuantity} of {l.sourceQuantity} units of batch{' '}
+                <span className="font-medium">{l.sourceBatchNumber}</span> are already sold, so they stay on that batch. Only the remaining{' '}
+                {l.quantity - (l.soldQuantity ?? 0)} move to batch <span className="font-medium">{l.batchNumber}</span>. The purchase will show two rows for this product.
+              </p>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPendingMove(null)}>Cancel</Button>
+            <Button
+              disabled={isSaving}
+              onClick={async () => {
+                const values = pendingMove;
+                setPendingMove(null);
+                if (values) await saveEdit(values);
+              }}
+            >
+              I acknowledge, save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={pendingVendorId !== null} onOpenChange={(open) => !open && setPendingVendorId(null)}>
         <DialogContent>

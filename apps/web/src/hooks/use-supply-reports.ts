@@ -6,7 +6,9 @@ import { useTenantQuery } from '@/lib/tenant-query';
 export const SUPPLY_MAX_DAYS = 62;
 
 function params(q: SupplyReportQuery): string {
-  const out = new URLSearchParams({ from: q.from, to: q.to });
+  const out = new URLSearchParams();
+  if (q.from) out.set('from', q.from);
+  if (q.to) out.set('to', q.to);
   if (q.branchId) out.set('branchId', q.branchId);
   if (q.invoiceFrom) out.set('invoiceFrom', q.invoiceFrom);
   if (q.invoiceTo) out.set('invoiceTo', q.invoiceTo);
@@ -14,6 +16,7 @@ function params(q: SupplyReportQuery): string {
   if (q.territory?.length) out.set('territory', q.territory.join(','));
   if (q.orderBookerIds?.length) out.set('orderBookerIds', q.orderBookerIds.join(','));
   if (q.customerIds?.length) out.set('customerIds', q.customerIds.join(','));
+  if (q.manufacturerIds?.length) out.set('manufacturerIds', q.manufacturerIds.join(','));
   return out.toString();
 }
 
@@ -28,5 +31,5 @@ export function useSupplyFilters(branchId: string | null, enabled = true) {
     enabled,
     staleTime: 60 * 1000,
   });
-  return { cities: query.data?.cities ?? [], territories: query.data?.territories ?? [] };
+  return { cities: query.data?.cities ?? [], territories: query.data?.territories ?? [], places: query.data?.places ?? [], manufacturers: query.data?.manufacturers ?? [], ready: query.isSuccess };
 }

@@ -26,7 +26,7 @@ import { OpenFromUrl } from '@/components/open-from-url';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { useCustomers } from '@/hooks/use-customers';
 import { usePermissions } from '@/hooks/use-permissions';
-import { PaymentStatus, ReturnStatus } from '@medicore/shared-types';
+import { PaymentStatus, ReturnStatus, WALK_IN_CUSTOMER_ID } from '@medicore/shared-types';
 import { SaleDetailDialog } from './components/sale-detail-dialog';
 import { SupplyReportsDialog } from './components/supply-reports-dialog';
 import type { Sale } from '@medicore/shared-types';
@@ -107,7 +107,7 @@ export default function SalesPage() {
   const { openPdf, isOpening } = useDocumentPdf();
 
   const customerOptions = useMemo(
-    () => [{ value: ALL, label: 'All customers' }, ...customers.map((c) => ({ value: c.id, label: c.name }))],
+    () => [{ value: ALL, label: 'All customers' }, { value: WALK_IN_CUSTOMER_ID, label: 'Walk-in customers' }, ...customers.map((c) => ({ value: c.id, label: c.name }))],
     [customers],
   );
 
@@ -181,6 +181,7 @@ export default function SalesPage() {
           return (
             <div className="flex items-center gap-1.5">
               <Badge variant={paymentVariant[status]}>{status}</Badge>
+              {(row.original.advanceApplied ?? 0) > 0 && <Badge variant="secondary">Advance</Badge>}
               {row.original.returnStatus === ReturnStatus.PARTIAL && <Badge variant="warning">Partially returned</Badge>}
               {row.original.returnStatus === ReturnStatus.FULL && <Badge variant="secondary">Fully returned</Badge>}
             </div>

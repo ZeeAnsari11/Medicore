@@ -9,6 +9,7 @@ import type {
   CreatePurchaseResponse,
   UpdatePurchasePaymentRequest,
   UpdatePurchaseRequest,
+  VendorAdvanceResponse,
 } from '@medicore/shared-types';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { toast } from '@medicore/ui';
@@ -208,4 +209,15 @@ export function usePurchasePayments(id: string | null, branchId: string | null) 
   });
 
   return { payments: query.data ?? [], isLoading: query.isLoading };
+}
+
+/** The advance paid to a vendor and not yet spent, offered on a new purchase. Always refetched: a payment or bill changes it. */
+export function useVendorAdvance(branchId: string | null, vendorId: string | undefined) {
+  const query = useTenantQuery({
+    queryKey: [...PURCHASES_QUERY_KEY, 'vendor-advance', branchId, vendorId],
+    queryFn: () => apiFetch<VendorAdvanceResponse>(`/purchases/vendor-advance/${vendorId}${branchId ? `?branchId=${branchId}` : ''}`),
+    enabled: !!vendorId && !!branchId,
+    staleTime: 0,
+  });
+  return { advanceBalance: query.data?.advanceBalance ?? 0 };
 }

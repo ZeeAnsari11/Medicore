@@ -35,6 +35,10 @@ export class CashReceiptRow {
   @Prop({ required: true, min: 0 })
   amount: number;
 
+  /** Written off with this entry so the invoice is settled (0 / absent when none). */
+  @Prop({ type: Number, min: 0 })
+  difference?: number;
+
   @Prop({ required: true, enum: PaymentMethod })
   method: PaymentMethod;
 
@@ -89,8 +93,12 @@ export class CashReceipt {
   @Prop({ type: [CashReceiptRowSchema], required: true })
   rows: CashReceiptRow[];
 
+  /** Cash received. */
   @Prop({ required: true, min: 0 })
   total: number;
+
+  @Prop({ type: Number, min: 0 })
+  differenceTotal?: number;
 
   @Prop({ required: true, type: Types.ObjectId, ref: 'User' })
   createdBy: Types.ObjectId;

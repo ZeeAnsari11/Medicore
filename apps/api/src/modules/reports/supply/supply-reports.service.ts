@@ -1,9 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
-import { JournalEntrySourceType, JournalEntryStatus } from '@medicore/shared-types';
+import { JournalEntrySourceType, JournalEntryStatus, NO_CITY_FILTER, NO_TERRITORY_FILTER } from '@medicore/shared-types';
 import type {
   SupplyLedgerBooker,
+  SupplyLedgerCity,
   SupplyLedgerInvoice,
   SupplyLedgerLine,
   SupplyLedgerReport,
@@ -17,19 +18,25 @@ import { NOT_PENDING } from '../../sales/not-pending';
 import { Customer, CustomerDocument } from '../../customers/schemas/customer.schema';
 import { Product, ProductDocument } from '../../products/schemas/product.schema';
 import { Branch, BranchDocument } from '../../branches/schemas/branch.schema';
+import { Manufacturer, ManufacturerDocument } from '../../manufacturers/schemas/manufacturer.schema';
 import { Account, AccountDocument } from '../../accounting/schemas/account.schema';
 import { JournalEntry, JournalEntryDocument, LEDGER_VISIBLE_STATUSES } from '../../accounting/schemas/journal-entry.schema';
 import { TenantsService } from '../../tenants/tenants.service';
-import { rangeOf } from '../ssr/tz';
+import { datePeriod, spanOfSales, spanRange } from './supply-range';
+import { placeFilter } from './supply-places';
+import { limitToManufacturers } from './supply-manufacturers';
 import { previousBalancesFromEntries } from './previous-balance';
-import { groupSummary } from './summary-grouping';
+import { groupSummary, groupSummaryByCity } from './summary-grouping';
 import type { SupplyReportQueryDto } from './supply-reports.dto';
 
 /** A sheet wider than this would be a book, not a sheet. */
-export const SUPPLY_MAX_DAYS = 62;
 export const SUPPLY_MAX_INVOICES = 3000;
 const UNASSIGNED = 'Unassigned';
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** City heading of walk-in sales and customers without a city. */
+const NO_CITY = 'No city';
+
+/** Cities A-Z with "No city" last. */
+const byCityName = (a: string, b: string) => (a === NO_CITY ? 1 : b === NO_CITY ? -1 : a.localeCompare(b));
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
@@ -43,11 +50,14 @@ interface SupplyInvoice {
   customerId?: string;
   customerName: string;
   customerCode?: string;
+  city: string;
   territory: string;
   phone?: string;
   lines: SupplyLedgerLine[];
   net: number;
   previous: number;
+  /** Part of the invoice paid from the customer's advance (pro-rated when a manufacturer pick narrows the lines). */
+  received: number;
 }
 
 @Injectable()
@@ -56,6 +66,7 @@ export class SupplyReportsService {
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Manufacturer.name) private readonly manufacturerModel: Model<ManufacturerDocument>,
     @InjectModel(Branch.name) private readonly branchModel: Model<BranchDocument>,
     @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
     @InjectModel(JournalEntry.name) private readonly journalEntryModel: Model<JournalEntryDocument>,
@@ -68,12 +79,29 @@ export class SupplyReportsService {
       deletedAt: null,
       ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}),
     };
-    const [cities, territories] = await Promise.all([
+    const [cities, territories, pairs, manufacturerDocs] = await Promise.all([
       this.customerModel.distinct('city', { ...match, city: { $type: 'string', $ne: '' } }),
       this.customerModel.distinct('territory', { ...match, territory: { $type: 'string', $ne: '' } }),
+      this.customerModel.aggregate<{ _id: { city?: string; territory?: string } }>([
+        { $match: match },
+        { $group: { _id: { city: '$city', territory: '$territory' } } },
+      ]),
+      // The branch's own manufacturers plus the shared ones (no branch set); every manufacturer for "All branches".
+      this.manufacturerModel
+        .find({
+          tenantId: new Types.ObjectId(tenantId),
+          ...(branchId ? { $or: [{ branchId: new Types.ObjectId(branchId) }, { branchId: { $exists: false } }, { branchId: null }] } : {}),
+        })
+        .select('name')
+        .lean(),
     ]);
     const sort = (xs: string[]) => [...xs].sort((a, b) => a.localeCompare(b));
-    return { cities: sort(cities), territories: sort(territories) };
+    const places = pairs
+      .map((p) => ({ city: p._id.city ?? '', territory: p._id.territory ?? '' }))
+      .filter((p) => p.territory)
+      .sort((a, b) => a.city.localeCompare(b.city) || a.territory.localeCompare(b.territory));
+    const manufacturers = manufacturerDocs.map((m) => ({ id: String(m._id), name: m.name })).sort((a, b) => a.name.localeCompare(b.name));
+    return { cities: sort(cities), territories: sort(territories), places, manufacturers };
   }
 
   async ledger(
@@ -85,11 +113,17 @@ export class SupplyReportsService {
   ): Promise<SupplyLedgerReport> {
     const { invoices, header } = await this.collect(tenantId, branchId, ownBookerId, q, printedBy);
     const byBooker = new Map<string, SupplyLedgerBooker>();
+    const byCity = new Map<string, SupplyLedgerCity>();
     for (const inv of invoices) {
       let booker = byBooker.get(inv.orderBookerId);
       if (!booker) {
         booker = { orderBookerId: inv.orderBookerId, orderBookerName: inv.orderBookerName, invoices: [], advTax: 0, gross: 0, discount: 0, saleTax: 0, net: 0 };
         byBooker.set(inv.orderBookerId, booker);
+      }
+      let city = byCity.get(inv.city);
+      if (!city) {
+        city = { city: inv.city, invoices: [], advTax: 0, gross: 0, discount: 0, saleTax: 0, net: 0 };
+        byCity.set(inv.city, city);
       }
       const gross = round2(inv.lines.reduce((s, l) => s + l.gross, 0));
       const discount = round2(inv.lines.reduce((s, l) => s + l.discount, 0));
@@ -107,15 +141,20 @@ export class SupplyReportsService {
         net: inv.net,
         lines: inv.lines,
       };
-      booker.invoices.push(out);
-      booker.gross = round2(booker.gross + gross);
-      booker.discount = round2(booker.discount + discount);
-      booker.saleTax = round2(booker.saleTax + saleTax);
-      booker.net = round2(booker.net + inv.net);
+      for (const group of [booker, city]) {
+        group.invoices.push(out);
+        group.gross = round2(group.gross + gross);
+        group.discount = round2(group.discount + discount);
+        group.saleTax = round2(group.saleTax + saleTax);
+        group.net = round2(group.net + inv.net);
+      }
     }
+    const sum = (xs: Array<Record<'advTax' | 'gross' | 'discount' | 'saleTax' | 'net', number>>, k: 'advTax' | 'gross' | 'discount' | 'saleTax' | 'net') =>
+      round2(xs.reduce((s, b) => s + b[k], 0));
+    const totalsOf = (xs: SupplyLedgerBooker[]) => ({ advTax: sum(xs, 'advTax'), gross: sum(xs, 'gross'), discount: sum(xs, 'discount'), saleTax: sum(xs, 'saleTax'), net: sum(xs, 'net') });
+    const cities = [...byCity.values()].sort((a, b) => byCityName(a.city, b.city));
     const bookers = [...byBooker.values()].sort((a, b) => a.orderBookerName.localeCompare(b.orderBookerName));
-    const sum = (k: 'advTax' | 'gross' | 'discount' | 'saleTax' | 'net') => round2(bookers.reduce((s, b) => s + b[k], 0));
-    return { header, bookers, grand: { advTax: sum('advTax'), gross: sum('gross'), discount: sum('discount'), saleTax: sum('saleTax'), net: sum('net') } };
+    return { header, cities, bookers, grand: totalsOf(bookers) };
   }
 
   async summary(
@@ -126,8 +165,10 @@ export class SupplyReportsService {
     printedBy: string,
   ): Promise<SupplySummaryReport> {
     const { invoices, header } = await this.collect(tenantId, branchId, ownBookerId, q, printedBy);
-    const { bookers, grand } = groupSummary(invoices.map((i) => ({ ...i, lineCount: i.lines.length })));
-    return { header, bookers, grand };
+    const rows = invoices.map((i) => ({ ...i, lineCount: i.lines.length }));
+    const { bookers, grand } = groupSummary(rows);
+    const { cities } = groupSummaryByCity(rows, byCityName);
+    return { header, cities, bookers, grand };
   }
 
   /** The filters that were set, by name (one small lookup for the picked customers). */
@@ -144,8 +185,9 @@ export class SupplyReportsService {
       const names = q.orderBookerIds.map((id) => nameOf.get(id)).filter((n): n is string => !!n);
       if (names.length) out.orderBookers = [...new Set(names)].sort((a, b) => a.localeCompare(b));
     }
-    if (q.city?.length) out.cities = [...q.city].sort((a, b) => a.localeCompare(b));
-    if (q.territory?.length) out.territories = [...q.territory].sort((a, b) => a.localeCompare(b));
+    const label = (xs: string[], token: string, text: string) => xs.map((x) => (x === token ? text : x)).sort((a, b) => a.localeCompare(b));
+    if (q.city?.length) out.cities = label(q.city, NO_CITY_FILTER, NO_CITY);
+    if (q.territory?.length) out.territories = label(q.territory, NO_TERRITORY_FILTER, 'No territory');
     if (q.customerIds?.length) {
       const ids = q.customerIds.filter((id) => id !== 'walkin');
       const found = ids.length
@@ -153,6 +195,10 @@ export class SupplyReportsService {
         : [];
       const names = [...found.map((c) => c.name), ...(ids.length < q.customerIds.length ? ['Walk-in'] : [])];
       if (names.length) out.customers = names.sort((a, b) => a.localeCompare(b));
+    }
+    if (q.manufacturerIds?.length) {
+      const found = await this.manufacturerModel.find({ tenantId: tenantOid, _id: { $in: q.manufacturerIds } }).select('name').lean();
+      if (found.length) out.manufacturers = found.map((m) => m.name).sort((a, b) => a.localeCompare(b));
     }
     if (q.invoiceFrom) out.invoiceFrom = q.invoiceFrom;
     if (q.invoiceTo) out.invoiceTo = q.invoiceTo;
@@ -168,28 +214,19 @@ export class SupplyReportsService {
     printedBy: string,
   ): Promise<{ invoices: SupplyInvoice[]; header: SupplyReportHeader }> {
     if (!branchId) throw new BadRequestException('Select a branch: invoice numbers repeat across branches');
-    const range = rangeOf(q.from, q.to);
-    if (Number.isNaN(range.from.getTime()) || Number.isNaN(range.to.getTime()))
-      throw new BadRequestException('Invalid date');
-    if (range.from > range.to) throw new BadRequestException('"From" is after "To"');
-    if ((range.to.getTime() - range.from.getTime()) / DAY_MS > SUPPLY_MAX_DAYS)
-      throw new BadRequestException(`Choose a period of at most ${SUPPLY_MAX_DAYS} days`);
+    // null when an invoice number range is set: it alone picks the invoices, the dates are not applied.
+    const range = datePeriod(q);
 
     const tenantOid = new Types.ObjectId(tenantId);
     const branchOid = new Types.ObjectId(branchId);
 
     // City/territory live on the customer: resolve them to an id set first so the sales query stays indexed.
+    // They are always applied when sent; walk-in sales (no customer) stay only under "no city" + "no territory".
     let customerIds = q.customerIds?.filter((id) => id !== 'walkin');
-    if (q.city?.length || q.territory?.length) {
-      const matched = await this.customerModel
-        .find({
-          tenantId: tenantOid,
-          branchId: branchOid,
-          ...(q.city?.length ? { city: { $in: q.city } } : {}),
-          ...(q.territory?.length ? { territory: { $in: q.territory } } : {}),
-        })
-        .select('_id')
-        .lean();
+    const places = placeFilter(q);
+    const includeWalkIn = places.includeWalkIn && (!q.customerIds?.length || q.customerIds.includes('walkin'));
+    if (places.customer) {
+      const matched = await this.customerModel.find({ tenantId: tenantOid, branchId: branchOid, ...places.customer }).select('_id').lean();
       const ids = matched.map((c) => String(c._id));
       customerIds = customerIds ? customerIds.filter((id) => ids.includes(id)) : ids;
     }
@@ -200,10 +237,10 @@ export class SupplyReportsService {
       branchId: branchOid,
       deletedAt: null,
       ...NOT_PENDING,
-      saleDate: { $gte: range.from, $lte: range.to },
       invoiceNumber: { $type: 'string' },
     };
-    if (customerIds) match.customerId = { $in: customerIds };
+    if (range) match.saleDate = { $gte: range.from, $lte: range.to };
+    if (customerIds) match.customerId = { $in: includeWalkIn ? [...customerIds, null, ''] : customerIds };
     if (bookerIds?.length) match.orderBookerId = { $in: bookerIds.map((id) => new Types.ObjectId(id)) };
     const seq = { $convert: { input: '$invoiceNumber', to: 'long', onError: null, onNull: null } };
     const invoiceExpr: unknown[] = [];
@@ -226,23 +263,35 @@ export class SupplyReportsService {
         ? this.customerModel.find({ tenantId: tenantOid, _id: { $in: custIds } }).select('name code territory city phone').lean()
         : [],
       productIds.length
-        ? this.productModel.find({ tenantId: tenantOid, _id: { $in: productIds } }).select('packing').lean()
+        ? this.productModel.find({ tenantId: tenantOid, _id: { $in: productIds } }).select('packing manufacturerId').lean()
         : [],
     ]);
     const customerOf = new Map(customers.map((c): [string, (typeof customers)[number]] => [String(c._id), c]));
     const packingOf = new Map(products.map((p): [string, string | undefined] => [String(p._id), p.packing]));
-    const previousOf = await this.previousBalances(tenantId, branchId, range.from, range.to, custIds, sales);
+    // A manufacturer pick keeps just those products' lines; an invoice left with none drops off the sheet.
+    const allowedManufacturers = q.manufacturerIds?.length ? new Set(q.manufacturerIds) : undefined;
+    const manufacturerOf = new Map(products.map((p): [string, string | undefined] => [String(p._id), p.manufacturerId ? String(p.manufacturerId) : undefined]));
+    // The days covered: the chosen period, or (for an invoice number range) the days those invoices were sold.
+    const span = range ? { from: q.from!, to: q.to! } : spanOfSales(sales);
+    const window = range ?? spanRange(span);
+    const previousOf = await this.previousBalances(tenantId, branchId, window.from, window.to, custIds, sales);
 
-    const invoices: SupplyInvoice[] = sales.map((s) => {
+    const invoices: SupplyInvoice[] = sales
+      .map((s) => {
       const c = s.customerId ? customerOf.get(s.customerId) : undefined;
       const lines: SupplyLedgerLine[] = [];
-      for (const item of s.items) {
+      for (const item of limitToManufacturers(s.items, manufacturerOf, allowedManufacturers)) {
         const rate = item.unitPrice;
         const discPct = item.discountPercent ?? 0;
         const taxPct = item.taxPercent ?? 0;
-        const allocs = item.batchAllocations?.length ? item.batchAllocations : [undefined];
+        // Free units ride on the paid line of their own batch; a batch with only bonus gets a line of its own.
+        const bonusLeft = new Map<string, number>();
+        for (const b of item.bonusAllocations ?? []) bonusLeft.set(b.batchId, (bonusLeft.get(b.batchId) ?? 0) + b.quantity);
+        const allocs = item.batchAllocations?.length ? item.batchAllocations : bonusLeft.size ? [] : [undefined];
         allocs.forEach((a) => {
           const quantity = a ? a.quantity : item.quantity;
+          const bonus = a ? (bonusLeft.get(a.batchId) ?? 0) : 0;
+          if (a) bonusLeft.delete(a.batchId);
           const gross = quantity * rate;
           const discount = gross * (discPct / 100);
           const saleTax = (gross - discount) * (taxPct / 100);
@@ -253,13 +302,30 @@ export class SupplyReportsService {
             batchNumber: a?.batchNumber,
             expiry: a?.expiryDate ? new Date(a.expiryDate).toISOString() : undefined,
             quantity,
-            bonus: 0,
+            bonus,
             gross: round2(gross),
             discount: round2(discount),
             saleTax: round2(saleTax),
             net: round2(gross - discount + saleTax),
           });
         });
+        for (const b of item.bonusAllocations ?? []) {
+          if (!bonusLeft.has(b.batchId)) continue;
+          lines.push({
+            productName: item.productName,
+            packing: packingOf.get(String(item.productId)) || undefined,
+            rate: item.unitPrice,
+            batchNumber: b.batchNumber,
+            expiry: new Date(b.expiryDate).toISOString(),
+            quantity: 0,
+            bonus: bonusLeft.get(b.batchId)!,
+            gross: 0,
+            discount: 0,
+            saleTax: 0,
+            net: 0,
+          });
+          bonusLeft.delete(b.batchId);
+        }
       }
       return {
         saleId: String(s._id),
@@ -270,13 +336,20 @@ export class SupplyReportsService {
         customerId: s.customerId,
         customerName: c?.name ?? 'Walk-in',
         customerCode: c?.code || undefined,
+        city: c?.city?.trim() || NO_CITY,
         territory: c?.territory?.trim() || UNASSIGNED,
         phone: c?.phone || undefined,
         lines,
-        net: round2(s.grandTotal),
+        // With a manufacturer pick the invoice is only what is listed; otherwise the real invoice total.
+        net: allowedManufacturers ? round2(lines.reduce((t, l) => t + l.net, 0)) : round2(s.grandTotal),
         previous: round2(previousOf.get(String(s._id)) ?? 0),
+        received: round2(
+          (s.advanceApplied ?? 0) *
+            (allowedManufacturers && s.grandTotal > 0 ? lines.reduce((t, l) => t + l.net, 0) / s.grandTotal : 1),
+        ),
       };
-    });
+    })
+      .filter((i) => !allowedManufacturers || i.lines.length > 0);
     invoices.sort((a, b) => a.invoiceSeq - b.invoiceSeq);
 
     const areas = invoices.map((i) => i.territory).sort((a, b) => a.localeCompare(b));
@@ -285,8 +358,8 @@ export class SupplyReportsService {
       branchName: branch?.name ?? '',
       branchAddress: branch?.address || undefined,
       branchPhone: branch?.phone || undefined,
-      from: q.from,
-      to: q.to,
+      from: span.from,
+      to: span.to,
       voucherFrom: invoices[0]?.invoiceNumber,
       voucherTo: invoices[invoices.length - 1]?.invoiceNumber,
       areaFrom: areas[0],

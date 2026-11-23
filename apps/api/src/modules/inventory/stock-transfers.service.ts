@@ -3,9 +3,11 @@ import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import PDFDocument from 'pdfkit';
 import { StockMovementType } from '@medicore/shared-types';
+import { drawReportHeader, stampPageNumbers } from '../../common/pdf/report-header';
 import { SequenceService } from '../../common/sequence/sequence.service';
 import { runWithoutBranchScope } from '../../common/tenancy/tenant-context';
 import { Branch, BranchDocument } from '../branches/schemas/branch.schema';
+import { TenantsService } from '../tenants/tenants.service';
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { CreateStockTransferDto } from './dto/create-stock-transfer.dto';
 import { Batch, BatchDocument } from './schemas/batch.schema';
@@ -24,6 +26,7 @@ export class StockTransfersService {
     @InjectModel(Branch.name) private readonly branchModel: Model<BranchDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly sequenceService: SequenceService,
+    private readonly tenantsService: TenantsService,
   ) {}
 
   /**
@@ -182,16 +185,27 @@ export class StockTransfersService {
   }
 
   async buildSlip(transfer: StockTransferDocument): Promise<Buffer> {
-    const [from, to] = await Promise.all([
+    const [from, to, tenant] = await Promise.all([
       this.branchModel.findOne({ _id: transfer.branchId }).lean(),
       this.branchModel.findOne({ _id: transfer.toBranchId }).lean(),
+      this.tenantsService.findById(String(transfer.tenantId)),
     ]);
-    const doc = new PDFDocument({ size: 'A4', margin: 40 });
+    const doc = new PDFDocument({ size: 'A4', margin: 40, bufferPages: true });
     const chunks: Buffer[] = [];
     doc.on('data', (c: Buffer) => chunks.push(c));
     const done = new Promise<Buffer>((resolve) => doc.on('end', () => resolve(Buffer.concat(chunks))));
 
-    doc.fontSize(18).text('Stock Transfer', { align: 'center' }).moveDown(0.5);
+    const pageHeader = () =>
+      drawReportHeader(doc, {
+        businessName: tenant?.name ?? 'Medicore',
+        businessAddress: from?.address || from?.name,
+        title: `Stock Transfer  ${transfer.transferNumber}`,
+        left: [`From: ${from?.name ?? ''}`, `To: ${to?.name ?? ''}`, to?.address],
+        date: (transfer.get('createdAt') as Date | undefined)?.toISOString(),
+      });
+    pageHeader();
+    // Lines that spill onto further pages get the header too.
+    doc.on('pageAdded', pageHeader);
     doc.fontSize(10)
       .text(`Transfer no: ${transfer.transferNumber}`)
       .text(`Date: ${transfer.get('createdAt')?.toISOString().slice(0, 10) ?? ''}`)
@@ -205,6 +219,7 @@ export class StockTransfersService {
       doc.text(l.productName, 40, doc.y, { continued: true, width: 220 }).text(l.batchNumber, { continued: true, width: 110 }).text(l.expiryDate.toISOString().slice(0, 10), { continued: true, width: 90 }).text(String(l.quantity), { align: 'right' });
     }
     doc.moveDown(3).text('Sent by: ______________________        Received by: ______________________');
+    stampPageNumbers(doc);
     doc.end();
     return done;
   }

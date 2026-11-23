@@ -145,6 +145,7 @@ export default function PurchasesPage() {
           return (
             <div className="flex items-center gap-1.5">
               <Badge variant={paymentVariant[status]}>{status}</Badge>
+              {(row.original.advanceApplied ?? 0) > 0 && <Badge variant="secondary">Advance</Badge>}
               {row.original.returnStatus === ReturnStatus.PARTIAL && <Badge variant="warning">Partially returned</Badge>}
               {row.original.returnStatus === ReturnStatus.FULL && <Badge variant="secondary">Fully returned</Badge>}
             </div>

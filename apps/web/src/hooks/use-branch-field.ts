@@ -23,12 +23,15 @@ export function useBranchField() {
 export type BranchFieldState = ReturnType<typeof useBranchField>;
 
 /**
- * Branch value for state-driven create dialogs: seeded from the viewed branch each time the dialog opens,
- * and `require()` flags the inline "Branch is required" error instead of letting the API reject it.
+ * Branch value for state-driven create dialogs. `require()` flags the inline "Branch is required" error
+ * instead of letting the API reject it. Admins pick explicitly unless the form opts in with `preselect`,
+ * which fills the main branch, else the only branch (the admin can still change it). The branch being viewed in the
+ * top bar never decides where a new record goes.
  */
-export function useBranchFieldValue(open: boolean) {
+export function useBranchFieldValue(open: boolean, { preselect = false }: { preselect?: boolean } = {}) {
   const field = useBranchField();
-  // `picked` is null until the user chooses; until then the field follows the viewed branch.
+  // `picked` is null until the user chooses; until then the field shows the default. Derived at render, not
+  // stored, because the branch list loads asynchronously.
   const [picked, setPicked] = useState<string | null>(null);
   const [touched, setTouched] = useState(false);
   const [wasOpen, setWasOpen] = useState(open);
@@ -39,7 +42,10 @@ export function useBranchFieldValue(open: boolean) {
       setTouched(false);
     }
   }
-  const value = picked ?? field.defaultBranchId;
+  const autoBranchId = preselect
+    ? (field.branches.find((b) => b.isMain)?.id ?? (field.branches.length === 1 ? field.branches[0].id : ''))
+    : '';
+  const value = picked ?? (field.defaultBranchId || autoBranchId);
 
   return {
     field,

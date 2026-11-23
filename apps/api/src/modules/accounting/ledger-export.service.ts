@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import { drawReportHeader, stampPageNumbers } from '../../common/pdf/report-header';
 import type { LedgerRow } from '@medicore/shared-types';
 
 export interface LedgerExportSpec {
@@ -7,9 +8,18 @@ export interface LedgerExportSpec {
   title: string;
   businessName: string;
   branchName: string;
+  /** Printed under the business name in the PDF header. */
+  branchAddress?: string;
   subjectLabel: string;
   subjectName: string;
   period: string;
+  /** Raw range for the PDF header (`period` is the human text used by the CSV). */
+  from?: string;
+  to?: string;
+  /** Left-hand header block of the PDF: party code / name / address (or account code / name / branch). */
+  headerLeft?: Array<string | undefined>;
+  /** Right-hand third line of the PDF header, e.g. the party's city. */
+  headerRight?: string;
   openingBalance: number;
   rows: LedgerRow[];
   totalDebit: number;
@@ -93,11 +103,17 @@ export class LedgerExportService {
     const left = doc.page.margins.left;
     const bottom = doc.page.height - doc.page.margins.bottom - 20;
 
-    doc.fontSize(18).font('Helvetica-Bold').text(spec.businessName);
-    doc.fontSize(10).font('Helvetica').fillColor('#555').text(spec.branchName);
-    doc.moveDown(0.6);
-    doc.fillColor('#000').fontSize(14).font('Helvetica-Bold').text(spec.title);
-    doc.fontSize(10).font('Helvetica').text(`${spec.subjectLabel}: ${spec.subjectName}`);
+    const drawPageHeader = () =>
+      drawReportHeader(doc, {
+        businessName: spec.businessName,
+        businessAddress: spec.branchAddress || spec.branchName,
+        title: spec.title,
+        left: spec.headerLeft ?? [spec.subjectName],
+        dateRange: { from: spec.from, to: spec.to },
+        rightLine: spec.headerRight,
+      });
+    drawPageHeader();
+    doc.fillColor('#000').fontSize(10).font('Helvetica').text(`${spec.subjectLabel}: ${spec.subjectName}`);
     doc.text(`Period: ${spec.period}`);
     doc.moveDown(0.6);
 
@@ -124,6 +140,7 @@ export class LedgerExportService {
     const drawRow = (values: string[], bold = false) => {
       if (doc.y > bottom) {
         doc.addPage();
+        drawPageHeader();
         drawHeader();
       }
       const y = doc.y;
@@ -151,16 +168,7 @@ export class LedgerExportService {
       doc.moveDown(1).font('Helvetica').fontSize(9).fillColor('#555').text(spec.footerNote, left, doc.y, { width: 515 });
     }
 
-    const range = doc.bufferedPageRange();
-    for (let i = 0; i < range.count; i++) {
-      doc.switchToPage(range.start + i);
-      doc.fontSize(8).fillColor('#888').font('Helvetica').text(
-        `Page ${i + 1} of ${range.count}`,
-        left,
-        doc.page.height - 30,
-        { width: 515, align: 'center', lineBreak: false },
-      );
-    }
+    stampPageNumbers(doc);
     return doc;
   }
 }

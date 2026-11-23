@@ -28,9 +28,12 @@ import { TenantsService } from '../tenants/tenants.service';
 import { resolvePayment } from '../../common/utils/resolve-payment';
 import { AccountingPostingService, round2 } from '../accounting/accounting-posting.service';
 import { PaymentsService } from '../accounting/payments.service';
+import { PartyBalanceService } from '../accounting/party-balance.service';
 import { OrderBookersService, type OrderBooker } from './order-bookers.service';
 import { NOT_PENDING } from './not-pending';
 import { buildSalesReportPdf } from './sales-report-pdf';
+import { allocationsOf, splitBonus } from './bonus';
+import { customerFilter, isWalkInFilter } from './walk-in-filter';
 import { orderDayRange, sortOrdersForConfirmation } from './order-processing.util';
 import {
   InvoiceType,
@@ -65,6 +68,9 @@ interface PlannedLine {
   lineTotal: number;
   allocationMode: 'FEFO' | 'MANUAL';
   allocations: AllocationLine[];
+  /** Free units on top of `quantity`, and the batches they come from. */
+  bonusQuantity: number;
+  bonusAllocations: AllocationLine[];
 }
 
 import { CreateSaleReturnDto } from '../accounting/dto/create-sale-return.dto';
@@ -88,12 +94,42 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     private readonly tenantsService: TenantsService,
     private readonly postingService: AccountingPostingService,
     private readonly paymentsService: PaymentsService,
+    private readonly partyBalance: PartyBalanceService,
     private readonly returnsService: ReturnsService,
     private readonly invoiceLock: InvoiceLockService,
     private readonly invoiceAudit: InvoiceAuditService,
     private readonly orderBookers: OrderBookersService,
   ) {
     super(saleModel);
+  }
+
+  /**
+   * Takes up to `due` out of the customer's advance and returns how much (0 when there is none). The customer row
+   * is written first so two invoices at the same moment write-conflict instead of spending one advance twice; the
+   * balance is read inside the transaction, so postings made earlier in it (e.g. the previous order of a batch) count.
+   */
+  private async spendAdvance(
+    tenantId: string,
+    customerId: string,
+    due: number,
+    session: ClientSession,
+  ): Promise<number> {
+    if (!(due > 0.005)) return 0;
+    await this.customerModel.updateOne({ _id: customerId }, { $inc: { advanceSeq: 1 } }, { session });
+    const available = await this.partyBalance.getCustomerAdvanceBalance(tenantId, customerId, session);
+    return round2(Math.min(Math.max(available, 0), due));
+  }
+
+  /** The customer's unspent advance, for the "apply it to this invoice?" prompt on a new sale. */
+  async getCustomerAdvance(tenantId: string, branchId: string | null, customerId: string): Promise<number> {
+    const customer = await this.customerModel.findOne({
+      _id: customerId,
+      tenantId: new Types.ObjectId(tenantId),
+      ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}),
+      deletedAt: null,
+    });
+    if (!customer) throw new NotFoundException('Customer not found');
+    return Math.max(await this.partyBalance.getCustomerAdvanceBalance(tenantId, customerId), 0);
   }
 
   async getLastPrices(
@@ -225,11 +261,12 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       this.summarize(filter),
       this.tenantsService.findById(tenantId),
       branchId ? this.branchModel.findById(branchId) : null,
-      query.customerId ? this.customerModel.findById(query.customerId) : null,
+      query.customerId && !isWalkInFilter(query.customerId) ? this.customerModel.findById(query.customerId) : null,
     ]);
     const rows = docs.map((d) => this.toSaleResponse(d));
     const filters: string[] = [];
-    if (query.customerId) filters.push(`Customer: ${customer?.name ?? 'Selected customer'}`);
+    if (query.customerId)
+      filters.push(`Customer: ${isWalkInFilter(query.customerId) ? 'Walk-in' : (customer?.name ?? 'Selected customer')}`);
     if (query.orderBookerId)
       filters.push(`Order Booker: ${rows[0]?.orderBookerName ?? 'Selected Order Booker'}`);
     if (query.paymentStatus) filters.push(`Payment: ${query.paymentStatus}`);
@@ -243,6 +280,10 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     return buildSalesReportPdf({
       companyName: tenant?.name ?? 'Medicore',
       branchName: branch?.name ?? 'All branches',
+      branchCode: branch?.code,
+      branchAddress: branch?.address,
+      startDate: query.startDate,
+      endDate: query.endDate,
       filters,
       generatedAt: new Date(),
       summary,
@@ -257,7 +298,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
   private buildListFilter(tenantId: string, branchId: string | null, query: ListSalesQueryDto) {
     const filter = this.withTenantAndBranch(tenantId, branchId, { deletedAt: null, ...NOT_PENDING });
     const f = filter as Record<string, unknown>;
-    if (query.customerId) f.customerId = query.customerId;
+    if (query.customerId) f.customerId = customerFilter(query.customerId);
     if (query.orderBookerId) f.orderBookerId = new Types.ObjectId(query.orderBookerId);
     if (query.paymentStatus) f.paymentStatus = query.paymentStatus;
     if (query.returnStatus) {
@@ -328,15 +369,38 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           throw new BadRequestException(`Product ${item.productId} not found`);
         }
 
-        const { allocationMode, allocations } = await this.batchAllocationService.allocate({
-          tenantId,
-          branchId,
-          productId: item.productId,
-          quantity: item.quantity,
-          productName: product.name,
-          manualAllocations: item.manualAllocations,
-          session,
-        });
+        const bonusQuantity = item.bonusQuantity ?? 0;
+        if (item.quantity + bonusQuantity <= 0) {
+          throw new BadRequestException(`Quantity for ${product.name} must be greater than 0`);
+        }
+        const forProduct = { tenantId, branchId, productId: item.productId, productName: product.name, session };
+        let allocationMode: PlannedLine['allocationMode'] = 'FEFO';
+        let allocations: AllocationLine[] = [];
+        let bonusAllocations: AllocationLine[] = [];
+        if (bonusQuantity > 0 && !item.manualAllocations?.length && !item.bonusManualAllocations?.length) {
+          // Paid and free units come from the same FEFO run, so they cannot both claim the same stock.
+          const all = await this.batchAllocationService.allocate({ ...forProduct, quantity: item.quantity + bonusQuantity });
+          ({ paid: allocations, bonus: bonusAllocations } = splitBonus(all.allocations, item.quantity));
+        } else {
+          if (item.quantity > 0) {
+            const paid = await this.batchAllocationService.allocate({
+              ...forProduct,
+              quantity: item.quantity,
+              manualAllocations: item.manualAllocations,
+            });
+            allocationMode = paid.allocationMode;
+            allocations = paid.allocations;
+          }
+          if (bonusQuantity > 0) {
+            const free = await this.batchAllocationService.allocate({
+              ...forProduct,
+              quantity: bonusQuantity,
+              manualAllocations: item.bonusManualAllocations,
+            });
+            if (item.quantity === 0) allocationMode = free.allocationMode;
+            bonusAllocations = free.allocations;
+          }
+        }
 
         // Sales are made at TP unless the caller overrides it, and never below CP (after discount).
         const unitPrice = item.unitPrice ?? product.tp;
@@ -365,6 +429,8 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           lineTotal: taxable + lineTax,
           allocationMode,
           allocations,
+          bonusQuantity,
+          bonusAllocations,
         });
       } catch (err) {
         errors.push(err instanceof Error ? err.message : String(err));
@@ -388,7 +454,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     saleId?: string,
   ) {
     for (const line of planned) {
-      for (const allocation of line.allocations) {
+      for (const allocation of [...line.allocations, ...line.bonusAllocations]) {
         const updated = await this.batchModel.updateOne(
           { _id: allocation.batchId, quantity: { $gte: allocation.quantity } },
           { $inc: { quantity: -allocation.quantity } },
@@ -482,12 +548,30 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
 
         // dto.paymentStatus only fills in a missing amountPaid; the stored status is
         // always derived from the amount so the two can never disagree.
-        const { amountPaid, paymentStatus } = resolvePayment(
+        let { amountPaid, paymentStatus } = resolvePayment(
           grandTotal,
           dto.paymentStatus,
           dto.amountPaid,
           grandTotal,
         );
+
+        // Paying from the customer's advance: no cash moves, the advance is spent first and whatever is left
+        // follows the normal payment fields. The customer row is written first so two invoices created at the
+        // same moment write-conflict instead of spending the same advance twice.
+        let advanceApplied = 0;
+        if (dto.applyAdvance) {
+          if (pending) throw new BadRequestException('An advance cannot be applied to a pending order');
+          if (!customer) throw new BadRequestException('Choose a customer to apply an advance');
+          advanceApplied = await this.spendAdvance(tenantId, customer.id, grandTotal, session);
+          if (!(advanceApplied > 0)) throw new BadRequestException('This customer has no advance to apply');
+          const cashPaid = round2(Math.min(dto.amountPaid ?? 0, grandTotal - advanceApplied));
+          ({ amountPaid, paymentStatus } = resolvePayment(
+            grandTotal,
+            undefined,
+            advanceApplied + cashPaid,
+            grandTotal,
+          ));
+        }
 
         const [created] = await this.saleModel.create(
           [
@@ -513,6 +597,13 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
                   expiryDate: a.expiryDate,
                   quantity: a.quantity,
                 })),
+                bonusQuantity: l.bonusQuantity,
+                bonusAllocations: l.bonusAllocations.map((a) => ({
+                  batchId: a.batchId,
+                  batchNumber: a.batchNumber,
+                  expiryDate: a.expiryDate,
+                  quantity: a.quantity,
+                })),
               })),
               subtotal,
               discountTotal,
@@ -521,6 +612,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
               paymentMethod: dto.paymentMethod,
               paymentStatus,
               amountPaid,
+              advanceApplied,
               saleDate: dto.saleDate ? new Date(dto.saleDate) : new Date(),
               notes: dto.notes,
               paymentTerms: dto.paymentTerms,
@@ -544,9 +636,11 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
             taxTotal,
             grandTotal,
             amountPaid,
+            advanceApplied,
             items: planned.map((l) => ({
               productId: l.productId,
-              batchAllocations: l.allocations.map((a) => ({
+              // Free units cost money too, so they are posted with the paid ones (revenue ignores them).
+              batchAllocations: [...l.allocations, ...l.bonusAllocations].map((a) => ({
                 batchId: a.batchId,
                 quantity: a.quantity,
               })),
@@ -571,7 +665,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
    * recorded at the same moment (which also bumps it) write-conflicts with this transaction; the
    * retry then re-reads the sale and the lock check below rejects it with 409. The old stock is put
    * back, the new lines are planned/applied with exactly the create logic (FEFO/manual allocation,
-   * CP floor), and the sale's journal entry is reversed and re-posted. The invoice number is kept.
+   * CP floor), and the sale's journal entry is updated in place. The invoice number is kept.
    */
   async updateSale(
     tenantId: string,
@@ -623,7 +717,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
 
         // Put the old stock back so the new plan does not compete with this sale's own batches.
         for (const item of sale.items) {
-          for (const allocation of item.batchAllocations) {
+          for (const allocation of allocationsOf(item)) {
             await this.batchModel.updateOne(
               { _id: allocation.batchId },
               { $inc: { quantity: allocation.quantity } },
@@ -672,6 +766,13 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
             expiryDate: a.expiryDate,
             quantity: a.quantity,
           })),
+          bonusQuantity: l.bonusQuantity,
+          bonusAllocations: l.bonusAllocations.map((a) => ({
+            batchId: a.batchId,
+            batchNumber: a.batchNumber,
+            expiryDate: a.expiryDate,
+            quantity: a.quantity,
+          })),
         })) as typeof sale.items;
         sale.subtotal = subtotal;
         sale.discountTotal = discountTotal;
@@ -686,9 +787,8 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         if (dto.paymentTerms !== undefined) sale.paymentTerms = dto.paymentTerms;
         await sale.save({ session });
 
-        // The ledger is immutable: reverse the old entry, then post the new one (each gets a fresh JE number).
-        await this.postingService.postSaleEditReversal(tenantId, saleBranchId, sale.id, userId, session);
-        await this.postingService.postSaleEntry({
+        // The invoice's own ledger entry is rewritten in place (same JE, new lines/totals); no reversal row.
+        await this.postingService.editSaleEntryInPlace({
           tenantId,
           branchId: saleBranchId,
           saleId: sale.id,
@@ -701,7 +801,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           amountPaid: 0,
           items: planned.map((l) => ({
             productId: l.productId,
-            batchAllocations: l.allocations.map((a) => ({ batchId: a.batchId, quantity: a.quantity })),
+            batchAllocations: [...l.allocations, ...l.bonusAllocations].map((a) => ({ batchId: a.batchId, quantity: a.quantity })),
           })),
           createdBy: userId,
           session,
@@ -843,17 +943,34 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       .find(this.pendingFilter(tenantId, branchId, date, orderBookerId))
       .populate('customerId', 'name')
       .sort({ createdAt: 1 });
-    return orders.map((o) => {
-      const obj = o.toObject() as any;
-      return {
-        id: obj._id.toString(),
-        orderNumber: obj.orderNumber ?? '',
-        placedAt: new Date(obj.createdAt).toISOString(),
-        customerName: typeof obj.customerId === 'object' ? obj.customerId?.name : undefined,
-        itemCount: obj.items.length,
-        grandTotal: obj.grandTotal,
-      };
-    });
+
+    // What confirming would take from each customer's advance, oldest order first (as confirmOrders does), so the
+    // label matches the result. Orders of other bookers confirmed in the same batch are not known here.
+    const left = new Map<string, number>();
+    return Promise.all(
+      orders.map(async (o) => {
+        const obj = o.toObject() as any;
+        const customer = typeof obj.customerId === 'object' ? obj.customerId : null;
+        let advanceWouldCover = 0;
+        if (customer?._id) {
+          const key = String(customer._id);
+          if (!left.has(key)) {
+            left.set(key, Math.max(await this.partyBalance.getCustomerAdvanceBalance(tenantId, key), 0));
+          }
+          advanceWouldCover = round2(Math.min(left.get(key)!, Math.max(obj.grandTotal - (obj.amountPaid ?? 0), 0)));
+          left.set(key, round2(left.get(key)! - advanceWouldCover));
+        }
+        return {
+          id: obj._id.toString(),
+          orderNumber: obj.orderNumber ?? '',
+          placedAt: new Date(obj.createdAt).toISOString(),
+          customerName: customer?.name,
+          itemCount: obj.items.length,
+          grandTotal: obj.grandTotal,
+          advanceWouldCover: advanceWouldCover > 0.005 ? advanceWouldCover : undefined,
+        };
+      }),
+    );
   }
 
   /** Every pending order of one Order Booker on `date`, in full (lines included), oldest first. */
@@ -918,6 +1035,24 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           const seq = await this.sequenceService.next(tenantId, saleBranchId, 'sale', session);
           sale.invoiceNumber = String(seq).padStart(4, '0');
           sale.status = SaleStatus.CONFIRMED;
+          // A customer's advance pays the order automatically (what the booker already collected comes off first).
+          if (sale.customerId) {
+            const fromAdvance = await this.spendAdvance(
+              tenantId,
+              sale.customerId,
+              round2(sale.grandTotal - sale.amountPaid),
+              session,
+            );
+            if (fromAdvance > 0) {
+              sale.advanceApplied = fromAdvance;
+              ({ amountPaid: sale.amountPaid, paymentStatus: sale.paymentStatus } = resolvePayment(
+                sale.grandTotal,
+                undefined,
+                sale.amountPaid + fromAdvance,
+                sale.grandTotal,
+              ));
+            }
+          }
           await sale.save({ session });
 
           await this.postingService.postSaleEntry({
@@ -931,9 +1066,10 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
             taxTotal: sale.taxTotal,
             grandTotal: sale.grandTotal,
             amountPaid: sale.amountPaid,
+            advanceApplied: sale.advanceApplied ?? 0,
             items: sale.items.map((item) => ({
               productId: item.productId.toString(),
-              batchAllocations: item.batchAllocations.map((a) => ({
+              batchAllocations: allocationsOf(item).map((a) => ({
                 batchId: a.batchId,
                 quantity: a.quantity,
               })),
@@ -969,7 +1105,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         processed = 0;
         for (const sale of orders) {
           for (const item of sale.items) {
-            for (const allocation of item.batchAllocations) {
+            for (const allocation of allocationsOf(item)) {
               await this.batchModel.updateOne(
                 { _id: allocation.batchId },
                 { $inc: { quantity: allocation.quantity } },
@@ -1032,7 +1168,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         }
 
         for (const item of sale.items) {
-          for (const allocation of item.batchAllocations) {
+          for (const allocation of allocationsOf(item)) {
             await this.batchModel.updateOne(
               { _id: allocation.batchId },
               { $inc: { quantity: allocation.quantity } },
@@ -1204,20 +1340,41 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     const sale = await this.findOne(tenantId, branchId, id);
     const payments = await this.paymentsService.listForInvoice(tenantId, sale.id);
 
-    const rows: SalePaymentRow[] = payments.map((p) => {
+    const expenseSeqById = await this.paymentsService.expenseNumbers(
+      tenantId,
+      payments.map((p) => (p.toObject() as any).differenceExpenseId).filter(Boolean),
+    );
+    const rows: SalePaymentRow[] = payments.flatMap((p) => {
       const obj = p.toObject() as any;
       const applied = (obj.allocations as Array<{ invoiceId: string; amount: number }>)
         .filter((a) => a.invoiceId === sale.id)
         .reduce((sum, a) => sum + a.amount, 0);
-      return {
+      const recordedBy = typeof obj.createdBy === 'object' ? obj.createdBy?.fullName : undefined;
+      const row: SalePaymentRow = {
         id: obj._id.toString(),
         paymentDate: new Date(obj.paymentDate).toISOString(),
         amount: round2(applied),
         method: obj.method,
         reference: obj.reference,
         notes: obj.notes,
-        recordedBy: typeof obj.createdBy === 'object' ? obj.createdBy?.fullName : undefined,
+        recordedBy,
       };
+      // A cash receipt's written-off difference also counted towards this invoice's paid total.
+      return (obj.differenceAmount ?? 0) > 0
+        ? [
+            row,
+            {
+              id: `${row.id}-difference`,
+              paymentDate: row.paymentDate,
+              amount: round2(obj.differenceAmount),
+              isDifference: true,
+              expenseId: obj.differenceExpenseId,
+              expenseNumber: expenseSeqById.get(obj.differenceExpenseId),
+              notes: 'Difference (Sales Difference)',
+              recordedBy,
+            },
+          ]
+        : [row];
     });
 
     // Refunds paid to the customer for returns sit on the return record, not as Payment documents.
@@ -1246,14 +1403,28 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
 
     const initial = round2(sale.amountPaid - rows.reduce((sum, r) => sum + r.amount, 0));
     if (initial > 0.01) {
-      rows.unshift({
-        id: 'initial',
-        paymentDate: ((sale as any).createdAt as Date).toISOString(),
-        amount: initial,
-        method: sale.paymentMethod,
-        isInitial: true,
-        recordedBy: nameOf((sale as any).createdBy),
-      });
+      const fromAdvance = round2(Math.min(sale.advanceApplied ?? 0, initial));
+      const at = ((sale as any).createdAt as Date).toISOString();
+      if (initial - fromAdvance > 0.01) {
+        rows.unshift({
+          id: 'initial',
+          paymentDate: at,
+          amount: round2(initial - fromAdvance),
+          method: sale.paymentMethod,
+          isInitial: true,
+          recordedBy: nameOf((sale as any).createdBy),
+        });
+      }
+      if (fromAdvance > 0.01) {
+        rows.unshift({
+          id: 'initial-advance',
+          paymentDate: at,
+          amount: fromAdvance,
+          isInitial: true,
+          isAdvance: true,
+          recordedBy: nameOf((sale as any).createdBy),
+        });
+      }
     }
     return [...rows, ...refundRows].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
   }
@@ -1284,15 +1455,23 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     return this.returnsService.toSaleReturnResponse(ret);
   }
 
+  /** Code, address and city for the PDF header; null for walk-in sales. */
+  private customerForPdf(tenantId: string, customerId?: string) {
+    return customerId
+      ? this.customerModel.findOne({ _id: customerId, tenantId: new Types.ObjectId(tenantId) }).select('code address city')
+      : null;
+  }
+
   async buildReturnPdf(tenantId: string, branchId: string | null, id: string, returnId: string) {
     const sale = await this.findOne(tenantId, branchId, id);
     const ret = await this.returnsService.getSaleReturn(tenantId, returnId);
     if (ret.saleId !== sale.id) throw new NotFoundException('Return not found');
     const response = this.returnsService.toSaleReturnResponse(ret);
     const saleResponse = this.toSaleResponse(sale);
-    const [branch, tenant] = await Promise.all([
+    const [branch, tenant, customer] = await Promise.all([
       this.branchModel.findById(response.branchId),
       this.tenantsService.findById(tenantId),
+      this.customerForPdf(tenantId, saleResponse.customerId),
     ]);
 
     return this.documentPdfService.build({
@@ -1305,10 +1484,14 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       branchPhone: branch?.phone,
       partyLabel: 'Customer',
       partyName: saleResponse.customerName ?? 'Walk-in customer',
+      partyCode: customer?.code,
+      partyAddress: customer?.address,
+      partyCity: customer?.city,
       items: response.items.map((i) => ({
         name: i.productName ?? '',
         batchNumber: i.batchAllocations.map((a) => a.batchNumber).join(', '),
         quantity: i.batchAllocations.reduce((sum, a) => sum + a.quantity, 0),
+        bonus: (i.bonusAllocations ?? []).reduce((sum, a) => sum + a.quantity, 0) || undefined,
         unitPrice: i.unitPrice ?? 0,
         discountPercent: i.discountPercent,
         taxPercent: i.taxPercent,
@@ -1327,11 +1510,12 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
   async buildInvoicePdf(tenantId: string, branchId: string | null, id: string) {
     const sale = await this.findOne(tenantId, branchId, id);
     const response = this.toSaleResponse(sale);
-    const [branch, tenant, payments, returns] = await Promise.all([
+    const [branch, tenant, payments, returns, customer] = await Promise.all([
       this.branchModel.findById(response.branchId),
       this.tenantsService.findById(tenantId),
       this.listPayments(tenantId, branchId, id),
       this.returnsService.listSaleReturns(tenantId, sale.id),
+      this.customerForPdf(tenantId, response.customerId),
     ]);
 
     return this.documentPdfService.build({
@@ -1344,6 +1528,9 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       branchPhone: branch?.phone,
       partyLabel: 'Bill to',
       partyName: response.customerName ?? 'Walk-in customer',
+      partyCode: customer?.code,
+      partyAddress: customer?.address,
+      partyCity: customer?.city,
       orderBooker: response.orderBookerName || undefined,
       items: response.items.map((item) => ({
         name: item.productName,
@@ -1368,6 +1555,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           0,
         ),
         quantity: item.quantity,
+        bonus: item.bonusQuantity || undefined,
         unitPrice: item.unitPrice,
         discountPercent: item.discountPercent,
         taxPercent: item.taxPercent,
@@ -1379,9 +1567,10 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       grandTotal: response.grandTotal,
       paymentStatus: response.paymentStatus,
       amountPaid: response.amountPaid,
+      advanceApplied: response.advanceApplied,
       payments: payments.map((p) => ({
         date: new Date(p.paymentDate),
-        method: p.isRefund ? 'Refund' : p.isInitial ? 'At sale' : (p.method ?? ''),
+        method: p.isRefund ? 'Refund' : p.isDifference ? 'Difference (Sales Difference)' : p.isAdvance ? 'Advance' : p.isInitial ? 'At sale' : (p.method ?? ''),
         reference: p.reference,
         amount: p.isRefund ? -p.amount : p.amount,
       })),
@@ -1397,7 +1586,12 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         amount: r.total ?? 0,
         lines: r.items.map((i) => ({
           name: i.productName ?? i.productId.toString(),
-          detail: i.batchAllocations.map((a) => `Batch ${a.batchNumber}`).join(', '),
+          detail: [
+            i.batchAllocations.map((a) => `Batch ${a.batchNumber}`).join(', '),
+            (i.bonusAllocations ?? []).length ? `+ ${(i.bonusAllocations ?? []).reduce((s, a) => s + a.quantity, 0)} bonus` : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
           quantity: i.batchAllocations.reduce((s, a) => s + a.quantity, 0),
           amount: i.batchAllocations.reduce((s, a) => s + (a.total ?? 0), 0),
         })),
@@ -1458,6 +1652,13 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           expiryDate: a.expiryDate.toISOString(),
           quantity: a.quantity,
         })),
+        bonusQuantity: item.bonusQuantity ?? 0,
+        bonusAllocations: (item.bonusAllocations ?? []).map((a: any) => ({
+          batchId: a.batchId,
+          batchNumber: a.batchNumber,
+          expiryDate: a.expiryDate.toISOString(),
+          quantity: a.quantity,
+        })),
       })),
       subtotal: obj.subtotal,
       discountTotal: obj.discountTotal,
@@ -1466,6 +1667,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       paymentMethod: obj.paymentMethod,
       paymentStatus: obj.paymentStatus,
       amountPaid: obj.amountPaid,
+      advanceApplied: obj.advanceApplied ?? 0,
       returnedTotal: obj.returnedTotal ?? 0,
       refundedTotal: obj.refundedTotal ?? 0,
       returnStatus: obj.returnStatus ?? ReturnStatus.NONE,

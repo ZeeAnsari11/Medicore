@@ -1,9 +1,15 @@
 import PDFDocument from 'pdfkit';
 import type { Sale, SalesSummary } from '@medicore/shared-types';
+import { drawReportHeader, stampPageNumbers } from '../../common/pdf/report-header';
 
 export interface SalesReportSpec {
   companyName: string;
   branchName: string;
+  branchCode?: string;
+  branchAddress?: string;
+  /** Applied sale-date range (ISO), printed in the header. */
+  startDate?: string;
+  endDate?: string;
   /** Human-readable applied filters, e.g. ['Customer: Demo Customer One', 'Period: ...']. */
   filters: string[];
   generatedAt: Date;
@@ -59,13 +65,19 @@ export function buildSalesReportPdf(spec: SalesReportSpec): PDFKit.PDFDocument {
   const left = doc.page.margins.left;
   const bottom = doc.page.height - doc.page.margins.bottom - 20;
 
-  doc.fontSize(18).font('Helvetica-Bold').text(spec.companyName);
-  doc.fontSize(10).font('Helvetica').fillColor('#555').text(spec.branchName);
-  doc.moveDown(0.6);
-  doc.fillColor('#000').fontSize(14).font('Helvetica-Bold').text('Sales Report');
-  doc.fontSize(9).font('Helvetica');
-  for (const line of spec.filters) doc.text(line);
-  doc.fillColor('#555').text(`Generated: ${spec.generatedAt.toLocaleString('en-GB')}`);
+  const drawPageHeader = () => {
+    drawReportHeader(doc, {
+      businessName: spec.companyName,
+      businessAddress: spec.branchAddress || spec.branchName,
+      title: 'Sales Report',
+      left: [spec.branchCode, spec.branchName],
+      dateRange: { from: spec.startDate, to: spec.endDate },
+    });
+  };
+  drawPageHeader();
+  doc.fontSize(9).font('Helvetica').fillColor('#000');
+  for (const line of spec.filters) doc.text(line, left, doc.y);
+  doc.fillColor('#555').text(`Generated: ${spec.generatedAt.toLocaleString('en-GB')}`, left, doc.y);
   doc.moveDown(0.6);
 
   const { summary } = spec;
@@ -114,6 +126,7 @@ export function buildSalesReportPdf(spec: SalesReportSpec): PDFKit.PDFDocument {
   const drawRow = (values: string[], bold = false) => {
     if (doc.y > bottom) {
       doc.addPage();
+      drawPageHeader();
       drawHeader();
     }
     const y = doc.y;
@@ -178,18 +191,6 @@ export function buildSalesReportPdf(spec: SalesReportSpec): PDFKit.PDFDocument {
       .text(spec.truncatedNote, left, doc.y, { width: TABLE_WIDTH });
   }
 
-  const range = doc.bufferedPageRange();
-  for (let i = 0; i < range.count; i++) {
-    doc.switchToPage(range.start + i);
-    doc
-      .fontSize(8)
-      .fillColor('#888')
-      .font('Helvetica')
-      .text(`Page ${i + 1} of ${range.count}`, left, doc.page.height - 30, {
-        width: TABLE_WIDTH,
-        align: 'center',
-        lineBreak: false,
-      });
-  }
+  stampPageNumbers(doc);
   return doc;
 }

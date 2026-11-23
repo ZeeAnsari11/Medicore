@@ -25,6 +25,12 @@ export class UpdateCashTransactionRowDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @IsPositive()
   amount: number;
+
+  /** Only for a new row; an entry that already has a difference can't be edited, only removed. */
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  difference?: number;
 }
 
 export class UpdateCashTransactionDto {

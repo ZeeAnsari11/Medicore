@@ -2,9 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { Account, AccountDocument } from './schemas/account.schema';
-import { JournalEntry, JournalEntryDocument, LEDGER_VISIBLE_STATUSES } from './schemas/journal-entry.schema';
+import {
+  JournalEntry,
+  JournalEntryDocument,
+  LEDGER_VISIBLE_STATUSES,
+} from './schemas/journal-entry.schema';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { SaleReturn, SaleReturnDocument } from './schemas/sale-return.schema';
+import { PurchaseReturn, PurchaseReturnDocument } from './schemas/purchase-return.schema';
 import { Expense, ExpenseDocument } from './schemas/expense.schema';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Vendor, VendorDocument } from '../vendors/schemas/vendor.schema';
@@ -27,6 +32,7 @@ import type {
   PartyLedgerSummary,
 } from '@medicore/shared-types';
 import { LedgerQueryDto, PartyBalancesQueryDto } from './dto/ledger-query.dto';
+import { DIFFERENCE_LINE_DESCRIPTION } from './difference';
 
 /** A single export may not exceed this many rows; ask the user to narrow the period instead. */
 export const EXPORT_ROW_CAP = 20000;
@@ -72,6 +78,8 @@ function parseTo(value?: string): Date | null {
   if (value.length <= 10) to.setUTCHours(23, 59, 59, 999);
   return to;
 }
+
+const money2 = (n: number) => round2(n).toFixed(2);
 
 function documentTypeLabel(
   kind: Kind,
@@ -136,6 +144,8 @@ export class LedgersService {
     private readonly paymentLinks: PaymentLinksService,
     @InjectModel(Sale.name) private readonly saleModel: Model<SaleDocument>,
     @InjectModel(SaleReturn.name) private readonly saleReturnModel: Model<SaleReturnDocument>,
+    @InjectModel(PurchaseReturn.name)
+    private readonly purchaseReturnModel: Model<PurchaseReturnDocument>,
     @InjectModel(Purchase.name) private readonly purchaseModel: Model<PurchaseDocument>,
     @InjectModel(Payment.name) private readonly paymentModel: Model<PaymentDocument>,
     @InjectModel(Expense.name) private readonly expenseModel: Model<ExpenseDocument>,
@@ -143,15 +153,22 @@ export class LedgersService {
     @InjectModel(Tenant.name) private readonly tenantModel: Model<TenantDocument>,
   ) {}
 
-  /** Business and branch names for printed output. */
+  /** Business name plus the branch's name, code and address for printed output. */
   async getPrintContext(tenantId: string, branchId: string | null) {
     const [tenant, branch] = await Promise.all([
       this.tenantModel.findById(tenantId).select('name'),
       branchId
-        ? this.branchModel.findOne({ _id: branchId, tenantId: new Types.ObjectId(tenantId) }).select('name')
+        ? this.branchModel
+            .findOne({ _id: branchId, tenantId: new Types.ObjectId(tenantId) })
+            .select('name code address')
         : null,
     ]);
-    return { businessName: tenant?.name ?? 'Medicore', branchName: branch?.name ?? 'All branches' };
+    return {
+      businessName: tenant?.name ?? 'Medicore',
+      branchName: branch?.name ?? 'All branches',
+      branchCode: branch?.code,
+      branchAddress: branch?.address,
+    };
   }
 
   async generalLedger(
@@ -198,7 +215,21 @@ export class LedgersService {
       tenantId: new Types.ObjectId(tenantId),
     });
     if (!customer) throw new NotFoundException('Customer not found');
-    return this.partyLedger(tenantId, branchId, 'CUSTOMER', customerId, customer.name, q, all);
+    const ledger = await this.partyLedger(
+      tenantId,
+      branchId,
+      'CUSTOMER',
+      customerId,
+      customer.name,
+      q,
+      all,
+    );
+    return {
+      ...ledger,
+      partyCode: customer.code,
+      partyAddress: customer.address,
+      partyCity: customer.city,
+    };
   }
 
   async vendorLedger(
@@ -213,7 +244,16 @@ export class LedgersService {
       tenantId: new Types.ObjectId(tenantId),
     });
     if (!vendor) throw new NotFoundException('Vendor not found');
-    return this.partyLedger(tenantId, branchId, 'VENDOR', vendorId, vendor.company, q, all);
+    const ledger = await this.partyLedger(
+      tenantId,
+      branchId,
+      'VENDOR',
+      vendorId,
+      vendor.company,
+      q,
+      all,
+    );
+    return { ...ledger, partyAddress: vendor.address };
   }
 
   /**
@@ -255,7 +295,8 @@ export class LedgersService {
       bySource
         .filter(
           (b) =>
-            types.includes(b._id.sourceType) && (b._id.accountId === advance?.id) === advanceAccount,
+            types.includes(b._id.sourceType) &&
+            (b._id.accountId === advance?.id) === advanceAccount,
         )
         .reduce((s, b) => s + b[side], 0);
 
@@ -270,8 +311,16 @@ export class LedgersService {
       ? sum([JournalEntrySourceType.SALE_RETURN], 'credit', false)
       : sum([JournalEntrySourceType.PURCHASE_RETURN], 'debit', false);
     const voids = isCustomer
-      ? sum([JournalEntrySourceType.SALE_CANCELLATION, JournalEntrySourceType.SALE_EDIT], 'credit', false)
-      : sum([JournalEntrySourceType.PURCHASE_CANCELLATION, JournalEntrySourceType.PURCHASE_EDIT], 'debit', false);
+      ? sum(
+          [JournalEntrySourceType.SALE_CANCELLATION, JournalEntrySourceType.SALE_EDIT],
+          'credit',
+          false,
+        )
+      : sum(
+          [JournalEntrySourceType.PURCHASE_CANCELLATION, JournalEntrySourceType.PURCHASE_EDIT],
+          'debit',
+          false,
+        );
     const advanceRows = bySource.filter((b) => b._id.accountId === advance?.id);
     const advances = advanceRows.reduce(
       (s, b) => s + (isCustomer ? b.credit - b.debit : b.debit - b.credit),
@@ -351,7 +400,8 @@ export class LedgersService {
             : g.credit - g.debit;
         if (isAdvance) {
           advanceTotal += value;
-          if (g._id.partyId) advanceBalance.set(g._id.partyId, (advanceBalance.get(g._id.partyId) ?? 0) + value);
+          if (g._id.partyId)
+            advanceBalance.set(g._id.partyId, (advanceBalance.get(g._id.partyId) ?? 0) + value);
         } else {
           accountTotal += value;
           if (g._id.partyId) {
@@ -367,10 +417,17 @@ export class LedgersService {
       : undefined;
     const parties = isCustomer
       ? await this.customerModel
-          .find({ tenantId: new Types.ObjectId(tenantId), deletedAt: null, ...(nameFilter && { name: nameFilter }) })
+          .find({
+            tenantId: new Types.ObjectId(tenantId),
+            deletedAt: null,
+            ...(nameFilter && { name: nameFilter }),
+          })
           .select('name')
       : await this.vendorModel
-          .find({ tenantId: new Types.ObjectId(tenantId), ...(nameFilter && { company: nameFilter }) })
+          .find({
+            tenantId: new Types.ObjectId(tenantId),
+            ...(nameFilter && { company: nameFilter }),
+          })
           .select('company');
 
     let rows: PartyBalanceRow[] = parties.map((p) => {
@@ -386,7 +443,9 @@ export class LedgersService {
       };
     });
     if (q.hasBalance === 'true') {
-      rows = rows.filter((r) => Math.abs(r.accountBalance) > 0.005 || Math.abs(r.advanceBalance) > 0.005);
+      rows = rows.filter(
+        (r) => Math.abs(r.accountBalance) > 0.005 || Math.abs(r.advanceBalance) > 0.005,
+      );
     }
 
     const dir = q.sortDir === 'asc' ? 1 : -1;
@@ -462,14 +521,18 @@ export class LedgersService {
     const dateRange: Record<string, Date> = {};
     if (from) dateRange.$gte = from;
     if (to) dateRange.$lte = to;
-    const rangeMatch = Object.keys(dateRange).length ? { ...entryMatch, entryDate: dateRange } : entryMatch;
+    const rangeMatch = Object.keys(dateRange).length
+      ? { ...entryMatch, entryDate: dateRange }
+      : entryMatch;
 
     const sums = (stages: PipelineStage[]) =>
       this.journalEntryModel.aggregate<{ debit: number; credit: number }>([
         ...stages,
         { $unwind: '$lines' },
         { $match: lineMatch },
-        { $group: { _id: null, debit: { $sum: '$lines.debit' }, credit: { $sum: '$lines.credit' } } },
+        {
+          $group: { _id: null, debit: { $sum: '$lines.debit' }, credit: { $sum: '$lines.credit' } },
+        },
       ]);
 
     const sortStage: PipelineStage = { $sort: { entryDate: 1, createdAt: 1, _id: 1 } };
@@ -520,7 +583,13 @@ export class LedgersService {
             { $unwind: '$lines' },
             { $match: lineMatch },
             { $limit: skip },
-            { $group: { _id: null, debit: { $sum: '$lines.debit' }, credit: { $sum: '$lines.credit' } } },
+            {
+              $group: {
+                _id: null,
+                debit: { $sum: '$lines.debit' },
+                credit: { $sum: '$lines.credit' },
+              },
+            },
           ])
         : Promise.resolve([]),
     ]);
@@ -533,7 +602,9 @@ export class LedgersService {
       );
     }
 
-    const opening = openingAgg[0] ? signed(p.direction, openingAgg[0].debit, openingAgg[0].credit) : 0;
+    const opening = openingAgg[0]
+      ? signed(p.direction, openingAgg[0].debit, openingAgg[0].credit)
+      : 0;
     const totalDebit = bySource.reduce((s, b) => s + b.debit, 0);
     const totalCredit = bySource.reduce((s, b) => s + b.credit, 0);
     const total = bySource.reduce((s, b) => s + b.count, 0);
@@ -544,31 +615,65 @@ export class LedgersService {
     const T = JournalEntrySourceType;
     const paymentLinks = await this.paymentLinks.forPaymentIds(
       p.tenantId,
-      pageRows.filter((r) => r.sourceId && (r.sourceType === T.PAYMENT_RECEIVED || r.sourceType === T.PAYMENT_MADE)).map((r) => r.sourceId!),
+      pageRows
+        .filter(
+          (r) =>
+            r.sourceId && (r.sourceType === T.PAYMENT_RECEIVED || r.sourceType === T.PAYMENT_MADE),
+        )
+        .map((r) => r.sourceId!),
     );
-    // A sale return row shows the return's own id (SR-…) and the invoice it was against, as payments do.
-    const returnRows = pageRows.filter((r) => r.sourceType === T.SALE_RETURN && r.sourceId);
-    const returns = returnRows.length
+    // A return row shows the return's own number and the invoice / purchase it was against, as payments do.
+    const returnQuery = (types: JournalEntrySourceType[]) => ({
+      tenantId: new Types.ObjectId(p.tenantId),
+      journalEntryId: {
+        $in: pageRows
+          .filter((r) => types.includes(r.sourceType) && r.sourceId)
+          .map((r) => r.entryId),
+      },
+    });
+    const saleReturnRows = pageRows.some((r) => r.sourceType === T.SALE_RETURN && r.sourceId);
+    const purchaseReturnRows = pageRows.some(
+      (r) => r.sourceType === T.PURCHASE_RETURN && r.sourceId,
+    );
+    const returns = saleReturnRows
       ? await this.saleReturnModel
-          .find({ tenantId: new Types.ObjectId(p.tenantId), journalEntryId: { $in: returnRows.map((r) => r.entryId) } })
+          .find(returnQuery([T.SALE_RETURN]))
           .select('returnNumber journalEntryId saleId')
           .lean()
       : [];
-    const returnOfEntry = new Map(returns.map((x) => [x.journalEntryId, x]));
+    const purchaseReturns = purchaseReturnRows
+      ? await this.purchaseReturnModel
+          .find(returnQuery([T.PURCHASE_RETURN]))
+          .select('returnNumber journalEntryId purchaseId')
+          .lean()
+      : [];
+    const returnOfEntry = new Map(
+      [...returns, ...purchaseReturns].map((x) => [x.journalEntryId, x]),
+    );
     let running = opening + prior;
     const rows: LedgerRow[] = pageRows.map((r) => {
       running += signed(p.direction, r.debit, r.credit);
-      const documentType = documentTypeLabel(
-        p.kind,
-        r.sourceType,
-        !!p.advanceAccountId && r.lineAccountId === p.advanceAccountId,
-        r.debit,
-        r.credit,
-      );
+      // The part of a cash receipt written off as a difference is its own line of the payment's entry.
+      const isDifference =
+        r.sourceType === T.PAYMENT_RECEIVED &&
+        r.description === DIFFERENCE_LINE_DESCRIPTION &&
+        p.kind === 'CUSTOMER';
+      const documentType = isDifference
+        ? 'Difference'
+        : documentTypeLabel(
+            p.kind,
+            r.sourceType,
+            !!p.advanceAccountId && r.lineAccountId === p.advanceAccountId,
+            r.debit,
+            r.credit,
+          );
       const links =
-        documentType === 'Payment' && r.sourceId ? paymentLinks.get(r.sourceId) : undefined;
+        (documentType === 'Payment' || isDifference) && r.sourceId
+          ? paymentLinks.get(r.sourceId)
+          : undefined;
       const ret = returnOfEntry.get(r.entryId);
       const sale = ret ? references.get(`${r.sourceType}:${r.sourceId}`) : undefined;
+      const isPurchaseReturn = r.sourceType === T.PURCHASE_RETURN;
       if (ret?.returnNumber && sale) {
         return {
           entryId: r.entryId,
@@ -576,9 +681,22 @@ export class LedgersService {
           date: r.entryDate.toISOString(),
           sourceType: r.sourceType,
           documentType,
-          description: `Against invoice ${sale.number}`,
-          reference: { type: 'SALE_RETURN' as const, id: ret._id as string, number: ret.returnNumber },
-          invoices: [{ type: 'SALE' as const, id: sale.id, number: sale.number, amount: round2(Math.max(r.debit, r.credit)) }],
+          description: isPurchaseReturn
+            ? `Against purchase ${sale.number}`
+            : `Against invoice ${sale.number}`,
+          reference: {
+            type: isPurchaseReturn ? ('PURCHASE_RETURN' as const) : ('SALE_RETURN' as const),
+            id: ret._id as string,
+            number: ret.returnNumber,
+          },
+          invoices: [
+            {
+              type: isPurchaseReturn ? ('PURCHASE' as const) : ('SALE' as const),
+              id: sale.id,
+              number: sale.number,
+              amount: round2(Math.max(r.debit, r.credit)),
+            },
+          ],
           debit: round2(r.debit),
           credit: round2(r.credit),
           runningBalance: round2(running),
@@ -590,16 +708,41 @@ export class LedgersService {
         date: r.entryDate.toISOString(),
         sourceType: r.sourceType,
         documentType,
-        description: links
-          ? paymentDescription(p.kind, links)
-          : (REVERSAL_DESCRIPTION[r.sourceType as JournalEntrySourceType] ?? r.description),
+        description: isDifference
+          ? `Difference (Sales Difference)${links?.invoices.length ? ` · Against invoice ${links.invoices.map((i) => i.number).join(', ')}` : ''}`
+          : links
+            ? paymentDescription(p.kind, links)
+            : (REVERSAL_DESCRIPTION[r.sourceType as JournalEntrySourceType] ?? r.description),
         reference: r.sourceId ? references.get(`${r.sourceType}:${r.sourceId}`) : undefined,
-        ...(links?.invoices.length ? { invoices: links.invoices } : {}),
+        ...(links?.invoices.length
+          ? {
+              invoices: isDifference
+                ? links.invoices.map((i) => ({ ...i, amount: round2(r.credit) }))
+                : links.invoices,
+            }
+          : {}),
         debit: round2(r.debit),
         credit: round2(r.credit),
         runningBalance: round2(running),
       };
     });
+
+    // A cash receipt's difference is part of the same payment: one row, with the difference named in its description.
+    const differenceRows = rows.filter((r) => r.documentType === 'Difference' && r.reference?.type === 'PAYMENT');
+    if (differenceRows.length > 0) {
+      for (const diff of differenceRows) {
+        const base = rows.find((r) => r !== diff && r.entryId === diff.entryId && r.documentType === 'Payment');
+        const note = `Difference ${money2(diff.credit)}`;
+        if (!base) {
+          diff.description = `${diff.description} · ${note}`;
+          continue;
+        }
+        base.credit = round2(base.credit + diff.credit);
+        base.runningBalance = diff.runningBalance;
+        base.description = `${base.description} · ${note}`;
+        rows.splice(rows.indexOf(diff), 1);
+      }
+    }
 
     return {
       openingBalance: round2(opening),
@@ -631,25 +774,45 @@ export class LedgersService {
     };
     for (const r of rows) {
       if (!r.sourceId) continue;
-      if ([T.SALE, T.SALE_RETURN, T.SALE_CANCELLATION, T.SALE_EDIT].includes(r.sourceType)) ids.sale.add(r.sourceId);
-      else if ([T.PURCHASE, T.PURCHASE_RETURN, T.PURCHASE_CANCELLATION, T.PURCHASE_EDIT].includes(r.sourceType))
+      if ([T.SALE, T.SALE_RETURN, T.SALE_CANCELLATION, T.SALE_EDIT].includes(r.sourceType))
+        ids.sale.add(r.sourceId);
+      else if (
+        [T.PURCHASE, T.PURCHASE_RETURN, T.PURCHASE_CANCELLATION, T.PURCHASE_EDIT].includes(
+          r.sourceType,
+        )
+      )
         ids.purchase.add(r.sourceId);
-      else if ([T.PAYMENT_RECEIVED, T.PAYMENT_MADE, T.PAYMENT_VOID].includes(r.sourceType)) ids.payment.add(r.sourceId);
+      else if ([T.PAYMENT_RECEIVED, T.PAYMENT_MADE, T.PAYMENT_VOID].includes(r.sourceType))
+        ids.payment.add(r.sourceId);
       else if (r.sourceType === T.EXPENSE) ids.expense.add(r.sourceId);
     }
     const tenantFilter = { tenantId: new Types.ObjectId(tenantId) };
     const [sales, purchases, payments, expenses] = await Promise.all([
-      ids.sale.size ? this.saleModel.find({ ...tenantFilter, _id: { $in: [...ids.sale] } }).select('invoiceNumber') : [],
+      ids.sale.size
+        ? this.saleModel
+            .find({ ...tenantFilter, _id: { $in: [...ids.sale] } })
+            .select('invoiceNumber')
+        : [],
       ids.purchase.size
-        ? this.purchaseModel.find({ ...tenantFilter, _id: { $in: [...ids.purchase] } }).select('purchaseNumber')
+        ? this.purchaseModel
+            .find({ ...tenantFilter, _id: { $in: [...ids.purchase] } })
+            .select('purchaseNumber')
         : [],
       ids.payment.size
-        ? this.paymentModel.find({ ...tenantFilter, _id: { $in: [...ids.payment] } }).select('paymentSeq')
+        ? this.paymentModel
+            .find({ ...tenantFilter, _id: { $in: [...ids.payment] } })
+            .select('paymentSeq')
         : [],
-      ids.expense.size ? this.expenseModel.find({ ...tenantFilter, _id: { $in: [...ids.expense] } }).select('_id') : [],
+      ids.expense.size
+        ? this.expenseModel.find({ ...tenantFilter, _id: { $in: [...ids.expense] } }).select('_id')
+        : [],
     ]);
-    const saleNo = new Map<string, string>(sales.map((s): [string, string] => [s.id as string, s.invoiceNumber]));
-    const purchaseNo = new Map<string, string>(purchases.map((s): [string, string] => [s.id as string, s.purchaseNumber]));
+    const saleNo = new Map<string, string>(
+      sales.map((s): [string, string] => [s.id as string, s.invoiceNumber]),
+    );
+    const purchaseNo = new Map<string, string>(
+      purchases.map((s): [string, string] => [s.id as string, s.purchaseNumber]),
+    );
     const paymentNo = new Map<string, string>(
       payments.flatMap((s): Array<[string, string]> => {
         const n = paymentNumber(s.paymentSeq);
@@ -663,14 +826,29 @@ export class LedgersService {
       if (!r.sourceId) continue;
       const key = `${r.sourceType}:${r.sourceId}`;
       if (out.has(key)) continue;
-      if (saleNo.has(r.sourceId) && [T.SALE, T.SALE_RETURN, T.SALE_CANCELLATION, T.SALE_EDIT].includes(r.sourceType)) {
+      if (
+        saleNo.has(r.sourceId) &&
+        [T.SALE, T.SALE_RETURN, T.SALE_CANCELLATION, T.SALE_EDIT].includes(r.sourceType)
+      ) {
         out.set(key, { type: 'SALE', id: r.sourceId, number: saleNo.get(r.sourceId)! });
-      } else if (purchaseNo.has(r.sourceId) && [T.PURCHASE, T.PURCHASE_RETURN, T.PURCHASE_CANCELLATION, T.PURCHASE_EDIT].includes(r.sourceType)) {
+      } else if (
+        purchaseNo.has(r.sourceId) &&
+        [T.PURCHASE, T.PURCHASE_RETURN, T.PURCHASE_CANCELLATION, T.PURCHASE_EDIT].includes(
+          r.sourceType,
+        )
+      ) {
         out.set(key, { type: 'PURCHASE', id: r.sourceId, number: purchaseNo.get(r.sourceId)! });
-      } else if (paymentNo.has(r.sourceId) && [T.PAYMENT_RECEIVED, T.PAYMENT_MADE, T.PAYMENT_VOID].includes(r.sourceType)) {
+      } else if (
+        paymentNo.has(r.sourceId) &&
+        [T.PAYMENT_RECEIVED, T.PAYMENT_MADE, T.PAYMENT_VOID].includes(r.sourceType)
+      ) {
         out.set(key, { type: 'PAYMENT', id: r.sourceId, number: paymentNo.get(r.sourceId)! });
       } else if (expenseIds.has(r.sourceId) && r.sourceType === T.EXPENSE) {
-        out.set(key, { type: 'EXPENSE', id: r.sourceId, number: `EXP-${r.sourceId.slice(-6).toUpperCase()}` });
+        out.set(key, {
+          type: 'EXPENSE',
+          id: r.sourceId,
+          number: `EXP-${r.sourceId.slice(-6).toUpperCase()}`,
+        });
       }
     }
     return out;

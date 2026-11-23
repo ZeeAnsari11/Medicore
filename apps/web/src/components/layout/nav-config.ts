@@ -57,7 +57,6 @@ export const navSections: NavSection[] = [
     title: 'Insights',
     items: [
       { label: 'SSR', href: '/reports/ssr', icon: BarChart3, requires: { anyOf: ['ssr:read'] } },
-      { label: 'Order Booker Report', href: '/reports/order-booker', icon: ClipboardList, requires: { anyOf: ['sales:read'] } },
     ],
   },
   {

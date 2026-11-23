@@ -23,7 +23,10 @@ interface Props {
 
 function quantityOf(ret: SaleReturn | PurchaseReturn): number {
   if ('purchaseId' in ret) return ret.items.reduce((sum, i) => sum + i.quantity, 0);
-  return ret.items.reduce((sum, i) => sum + i.batchAllocations.reduce((s, a) => s + a.quantity, 0), 0);
+  return ret.items.reduce(
+    (sum, i) => sum + [...i.batchAllocations, ...(i.bonusAllocations ?? [])].reduce((s, a) => s + a.quantity, 0),
+    0,
+  );
 }
 
 /** Distinct product names on a return, in order. */

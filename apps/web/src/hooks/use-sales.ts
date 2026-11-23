@@ -6,6 +6,7 @@ import type {
   PaginatedSales,
   SalePaymentRow,
   CreateSaleRequest,
+  CustomerAdvanceResponse,
   UpdateSaleRequest,
   UpdateSalePaymentRequest,
   OrderBookerOption,
@@ -246,6 +247,20 @@ export function useOrderBookers(branchId: string | null, enabled = true) {
   return { orderBookers: query.data ?? [], isLoading: query.isLoading };
 }
 
+/** The customer's unspent advance, offered on a new invoice. Always refetched: a return or payment changes it. */
+export function useCustomerAdvance(branchId: string | null, customerId: string | undefined) {
+  const query = useTenantQuery({
+    queryKey: [...SALES_QUERY_KEY, 'customer-advance', branchId, customerId],
+    queryFn: () =>
+      apiFetch<CustomerAdvanceResponse>(
+        `/sales/customer-advance/${customerId}${branchId ? `?branchId=${branchId}` : ''}`,
+      ),
+    enabled: !!customerId && !!branchId,
+    staleTime: 0,
+  });
+  return { advanceBalance: query.data?.advanceBalance ?? 0, canApply: query.data?.canApply ?? false };
+}
+
 /** Admin-only: hand a sale to another Order Booker. */
 const PENDING_ORDERS_KEY = [...SALES_QUERY_KEY, 'pending-orders'];
 
@@ -308,6 +323,8 @@ export function useProcessOrders(branchId: string | null) {
     queryClient.invalidateQueries({ queryKey: ['inventory'] });
     queryClient.invalidateQueries({ queryKey: ['accounting'] });
     queryClient.invalidateQueries({ queryKey: ['reports'] });
+    queryClient.invalidateQueries({ queryKey: ['customers'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
   };
   const confirm = useMutation({
     mutationFn: run('confirm'),

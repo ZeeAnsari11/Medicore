@@ -33,6 +33,10 @@ export class Vendor {
   @Prop({ trim: true })
   address?: string;
 
+  /** Bumped when a purchase spends this vendor's advance: the write conflict serializes two bills on one advance. */
+  @Prop({ required: true, default: 0 })
+  advanceSeq: number;
+
   @Prop({ required: true, default: true })
   isActive: boolean;
 }

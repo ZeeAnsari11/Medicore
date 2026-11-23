@@ -41,3 +41,8 @@ coverage/
 
 # Misc
 *.local
+
+# Local login details for the shared PharmaX instance (pnpm share:pharmax)
+scripts/pharmax-login.local
+dist-pharmax/
+scripts/pharmax-share.info

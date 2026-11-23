@@ -107,11 +107,14 @@ describe('invoice edit (e2e)', () => {
       expect(res.body.notes).toBe('edited');
       expect(await batchQty(w)).toBe(80);
 
+      // In-place update: the one SALE entry is rewritten, no reversal or second entry is created.
       const entries = await entriesFor(sale.id);
-      expect(entries.filter((e) => e.status === 'POSTED' && e.sourceType === 'SALE')).toHaveLength(1);
-      expect(entries.filter((e) => e.sourceType === 'SALE_EDIT')).toHaveLength(1);
-      expect(entries.filter((e) => e.status === 'REVERSED')).toHaveLength(1);
-      expect(new Set(entries.map((e) => e.entryNumber)).size).toBe(entries.length);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].status).toBe('POSTED');
+      expect(entries[0].sourceType).toBe('SALE');
+      expect(entries[0].totalDebit).toBe(entries[0].totalCredit);
+      expect(entries.filter((e) => e.sourceType === 'SALE_EDIT')).toHaveLength(0);
+      expect(entries.filter((e) => e.status === 'REVERSED')).toHaveLength(0);
 
       const balances = rows(await get(`accounting/customers/balances?branchId=${K}`));
       expect(JSON.stringify(balances)).toContain('320');
@@ -192,8 +195,11 @@ describe('invoice edit (e2e)', () => {
       expect(res.body.grandTotal).toBe(1320);
       expect(await batchQty(w)).toBe(120);
       const entries = await entriesFor(purchase.id);
-      expect(entries.filter((e) => e.status === 'POSTED' && e.sourceType === 'PURCHASE')).toHaveLength(1);
-      expect(entries.filter((e) => e.sourceType === 'PURCHASE_EDIT')).toHaveLength(1);
+      // In-place update: the one PURCHASE entry is rewritten, no reversal or second entry is created.
+      expect(entries).toHaveLength(1);
+      expect(entries[0].status).toBe('POSTED');
+      expect(entries[0].sourceType).toBe('PURCHASE');
+      expect(entries.filter((e) => e.sourceType === 'PURCHASE_EDIT')).toHaveLength(0);
     });
 
     it('is locked by a payment (409), and unlocks when the payment is voided', async () => {
@@ -220,6 +226,28 @@ describe('invoice edit (e2e)', () => {
       // Lowering it to exactly what was sold is fine.
       await patch(`purchases/${purchase.id}?branchId=${K}`, { items: [{ ...line, quantity: 70 }] }).expect(200);
       expect(await batchQty(w)).toBe(0);
+    });
+
+    it('moves only the units still in stock to a new batch when a partly sold batch number is changed', async () => {
+      const w = await world();
+      const purchase = await buy(w, 10);
+      await sell(w, 5); // 5 left on B-1
+      const line = { productId: w.productId, batchNumber: 'B-1', expiryDate: EXPIRY, quantity: 10, purchasePrice: 10, sellingPrice: 15 };
+      const sourceBatchId = purchase.items[0].batchId;
+      // A line without sourceBatchId (older apps) is still refused.
+      expect((await patch(`purchases/${purchase.id}?branchId=${K}`, { items: [{ ...line, batchNumber: 'F-1' }] })).status).toBe(409);
+      // The quantity cannot go below what was sold.
+      expect((await patch(`purchases/${purchase.id}?branchId=${K}`, { items: [{ ...line, batchNumber: 'F-1', quantity: 4, sourceBatchId }] })).status).toBe(409);
+
+      const res = await patch(`purchases/${purchase.id}?branchId=${K}`, { items: [{ ...line, batchNumber: 'F-1', sourceBatchId }] }).expect(200);
+      expect(res.body.items.map((i: { batchNumber: string; quantity: number }) => [i.batchNumber, i.quantity])).toEqual([['B-1', 5], ['F-1', 5]]);
+      expect(res.body.grandTotal).toBe(purchase.grandTotal);
+      const batches = rows(await get(`inventory/${w.productId}/batches?branchId=${K}`));
+      expect(batches.find((b) => b.batchNumber === 'B-1')?.quantity ?? 0).toBe(0);
+      expect(batches.find((b) => b.batchNumber === 'F-1')?.quantity).toBe(5);
+      // The sold units keep pointing at B-1, and the detail reports how much of each row is gone.
+      const detail = await get(`purchases/${purchase.id}?branchId=${K}`);
+      expect(detail.items.map((i: { soldQuantity: number }) => i.soldQuantity)).toEqual([5, 0]);
     });
 
     it('refuses to remove, re-expire or re-vendor a partly sold batch', async () => {

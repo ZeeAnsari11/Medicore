@@ -82,6 +82,13 @@ export class Payment {
   @Prop({ type: Number })
   paymentSeq?: number;
 
+  /** Written off with this payment (a cash receipt's difference): booked to Difference > Sales Difference. */
+  @Prop({ type: Number, min: 0 })
+  differenceAmount?: number;
+
+  @Prop({ type: String })
+  differenceExpenseId?: string;
+
   @Prop({ type: Date, default: null })
   deletedAt: Date | null;
 }

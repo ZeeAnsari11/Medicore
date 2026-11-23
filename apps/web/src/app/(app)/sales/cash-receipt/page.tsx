@@ -59,6 +59,10 @@ interface SheetRow {
   received: number;
   balance: number;
   amount: string;
+  /** Written off so the invoice is settled; booked to the branch's Difference > Sales Difference. */
+  difference: string;
+  /** The saved entry already wrote a difference off: it can only be removed, not edited. */
+  locked?: boolean;
   error?: string;
 }
 
@@ -86,6 +90,8 @@ const rowsOfTransaction = (tx: CashTransaction): SheetRow[] =>
     // The most this entry can be set to: what is still owed plus its own amount.
     balance: r.balance,
     amount: String(r.amount),
+    difference: r.difference ? String(r.difference) : '',
+    locked: (r.difference ?? 0) > 0,
     error: r.paymentVoided ? VOIDED : undefined,
   }));
 
@@ -97,13 +103,19 @@ const todayIso = () => {
 };
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-function amountError(raw: string, balance: number): string | undefined {
+function amountError(raw: string, balance: number, differenceRaw = ''): string | undefined {
   const n = Number(raw);
   if (raw.trim() === '' || Number.isNaN(n) || n <= 0) return 'Enter an amount greater than 0';
   if (round2(n) !== n && Math.abs(n * 100 - Math.round(n * 100)) > 1e-6) return 'Max 2 decimals';
-  if (n > balance + 0.005) return `Cannot exceed the balance of ${money(balance)}`;
+  const d = differenceRaw.trim() === '' ? 0 : Number(differenceRaw);
+  if (Number.isNaN(d) || d < 0) return 'Difference must be 0 or more';
+  if (round2(d) !== d && Math.abs(d * 100 - Math.round(d * 100)) > 1e-6) return 'Max 2 decimals';
+  if (n + d > balance + 0.005)
+    return d > 0 ? `Amount plus difference cannot exceed the balance of ${money(balance)}` : `Cannot exceed the balance of ${money(balance)}`;
   return undefined;
 }
+
+const num = (raw: string) => Number(raw) || 0;
 
 export default function CashReceiptPage() {
   const { user } = useAuth();
@@ -135,6 +147,7 @@ export default function CashReceiptPage() {
   const suggestionsRef = useRef<HTMLDivElement>(null);
   const [selected, setSelected] = useState<LookupInvoice | null>(null);
   const [amountInput, setAmountInput] = useState('');
+  const [differenceInput, setDifferenceInput] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
 
@@ -190,7 +203,7 @@ export default function CashReceiptPage() {
       const raw = window.sessionStorage.getItem(storageKey);
       if (raw) {
         const s = JSON.parse(raw);
-        setRows(s.rows ?? []);
+        setRows((s.rows ?? []).map((r: SheetRow) => ({ ...r, difference: r.difference ?? '' })));
         if (s.batchId) setBatchId(s.batchId);
         if (isAdmin && s.branchId) setBranchId(s.branchId);
       }
@@ -229,7 +242,8 @@ export default function CashReceiptPage() {
     return rows.map((r) => {
       if (!base.has(r.customerId)) base.set(r.customerId, r.customerBalance);
       const before = round2(base.get(r.customerId)! - (entered.get(r.customerId) ?? 0));
-      const amt = Number(r.amount) || 0;
+      // What the row settles: cash plus the difference written off.
+      const amt = num(r.amount) + num(r.difference);
       entered.set(r.customerId, (entered.get(r.customerId) ?? 0) + amt);
       return { custBal: before, finalBal: round2(before - amt) };
     });
@@ -241,17 +255,19 @@ export default function CashReceiptPage() {
     const base = first ? first.customerBalance : selected.customerBalance;
     const entered = rows
       .filter((r) => r.customerId === selected.customerId)
-      .reduce((s, r) => s + (Number(r.amount) || 0), 0);
+      .reduce((s, r) => s + num(r.amount) + num(r.difference), 0);
     return round2(base - entered);
   }, [selected, rows]);
 
-  const total = round2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
+  const total = round2(rows.reduce((s, r) => s + num(r.amount), 0));
+  const differenceTotal = round2(rows.reduce((s, r) => s + num(r.difference), 0));
 
   const resetForm = () => {
     setSelected(null);
     setVoucherInput('');
     setVoucherQuery('');
     setAmountInput('');
+    setDifferenceInput('');
     setFormError(null);
     setOpen(false);
     voucherRef.current?.focus();
@@ -288,7 +304,7 @@ export default function CashReceiptPage() {
       setFormError('Already paid');
       return;
     }
-    const err = amountError(amountInput, selected.balance);
+    const err = amountError(amountInput, selected.balance, differenceInput);
     if (err) {
       setFormError(err);
       return;
@@ -308,6 +324,7 @@ export default function CashReceiptPage() {
         received: selected.received,
         balance: selected.balance,
         amount: amountInput,
+        difference: differenceInput,
       },
     ]);
     setSelectedKey(key);
@@ -326,9 +343,19 @@ export default function CashReceiptPage() {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch, error: undefined } : r)));
 
   // Bring the highlighted entry into view.
+  const scrolledTo = useRef<string | null>(null);
   useEffect(() => {
-    if (readOnly && highlightInvoiceId) document.querySelector('.cr-highlight')?.scrollIntoView({ block: 'center' });
-  }, [readOnly, highlightInvoiceId, rows]);
+    if (!highlightInvoiceId) {
+      scrolledTo.current = null;
+      return;
+    }
+    // Once per link, so typing amounts in an editable sheet does not keep scrolling.
+    const el = document.querySelector('.cr-highlight');
+    if (el && scrolledTo.current !== highlightInvoiceId) {
+      scrolledTo.current = highlightInvoiceId;
+      el.scrollIntoView({ block: 'center' });
+    }
+  }, [highlightInvoiceId, rows]);
 
   const openTransaction = (tx: CashTransaction) => {
     setReadOnly(false);
@@ -370,9 +397,9 @@ export default function CashReceiptPage() {
     async (number: string, params: URLSearchParams) => {
       setTransactionInput(number);
       const loaded = await handleLoadRef.current(number);
-      // From the ledger: view only, with the entry of that ledger row highlighted.
-      if (loaded && params.get('readonly') === '1') {
-        setReadOnly(true);
+      if (loaded) {
+        // From the ledger: view only. From a payment: editable as usual. Either way the entry of that invoice is highlighted.
+        if (params.get('readonly') === '1') setReadOnly(true);
         setHighlightInvoiceId(params.get('invoice'));
       }
       // Clear the link so opening the same transaction again from the list loads it again.
@@ -395,7 +422,7 @@ export default function CashReceiptPage() {
 
   const handleSaveEdits = useCallback(async () => {
     if (readOnly || !editing || rows.length === 0 || updateTransaction.isPending) return;
-    const withErrors = rows.map((r) => ({ ...r, error: r.error === VOIDED ? VOIDED : amountError(r.amount, r.balance) }));
+    const withErrors = rows.map((r) => ({ ...r, error: r.error === VOIDED ? VOIDED : amountError(r.amount, r.balance, r.difference) }));
     if (withErrors.some((r) => r.error)) {
       setRows(withErrors);
       toast.error('Fix the highlighted rows before saving');
@@ -406,7 +433,12 @@ export default function CashReceiptPage() {
         number: editing.number,
         dto: {
           expectedVersion: editing.version,
-          rows: rows.map((r) => ({ entryId: r.entryId, invoiceId: r.invoiceId, amount: Number(r.amount) })),
+          rows: rows.map((r) => ({
+            entryId: r.entryId,
+            invoiceId: r.invoiceId,
+            amount: Number(r.amount),
+            ...(num(r.difference) > 0 && !r.entryId ? { difference: num(r.difference) } : {}),
+          })),
         },
       });
       // Back to a clean sheet, like after a new receipt: the number stays in the box, ready to Load again.
@@ -441,7 +473,7 @@ export default function CashReceiptPage() {
     if (readOnly) return;
     if (editing) return handleSaveEdits();
     if (rows.length === 0 || save.isPending) return;
-    const withErrors = rows.map((r) => ({ ...r, error: amountError(r.amount, r.balance) }));
+    const withErrors = rows.map((r) => ({ ...r, error: amountError(r.amount, r.balance, r.difference) }));
     if (withErrors.some((r) => r.error)) {
       setRows(withErrors);
       toast.error('Fix the highlighted rows before saving');
@@ -456,7 +488,11 @@ export default function CashReceiptPage() {
         batchId,
         date: todayIso(),
         method: METHOD,
-        rows: rows.map((r) => ({ invoiceId: r.invoiceId, amount: Number(r.amount) })),
+        rows: rows.map((r) => ({
+          invoiceId: r.invoiceId,
+          amount: Number(r.amount),
+          ...(num(r.difference) > 0 ? { difference: num(r.difference) } : {}),
+        })),
       });
       setSaved(result);
       if (result.transactionNumber) setTransactionInput(result.transactionNumber);
@@ -803,7 +839,57 @@ export default function CashReceiptPage() {
               </Button>
             </div>
           </div>
+          <div className="w-44">
+            <label className="mb-1 block text-sm font-medium">Difference</label>
+            <div className="flex gap-1">
+              <Input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step="0.01"
+                value={differenceInput}
+                disabled={!selected || !selected.payable}
+                aria-label="Difference"
+                onChange={(e) => {
+                  setDifferenceInput(e.target.value);
+                  setFormError(null);
+                }}
+                onKeyDown={onAmountKeyDown}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!selected || !selected.payable || num(amountInput) <= 0}
+                tabIndex={-1}
+                title="Write off what is left after the amount"
+                onClick={() =>
+                  selected && setDifferenceInput(String(Math.max(round2(selected.balance - num(amountInput)), 0)))
+                }
+              >
+                Settle
+              </Button>
+            </div>
+          </div>
         </div>
+        {num(differenceInput) > 0 && (
+          <div className="mb-3 grid gap-3 text-sm md:grid-cols-4">
+            <div>
+              <div className="text-muted-foreground">Exp Category</div>
+              <div className="font-semibold">Difference</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">Exp Sub Category</div>
+              <div className="font-semibold">Sales Difference</div>
+            </div>
+            <div className="md:col-span-2 self-end text-muted-foreground" data-testid="difference-note">
+              {money(num(amountInput))} + {money(num(differenceInput))} difference = {money(num(amountInput) + num(differenceInput))}
+              {selected && Math.abs(num(amountInput) + num(differenceInput) - selected.balance) < 0.005
+                ? ' — invoice will be set to paid'
+                : ''}
+            </div>
+          </div>
+        )}
         {formError && <p className="mb-2 text-sm text-destructive">{formError}</p>}
 
         <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
@@ -832,6 +918,7 @@ export default function CashReceiptPage() {
               <TableHead className="text-right">S-Invoice Amount</TableHead>
               <TableHead className="text-right">S-I-Received Amount</TableHead>
               <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Difference</TableHead>
               <TableHead className="text-right">Final Bal.</TableHead>
               <TableHead />
             </TableRow>
@@ -839,7 +926,7 @@ export default function CashReceiptPage() {
           <TableBody>
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={10} className="py-8 text-center text-muted-foreground">
                   No entries yet. Type a voucher number above, or load a transaction.
                 </TableCell>
               </TableRow>
@@ -849,7 +936,7 @@ export default function CashReceiptPage() {
                 key={r.key}
                 data-state={r.key === selectedKey ? 'selected' : undefined}
                 className={
-                  readOnly && r.invoiceId === highlightInvoiceId
+                  highlightInvoiceId && r.invoiceId === highlightInvoiceId
                     ? 'cr-highlight bg-primary/10 [&>td:first-child]:border-l-4 [&>td:first-child]:border-primary'
                     : r.key === selectedKey
                       ? 'bg-muted'
@@ -878,11 +965,29 @@ export default function CashReceiptPage() {
                     value={r.amount}
                     aria-invalid={!!r.error}
                     onFocus={() => setSelectedKey(r.key)}
+                    disabled={r.locked}
                     onChange={(e) => updateRow(r.key, { amount: e.target.value })}
                   />
                   )}
-                  {!readOnly && (r.error || amountError(r.amount, r.balance)) && (
-                    <div className="mt-1 text-xs text-destructive">{r.error ?? amountError(r.amount, r.balance)}</div>
+                  {!readOnly && (r.error || amountError(r.amount, r.balance, r.difference)) && (
+                    <div className="mt-1 text-xs text-destructive">{r.error ?? amountError(r.amount, r.balance, r.difference)}</div>
+                  )}
+                </TableCell>
+                <TableCell className="text-right">
+                  {readOnly || r.locked || r.entryId ? (
+                    <span className="tabular-nums" title={r.locked ? 'Sales Difference' : undefined}>
+                      {num(r.difference) > 0 ? money(num(r.difference)) : '-'}
+                    </span>
+                  ) : (
+                    <Input
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      aria-label="Row difference"
+                      className="ml-auto h-8 w-24 text-right"
+                      value={r.difference}
+                      onChange={(e) => updateRow(r.key, { difference: e.target.value })}
+                    />
                   )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">{money(computed[i].finalBal)}</TableCell>
@@ -903,6 +1008,12 @@ export default function CashReceiptPage() {
           </span>
           <span>
             Total: <b className="tabular-nums">Rs. {money(total)}</b>
+            {differenceTotal > 0 && (
+              <>
+                {' '}
+                + Difference: <b className="tabular-nums">Rs. {money(differenceTotal)}</b>
+              </>
+            )}
           </span>
         </div>
       </div>

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { ClientSession, Model, Types } from 'mongoose';
 import { Account, AccountDocument } from './schemas/account.schema';
 import { JournalEntry, JournalEntryDocument, LEDGER_VISIBLE_STATUSES } from './schemas/journal-entry.schema';
 import { JournalEntryStatus } from '@medicore/shared-types';
@@ -31,12 +31,17 @@ export class PartyBalanceService {
   }
 
   /** Positive = customer has unapplied credit/advance available. */
-  async getCustomerAdvanceBalance(tenantId: string, customerId: string): Promise<number> {
+  async getCustomerAdvanceBalance(
+    tenantId: string,
+    customerId: string,
+    session?: ClientSession,
+  ): Promise<number> {
     return this.getPartyAccountBalance(
       tenantId,
       'CUSTOMER_ADVANCES',
       customerId,
       'creditMinusDebit',
+      session,
     );
   }
 
@@ -46,8 +51,8 @@ export class PartyBalanceService {
   }
 
   /** Positive = we have an unapplied prepayment sitting with this vendor. */
-  async getVendorAdvanceBalance(tenantId: string, vendorId: string): Promise<number> {
-    return this.getPartyAccountBalance(tenantId, 'VENDOR_ADVANCES', vendorId, 'debitMinusCredit');
+  async getVendorAdvanceBalance(tenantId: string, vendorId: string, session?: ClientSession): Promise<number> {
+    return this.getPartyAccountBalance(tenantId, 'VENDOR_ADVANCES', vendorId, 'debitMinusCredit', session);
   }
 
   /**
@@ -110,11 +115,14 @@ export class PartyBalanceService {
     systemKey: string,
     partyId: string,
     direction: 'debitMinusCredit' | 'creditMinusDebit',
+    session?: ClientSession,
   ): Promise<number> {
-    const account = await this.accountModel.findOne({
-      tenantId: new Types.ObjectId(tenantId),
-      systemKey,
-    });
+    const account = await this.accountModel
+      .findOne({
+        tenantId: new Types.ObjectId(tenantId),
+        systemKey,
+      })
+      .session(session ?? null);
     if (!account) return 0;
 
     const [result] = await this.journalEntryModel.aggregate<{ debit: number; credit: number }>([
@@ -128,7 +136,7 @@ export class PartyBalanceService {
       { $unwind: '$lines' },
       { $match: { 'lines.accountId': account.id, 'lines.partyId': partyId } },
       { $group: { _id: null, debit: { $sum: '$lines.debit' }, credit: { $sum: '$lines.credit' } } },
-    ]);
+    ]).session(session ?? null);
 
     if (!result) return 0;
     return direction === 'debitMinusCredit'

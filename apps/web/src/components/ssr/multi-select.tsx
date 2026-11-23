@@ -21,9 +21,11 @@ interface MultiSelectProps {
   /** Adds a "+ Create ..." button that closes the list and hands over to the caller's own create dialog. */
   onCreateNew?: () => void;
   createLabel?: string;
+  /** For lists that start fully ticked: the trigger reads `allLabel` while everything is ticked, and there is no Clear button. */
+  allWhenFull?: boolean;
 }
 
-export function MultiSelect({ label, options, value, onChange, allLabel, selectAll, onCreateNew, createLabel }: MultiSelectProps) {
+export function MultiSelect({ label, options, value, onChange, allLabel, selectAll, onCreateNew, createLabel, allWhenFull }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const shown = useMemo(() => {
@@ -36,11 +38,21 @@ export function MultiSelect({ label, options, value, onChange, allLabel, selectA
     onChange(allShown ? value.filter((v) => !shown.some((o) => o.value === v)) : [...value, ...shown.map((o) => o.value).filter((v) => !value.includes(v))]);
   const toggle = (v: string) => onChange(value.includes(v) ? value.filter((x) => x !== v) : [...value, v]);
 
+  const everyLabel = allLabel ?? `All ${label.toLowerCase()}s`;
+  const triggerText =
+    allWhenFull && options.length > 0 && value.length === options.length
+      ? everyLabel
+      : value.length
+        ? `${label} (${value.length})`
+        : allWhenFull
+          ? 'None selected'
+          : everyLabel;
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button variant="outline" className="w-48 justify-between font-normal">
-          <span className="truncate">{value.length ? `${label} (${value.length})` : (allLabel ?? `All ${label.toLowerCase()}s`)}</span>
+          <span className="truncate">{triggerText}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
@@ -79,7 +91,7 @@ export function MultiSelect({ label, options, value, onChange, allLabel, selectA
             </label>
           ))}
         </div>
-        {value.length > 0 && (
+        {value.length > 0 && !allWhenFull && (
           <Button variant="ghost" size="sm" className="mt-2 w-full" onClick={() => onChange([])}>
             Clear
           </Button>

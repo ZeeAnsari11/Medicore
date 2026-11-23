@@ -10,6 +10,7 @@ import { StockTransfer, StockTransferSchema } from './schemas/stock-transfer.sch
 import { StockTransfersService } from './stock-transfers.service';
 import { StockTransfersController } from './stock-transfers.controller';
 import { Branch, BranchSchema } from '../branches/schemas/branch.schema';
+import { TenantsModule } from '../tenants/tenants.module';
 import { SequenceModule } from '../../common/sequence/sequence.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { SequenceModule } from '../../common/sequence/sequence.module';
       { name: Branch.name, schema: BranchSchema },
     ]),
     SequenceModule,
+    TenantsModule,
   ],
   providers: [BatchesService, BatchAllocationService, StockTransfersService],
   controllers: [InventoryController, StockTransfersController],

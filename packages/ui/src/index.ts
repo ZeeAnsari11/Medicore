@@ -16,6 +16,7 @@ export { Input } from './primitives/input';
 export { Label } from './primitives/label';
 export { Alert, AlertTitle, AlertDescription } from './primitives/alert';
 export { Badge, badgeVariants, type BadgeProps } from './primitives/badge';
+export { Skeleton } from './primitives/skeleton';
 export {
   DropdownMenu,
   DropdownMenuTrigger,

@@ -90,6 +90,10 @@ export class Purchase {
   @Prop({ required: true, min: 0, default: 0 })
   amountPaid: number;
 
+  /** Part of `amountPaid` settled from the vendor's advance rather than cash. */
+  @Prop({ min: 0, default: 0 })
+  advanceApplied?: number;
+
   @Prop({ required: true, default: Date.now })
   purchaseDate: Date;
 

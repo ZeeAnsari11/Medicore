@@ -30,6 +30,7 @@ export function SaleLinesList({ lines, editingGroupId, onEdit, onRemove }: SaleL
             <TableHead className="h-9 px-2 text-xs">Product</TableHead>
             <TableHead className="h-9 px-2 text-xs">Batch #</TableHead>
             <TableHead className="h-9 px-2 text-right text-xs">Qty</TableHead>
+            <TableHead className="h-9 px-2 text-right text-xs">Bonus</TableHead>
             <TableHead className="h-9 px-2 text-right text-xs">Unit price</TableHead>
             <TableHead className="h-9 px-2 text-right text-xs">Disc %</TableHead>
             <TableHead className="h-9 px-2 text-right text-xs">Tax %</TableHead>
@@ -48,6 +49,7 @@ export function SaleLinesList({ lines, editingGroupId, onEdit, onRemove }: SaleL
               <TableCell className="px-2 text-sm">{line.productName}</TableCell>
               <TableCell className="px-2 text-sm">{line.batchNumber}</TableCell>
               <TableCell className="px-2 text-right text-sm tabular-nums">{line.quantity}</TableCell>
+              <TableCell className="px-2 text-right text-sm tabular-nums">{line.bonus || ''}</TableCell>
               <TableCell className="px-2 text-right text-sm tabular-nums">{line.unitPrice.toFixed(2)}</TableCell>
               <TableCell className="px-2 text-right text-sm tabular-nums">{line.discountPercent ?? 0}</TableCell>
               <TableCell className="px-2 text-right text-sm tabular-nums">{line.taxPercent ?? 0}</TableCell>

@@ -10,6 +10,7 @@ import { StockMovement, StockMovementDocument } from '../inventory/schemas/stock
 import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { Branch, BranchDocument } from '../branches/schemas/branch.schema';
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
+import { Vendor, VendorDocument } from '../vendors/schemas/vendor.schema';
 import { SequenceService } from '../../common/sequence/sequence.service';
 import { runWithoutBranchScope } from '../../common/tenancy/tenant-context';
 import { AccountingPostingService, round2 } from './accounting-posting.service';
@@ -63,6 +64,9 @@ function paymentStatusFor(paid: number, net: number): PaymentStatus {
       : PaymentStatus.UNPAID;
 }
 
+/** Key of a batch's bonus (free) units in the returned-so-far maps, apart from its paid units. */
+const bonusKey = (batchId: string) => `bonus:${batchId}`;
+
 @Injectable()
 export class ReturnsService {
   constructor(
@@ -77,6 +81,7 @@ export class ReturnsService {
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Branch.name) private readonly branchModel: Model<BranchDocument>,
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
+    @InjectModel(Vendor.name) private readonly vendorModel: Model<VendorDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly postingService: AccountingPostingService,
     private readonly sequenceService: SequenceService,
@@ -123,6 +128,16 @@ export class ReturnsService {
       taxPercent: item.taxPercent,
       batchAllocations: item.batchAllocations.map((a) => {
         const returned = alreadyReturned.get(a.batchId) ?? 0;
+        return {
+          batchId: a.batchId,
+          batchNumber: a.batchNumber,
+          originalQuantity: a.quantity,
+          alreadyReturned: returned,
+          returnable: round2(Math.max(a.quantity - returned, 0)),
+        };
+      }),
+      bonusAllocations: (item.bonusAllocations ?? []).map((a) => {
+        const returned = alreadyReturned.get(bonusKey(a.batchId)) ?? 0;
         return {
           batchId: a.batchId,
           batchNumber: a.batchNumber,
@@ -191,6 +206,10 @@ export class ReturnsService {
             allocation.batchId,
             (totals.get(allocation.batchId) ?? 0) + allocation.quantity,
           );
+        }
+        for (const allocation of item.bonusAllocations ?? []) {
+          const key = bonusKey(allocation.batchId);
+          totals.set(key, (totals.get(key) ?? 0) + allocation.quantity);
         }
       }
     }
@@ -277,8 +296,14 @@ export class ReturnsService {
             quantity: round2(a.quantity - (returned.get(a.batchId) ?? 0)),
           }))
           .filter((a) => a.quantity > 0),
+        bonusAllocations: (item.bonusAllocations ?? [])
+          .map((a) => ({
+            batchId: a.batchId,
+            quantity: round2(a.quantity - (returned.get(bonusKey(a.batchId)) ?? 0)),
+          }))
+          .filter((a) => a.quantity > 0),
       }))
-      .filter((i) => i.batchAllocations.length > 0);
+      .filter((i) => i.batchAllocations.length > 0 || i.bonusAllocations.length > 0);
     if (items.length === 0) throw new BadRequestException('This invoice is already fully returned');
 
     await this.applySaleReturn(
@@ -302,14 +327,8 @@ export class ReturnsService {
     branchId: string,
     type: 'sale-return' | 'purchase-return',
   ): Promise<string> {
-    // Sale returns run 1, 2, 3 per tenant, like payments.
-    if (type === 'sale-return') return String(await this.sequenceService.next(tenantId, null, 'sale-return-seq', session));
-    const branch = await this.branchModel
-      .findOne({ _id: new Types.ObjectId(branchId), tenantId: new Types.ObjectId(tenantId) })
-      .session(session);
-    if (!branch) throw new NotFoundException('Branch not found');
-    const seq = await this.sequenceService.next(tenantId, branchId, type, session);
-    return `PR-${branch.code}-${new Date().getFullYear()}-${String(seq).padStart(6, '0')}`;
+    // Sale and purchase returns each run 1, 2, 3 per tenant, like payments.
+    return String(await this.sequenceService.next(tenantId, null, `${type}-seq`, session));
   }
 
   private async applySaleReturn(
@@ -347,15 +366,22 @@ export class ReturnsService {
         throw new BadRequestException(`Product ${requestedItem.productId} was not part of this sale`);
       }
 
+      if (requestedItem.batchAllocations.length === 0 && !requestedItem.bonusAllocations?.length) {
+        throw new BadRequestException(`Nothing to return for product ${requestedItem.productId}`);
+      }
       const allocations: Array<Record<string, unknown>> = [];
-      for (const requested of requestedItem.batchAllocations) {
-        const original = saleItem.batchAllocations.find((a) => a.batchId === requested.batchId);
+      const bonusReturns: Array<Record<string, unknown>> = [];
+      // Bonus (free) units are tracked under their own key and are worth nothing: stock and cost
+      // come back like any return, but no revenue or tax is refunded for them.
+      const giveBack = async (requested: (typeof requestedItem.batchAllocations)[number], free: boolean) => {
+        const key = free ? bonusKey(requested.batchId) : requested.batchId;
+        const original = (free ? (saleItem.bonusAllocations ?? []) : saleItem.batchAllocations).find((a) => a.batchId === requested.batchId);
         if (!original) {
           throw new BadRequestException(
             `Batch ${requested.batchId} was not part of this sale's allocation for ${requestedItem.productId}`,
           );
         }
-        const returnedSoFar = alreadyReturned.get(requested.batchId) ?? 0;
+        const returnedSoFar = alreadyReturned.get(key) ?? 0;
         const returnable = round2(original.quantity - returnedSoFar);
         if (requested.quantity > returnable + 0.0001) {
           throw new BadRequestException(
@@ -399,7 +425,7 @@ export class ReturnsService {
         );
 
         // Value from the ORIGINAL line's price, discount and tax, never today's product price.
-        const lineSubtotal = requested.quantity * saleItem.unitPrice;
+        const lineSubtotal = free ? 0 : requested.quantity * saleItem.unitPrice;
         const taxable = lineSubtotal - lineSubtotal * ((saleItem.discountPercent ?? 0) / 100);
         const lineTax = taxable * ((saleItem.taxPercent ?? 0) / 100);
         revenue += taxable;
@@ -408,7 +434,7 @@ export class ReturnsService {
         if (restock) restockCost += cost;
         else writeOffCost += cost;
 
-        allocations.push({
+        (free ? bonusReturns : allocations).push({
           batchId: requested.batchId,
           batchNumber: original.batchNumber,
           quantity: requested.quantity,
@@ -416,8 +442,10 @@ export class ReturnsService {
           total: round2(taxable + lineTax),
           unitCost: batch.purchasePrice,
         });
-        alreadyReturned.set(requested.batchId, returnedSoFar + requested.quantity);
-      }
+        alreadyReturned.set(key, returnedSoFar + requested.quantity);
+      };
+      for (const requested of requestedItem.batchAllocations) await giveBack(requested, false);
+      for (const requested of requestedItem.bonusAllocations ?? []) await giveBack(requested, true);
 
       returnItems.push({
         productId: requestedItem.productId,
@@ -426,6 +454,7 @@ export class ReturnsService {
         discountPercent: saleItem.discountPercent,
         taxPercent: saleItem.taxPercent,
         batchAllocations: allocations,
+        bonusAllocations: bonusReturns,
       });
     }
 
@@ -504,6 +533,10 @@ export class ReturnsService {
         sum +
         item.batchAllocations.reduce(
           (inner, a) => inner + Math.max(a.quantity - (alreadyReturned.get(a.batchId) ?? 0), 0),
+          0,
+        ) +
+        (item.bonusAllocations ?? []).reduce(
+          (inner, a) => inner + Math.max(a.quantity - (alreadyReturned.get(bonusKey(a.batchId)) ?? 0), 0),
           0,
         ),
       0,
@@ -789,6 +822,10 @@ export class ReturnsService {
             (totals.get(allocation.batchId) ?? 0) + allocation.quantity,
           );
         }
+        for (const allocation of item.bonusAllocations ?? []) {
+          const key = bonusKey(allocation.batchId);
+          totals.set(key, (totals.get(key) ?? 0) + allocation.quantity);
+        }
       }
     }
     return totals;
@@ -866,6 +903,7 @@ export class ReturnsService {
         discountPercent: i.discountPercent,
         taxPercent: i.taxPercent,
         batchAllocations: i.batchAllocations,
+        bonusAllocations: i.bonusAllocations ?? [],
       })),
       reason: obj.reason,
       reasonCode: obj.reasonCode,
@@ -880,6 +918,30 @@ export class ReturnsService {
       createdAt: obj.createdAt,
       updatedAt: obj.updatedAt,
     };
+  }
+
+  /** The history list: each return with its purchase number and vendor (two lookups for the whole list). */
+  async toPurchaseReturnResponses(tenantId: string, returns: PurchaseReturnDocument[]): Promise<PurchaseReturnType[]> {
+    const tenantOid = new Types.ObjectId(tenantId);
+    const purchaseIds = [...new Set(returns.map((r) => r.purchaseId))];
+    const purchases = purchaseIds.length
+      ? await this.purchaseModel.find({ tenantId: tenantOid, _id: { $in: purchaseIds } }).select('purchaseNumber vendorId').lean()
+      : [];
+    const vendorIds = [...new Set(purchases.map((p) => String(p.vendorId)))];
+    const vendors = vendorIds.length
+      ? await this.vendorModel.find({ tenantId: tenantOid, _id: { $in: vendorIds } }).select('company').lean()
+      : [];
+    const nameOf = new Map(vendors.map((v): [string, string] => [String(v._id), v.company]));
+    const purchaseOf = new Map(purchases.map((p) => [String(p._id), p]));
+    return returns.map((r) => {
+      const purchase = purchaseOf.get(r.purchaseId);
+      return {
+        ...this.toPurchaseReturnResponse(r),
+        purchaseNumber: purchase?.purchaseNumber,
+        vendorId: purchase ? String(purchase.vendorId) : undefined,
+        vendorName: purchase ? nameOf.get(String(purchase.vendorId)) : undefined,
+      };
+    });
   }
 
   /** The history list: each return with its invoice number and customer (two lookups for the whole list). */

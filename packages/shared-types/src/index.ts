@@ -39,6 +39,7 @@ export type {
   UpdatePurchasePaymentRequest,
   UpdatePurchaseRequest,
   PurchasePaymentRow,
+  VendorAdvanceResponse,
   PaginatedPurchases,
 } from './purchase';
 export type { Customer, CreateCustomerRequest, UpdateCustomerRequest } from './customer';
@@ -47,6 +48,7 @@ export type {
   SaleItem,
   SaleBatchAllocation,
   CreateSaleRequest,
+  CustomerAdvanceResponse,
   CreateSaleItemRequest,
   UpdateSalePaymentRequest,
   UpdateSaleRequest,
@@ -60,6 +62,7 @@ export type {
   ProcessOrdersRequest,
   ProcessOrdersResult,
 } from './sale';
+export { WALK_IN_CUSTOMER_ID } from './sale';
 export type { Permission, CreatePermissionRequest, UpdatePermissionRequest, UpdatePermissionStatusRequest } from './permission';
 export type { Role, CreateRoleRequest, UpdateRoleRequest, UpdateRoleStatusRequest } from './role';
 export type { User, CreateUserRequest, CreateUserResponse, UpdateUserRequest, UpdateUserStatusRequest, AuthenticatedUser } from './user';
@@ -75,8 +78,6 @@ export type {
   SalesReportCategoryBreakdown,
   SalesReportPaymentStatusBreakdown,
   SalesReportSummary,
-  OrderBookerReportRow,
-  OrderBookerReport,
   InventoryReport,
   InventoryReportSummary,
   InventoryReportCategoryBreakdown,
@@ -100,6 +101,9 @@ export type {
   AllocatePaymentRequest,
   Expense,
   CreateExpenseRequest,
+  ExpenseCategory,
+  CreateExpenseCategoryRequest,
+  UpdateExpenseCategoryRequest,
   ReturnSettlement,
   ReturnSettlementRequest,
   SaleReturnBatchAllocation,
@@ -128,6 +132,10 @@ export type {
   TrialBalanceResponse,
   ProfitLossRow,
   ProfitLossResponse,
+  ProfitGroupBy,
+  ProfitBreakdownRow,
+  ProfitBreakdownResponse,
+  ProfitStatement,
   BalanceSheetRow,
   BalanceSheetResponse,
   AccountingOverviewResponse,
@@ -154,9 +162,12 @@ export type {
   SupplyLedgerLine,
   SupplyLedgerInvoice,
   SupplyLedgerBooker,
+  SupplyLedgerCity,
   SupplyLedgerReport,
   SupplySummaryRow,
   SupplySummaryArea,
   SupplySummaryBooker,
+  SupplySummaryCity,
   SupplySummaryReport,
 } from './supply-report';
+export { NO_CITY_FILTER, NO_TERRITORY_FILTER, territoriesOfCities } from './supply-report';

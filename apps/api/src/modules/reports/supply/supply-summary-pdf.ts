@@ -57,18 +57,18 @@ export function buildSupplySummaryPdf(report: SupplySummaryReport): PDFKit.PDFDo
     }
   };
 
-  if (report.bookers.length === 0) {
+  if (report.cities.length === 0) {
     doc.font('Helvetica').fontSize(10).fillColor(GREY).text('No supplies match these filters.', MARGIN, y + 10, { lineBreak: false });
   }
 
-  for (const booker of report.bookers) {
-    // The booker heading is kept with its first area and row.
+  for (const city of report.cities) {
+    // The city heading is kept with its first area and row.
     ensure(ROW * 5);
-    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
-    cell(doc, `Order Booker: ${booker.orderBookerName}`, MARGIN, y, 400);
-    y += ROW + 3;
+    doc.font('Helvetica-Bold').fontSize(10).fillColor('#000');
+    cell(doc, `City: ${city.city}`, MARGIN, y, 400);
+    y += ROW + 4;
 
-    for (const area of booker.areas) {
+    for (const area of city.areas) {
       // The area heading is kept with its first rows.
       ensure(ROW * 3);
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#000');
@@ -84,10 +84,11 @@ export function buildSupplySummaryPdf(report: SupplySummaryReport): PDFKit.PDFDo
         cell(doc, r.previous === 0 ? '' : drCr(r.previous), X.prev, y, W.prev, 'right');
         cell(doc, money(r.net), X.net, y, W.net, 'right');
         cell(doc, drCr(r.total), X.total, y, W.total, 'right');
-        // Blank lines to write the received and returned amounts on.
+        // Received is filled in for invoices paid from advance; otherwise (and for returns) blank lines to write on.
         doc.save();
         doc.strokeColor('#000').lineWidth(0.5);
-        doc.moveTo(X.recv + 4, y + ROW - 2).lineTo(X.recv + W.recv - 2, y + ROW - 2).stroke();
+        if (r.received) cell(doc, money(r.received), X.recv, y, W.recv, 'right');
+        else doc.moveTo(X.recv + 4, y + ROW - 2).lineTo(X.recv + W.recv - 2, y + ROW - 2).stroke();
         doc.moveTo(X.ret + 4, y + ROW - 2).lineTo(X.ret + W.ret, y + ROW - 2).stroke();
         doc.restore();
         y += ROW;
@@ -99,20 +100,22 @@ export function buildSupplySummaryPdf(report: SupplySummaryReport): PDFKit.PDFDo
       cell(doc, drCr(area.subtotal.previous), X.prev, y + 2, W.prev, 'right');
       cell(doc, money(area.subtotal.net), X.net, y + 2, W.net, 'right');
       cell(doc, drCr(area.subtotal.total), X.total, y + 2, W.total, 'right');
+      if (area.subtotal.received) cell(doc, money(area.subtotal.received), X.recv, y + 2, W.recv, 'right');
       y += ROW + 8;
     }
 
     ensure(ROW * 2);
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor('#000');
     rule(doc, y, GREY);
-    cell(doc, `Total: ${booker.orderBookerName}`, X.name - 40, y + 3, W.name + 40);
-    cell(doc, drCr(booker.subtotal.previous), X.prev, y + 3, W.prev, 'right');
-    cell(doc, money(booker.subtotal.net), X.net, y + 3, W.net, 'right');
-    cell(doc, drCr(booker.subtotal.total), X.total, y + 3, W.total, 'right');
+    cell(doc, `Sub Total: ${city.city}`, X.name - 40, y + 3, W.name + 40);
+    cell(doc, drCr(city.subtotal.previous), X.prev, y + 3, W.prev, 'right');
+    cell(doc, money(city.subtotal.net), X.net, y + 3, W.net, 'right');
+    cell(doc, drCr(city.subtotal.total), X.total, y + 3, W.total, 'right');
+    if (city.subtotal.received) cell(doc, money(city.subtotal.received), X.recv, y + 3, W.recv, 'right');
     y += ROW + 10;
   }
 
-  if (report.bookers.length > 0) {
+  if (report.cities.length > 1) {
     ensure(ROW * 2);
     doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
     rule(doc, y, GREY);
@@ -120,6 +123,30 @@ export function buildSupplySummaryPdf(report: SupplySummaryReport): PDFKit.PDFDo
     cell(doc, drCr(report.grand.previous), X.prev, y + 3, W.prev, 'right');
     cell(doc, money(report.grand.net), X.net, y + 3, W.net, 'right');
     cell(doc, drCr(report.grand.total), X.total, y + 3, W.total, 'right');
+    if (report.grand.received) cell(doc, money(report.grand.received), X.recv, y + 3, W.recv, 'right');
+    y += ROW + 10;
+  }
+
+  // Closing block: what each order booker booked on the sheet (their invoices' net), name then amount.
+  if (report.bookers.length > 0) {
+    y += 6;
+    // Heading, rows and total stay together on one page.
+    ensure(ROW * (report.bookers.length + 3));
+    doc.font('Helvetica-Bold').fontSize(9).fillColor('#000');
+    cell(doc, 'Order Booker', X.code, y, 250);
+    cell(doc, 'Booked', X.total, y, W.total, 'right');
+    rule(doc, y + ROW - 1, GREY);
+    y += ROW + 2;
+    doc.font('Helvetica').fontSize(8.5);
+    for (const b of report.bookers) {
+      cell(doc, b.orderBookerName, X.code, y, 250);
+      cell(doc, money(b.subtotal.net), X.total, y, W.total, 'right');
+      y += ROW;
+    }
+    rule(doc, y, GREY);
+    doc.font('Helvetica-Bold').fontSize(9);
+    cell(doc, 'Total Booked', X.code, y + 3, 250);
+    cell(doc, money(report.grand.net), X.total, y + 3, W.total, 'right');
   }
 
   stampPages(doc, h);

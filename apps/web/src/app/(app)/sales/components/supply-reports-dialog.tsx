@@ -28,6 +28,7 @@ import { useLocations } from '@/hooks/use-locations';
 import { usePermissions } from '@/hooks/use-permissions';
 import { CityQuickCreateDialog, TerritoryQuickCreateDialog } from '../../customers/components/location-quick-create-dialogs';
 import { SUPPLY_MAX_DAYS, supplyLedgerPath, supplySummaryPath, useSupplyFilters } from '@/hooks/use-supply-reports';
+import { NO_CITY_FILTER, NO_TERRITORY_FILTER, territoriesOfCities } from '@medicore/shared-types';
 import type { SupplyReportQuery } from '@medicore/shared-types';
 
 type Preset = 'today' | 'week' | 'month' | 'custom';
@@ -72,8 +73,10 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
   const [range, setRange] = useState(() => presetRange('today'));
   const [invoiceFrom, setInvoiceFrom] = useState('');
   const [invoiceTo, setInvoiceTo] = useState('');
-  const [cities, setCities] = useState<string[]>([]);
-  const [territories, setTerritories] = useState<string[]>([]);
+  // Everything starts ticked: what is stored is what was unticked, so new cities and territories arrive ticked.
+  const [offCities, setOffCities] = useState<string[]>([]);
+  const [offTerritories, setOffTerritories] = useState<string[]>([]);
+  const [offManufacturers, setOffManufacturers] = useState<string[]>([]);
   const [bookerIds, setBookerIds] = useState<string[]>([]);
   const [customerIds, setCustomerIds] = useState<string[]>([]);
 
@@ -94,10 +97,23 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
   const [cityDialog, setCityDialog] = useState(false);
   const [territoryDialog, setTerritoryDialog] = useState(false);
   const merged = (used: string[], listed: string[]) => [...new Set([...used, ...listed])].sort((a, b) => a.localeCompare(b));
-  const options = (xs: string[]) => xs.map((x) => ({ value: x, label: x }));
   const cityNames = merged(filters.cities, cityList.filter((c) => c.isActive).map((c) => c.name));
-  const territoryNames = merged(filters.territories, territoryList.filter((t) => t.isActive).map((t) => t.name));
   const cityChoices = cityList.filter((c) => c.isActive);
+  const cityValues = [...cityNames, NO_CITY_FILTER];
+  const cities = cityValues.filter((c) => !offCities.includes(c));
+  // Territories follow the ticked cities: unticking a city removes its territories from the list.
+  const cityIdName = new Map(cityList.map((c) => [c.id, c.name]));
+  const places = [
+    ...filters.places,
+    ...territoryList.filter((t) => t.isActive).flatMap((t) => (cityIdName.has(t.cityId) ? [{ city: cityIdName.get(t.cityId)!, territory: t.name }] : [])),
+  ];
+  // The selected branch's manufacturers, all ticked to start with.
+  const manufacturerValues = filters.manufacturers.map((m) => m.id);
+  const manufacturers = manufacturerValues.filter((m) => !offManufacturers.includes(m));
+  const territoryValues = territoriesOfCities(cities, places);
+  const territories = territoryValues.filter((t) => !offTerritories.includes(t));
+  const cityLabel = (v: string) => (v === NO_CITY_FILTER ? 'No city' : v);
+  const territoryLabel = (v: string) => (v === NO_TERRITORY_FILTER ? 'No territory' : v);
   const tickedCity = cityList.find((c) => cities.length === 1 && c.name.toLowerCase() === cities[0].toLowerCase());
   const bookerOptions = useMemo(() => orderBookers.map((b) => ({ value: b.id, label: b.name })), [orderBookers]);
   const customerOptions = useMemo(() => customers.map((c) => ({ value: c.id, label: c.name })), [customers]);
@@ -105,8 +121,9 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
   const chooseBranch = (id: string) => {
     setPickedBranch(id);
     // City, territory, booker and customer lists belong to a branch, so earlier picks no longer apply.
-    setCities([]);
-    setTerritories([]);
+    setOffCities([]);
+    setOffTerritories([]);
+    setOffManufacturers([]);
     setBookerIds([]);
     setCustomerIds([]);
   };
@@ -116,22 +133,34 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
     if (p !== 'custom') setRange(presetRange(p));
   };
 
+  // An invoice number range picks the invoices by itself: the period is not applied (or checked).
+  const byInvoice = !!(invoiceFrom || invoiceTo);
   const days = (new Date(range.to).getTime() - new Date(range.from).getTime()) / 86_400_000;
   const problem = !branchId
     ? 'Choose a branch first: invoice numbers repeat across branches.'
-    : !range.from || !range.to
-      ? 'Choose both dates.'
-      : days < 0
-        ? '"From" is after "To".'
-        : days > SUPPLY_MAX_DAYS
-          ? `Choose a period of at most ${SUPPLY_MAX_DAYS} days.`
-          : invoiceFrom && invoiceTo && Number(invoiceFrom) > Number(invoiceTo)
-            ? 'Invoice "from" is after "to".'
-            : null;
+    : !filters.ready
+      ? 'Loading cities…'
+      : cities.length === 0
+        ? 'Select at least one city.'
+        : territories.length === 0
+          ? 'Select at least one territory.'
+          : manufacturerValues.length > 0 && manufacturers.length === 0
+            ? 'Select at least one manufacturer.'
+            : invoiceFrom && invoiceTo && Number(invoiceFrom) > Number(invoiceTo)
+      ? 'Invoice "from" is after "to".'
+      : byInvoice
+        ? null
+        : !range.from || !range.to
+          ? 'Choose both dates.'
+          : days < 0
+            ? '"From" is after "To".'
+            : days > SUPPLY_MAX_DAYS
+              ? `Choose a period of at most ${SUPPLY_MAX_DAYS} days.`
+              : null;
 
   const query: SupplyReportQuery = {
-    from: range.from,
-    to: range.to,
+    from: byInvoice ? undefined : range.from,
+    to: byInvoice ? undefined : range.to,
     branchId: branchId ?? undefined,
     invoiceFrom: invoiceFrom || undefined,
     invoiceTo: invoiceTo || undefined,
@@ -139,13 +168,16 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
     territory: territories,
     orderBookerIds: bookerIds,
     customerIds,
+    // Only sent when some are unticked: all ticked means every manufacturer.
+    manufacturerIds: manufacturers.length === manufacturerValues.length ? undefined : manufacturers,
   };
 
   const clear = () => {
     setInvoiceFrom('');
     setInvoiceTo('');
-    setCities([]);
-    setTerritories([]);
+    setOffCities([]);
+    setOffTerritories([]);
+    setOffManufacturers([]);
     setBookerIds([]);
     setCustomerIds([]);
   };
@@ -179,38 +211,43 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
 
           <div className="space-y-1.5">
             <Label>Period</Label>
-            <div className="flex flex-wrap items-center gap-2">
-              {PRESETS.map(([p, label]) => (
-                <Button key={p} size="sm" variant={preset === p ? 'default' : 'outline'} onClick={() => choosePreset(p)}>
-                  {label}
-                </Button>
-              ))}
-              <label className="flex items-center gap-2 text-sm">
-                From
-                <Input
-                  type="date"
-                  className="w-40"
-                  value={range.from}
-                  max={range.to || undefined}
-                  onChange={(e) => {
-                    setPreset('custom');
-                    setRange((r) => ({ ...r, from: e.target.value }));
-                  }}
-                />
-              </label>
-              <label className="flex items-center gap-2 text-sm">
-                To
-                <Input
-                  type="date"
-                  className="w-40"
-                  value={range.to}
-                  min={range.from || undefined}
-                  onChange={(e) => {
-                    setPreset('custom');
-                    setRange((r) => ({ ...r, to: e.target.value }));
-                  }}
-                />
-              </label>
+            {byInvoice && <p className="text-xs text-muted-foreground">Not applied while an invoice number range is set.</p>}
+            <div className={`space-y-2 ${byInvoice ? 'pointer-events-none opacity-50' : ''}`} aria-disabled={byInvoice}>
+              <div className="flex flex-wrap items-center gap-2">
+                {PRESETS.map(([p, label]) => (
+                  <Button key={p} size="sm" variant={preset === p ? 'default' : 'outline'} onClick={() => choosePreset(p)}>
+                    {label}
+                  </Button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <label className="flex items-center gap-2 text-sm">
+                  From
+                  <Input
+                    type="date"
+                    className="w-40"
+                    value={range.from}
+                    max={range.to || undefined}
+                    onChange={(e) => {
+                      setPreset('custom');
+                      setRange((r) => ({ ...r, from: e.target.value }));
+                    }}
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  To
+                  <Input
+                    type="date"
+                    className="w-40"
+                    value={range.to}
+                    min={range.from || undefined}
+                    onChange={(e) => {
+                      setPreset('custom');
+                      setRange((r) => ({ ...r, to: e.target.value }));
+                    }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
 
@@ -222,9 +259,10 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <MultiSelect label="City" allLabel="All cities" selectAll options={options(cityNames)} value={cities} onChange={setCities} onCreateNew={canCreate ? () => setCityDialog(true) : undefined} createLabel="Create city" />
-            <MultiSelect label="Territory" allLabel="All territories" selectAll options={options(territoryNames)} value={territories} onChange={setTerritories} onCreateNew={canCreate ? () => setTerritoryDialog(true) : undefined} createLabel="Create territory" />
+            <MultiSelect label="City" allLabel="All cities" allWhenFull selectAll options={cityValues.map((v) => ({ value: v, label: cityLabel(v) }))} value={cities} onChange={(next) => setOffCities(cityValues.filter((c) => !next.includes(c)))} onCreateNew={canCreate ? () => setCityDialog(true) : undefined} createLabel="Create city" />
+            <MultiSelect label="Territory" allLabel="All territories" allWhenFull selectAll options={territoryValues.map((v) => ({ value: v, label: territoryLabel(v) }))} value={territories} onChange={(next) => setOffTerritories(territoryValues.filter((t) => !next.includes(t)))} onCreateNew={canCreate ? () => setTerritoryDialog(true) : undefined} createLabel="Create territory" />
             {canPickBookers && <MultiSelect label="Order Booker" selectAll options={bookerOptions} value={bookerIds} onChange={setBookerIds} />}
+            <MultiSelect label="Manufacturer" allLabel="All manufacturers" allWhenFull selectAll options={filters.manufacturers.map((m) => ({ value: m.id, label: m.name }))} value={manufacturers} onChange={(next) => setOffManufacturers(manufacturerValues.filter((m) => !next.includes(m)))} />
             <MultiSelect label="Customer" options={customerOptions} value={customerIds} onChange={setCustomerIds} />
           </div>
 
@@ -253,14 +291,14 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
         open={cityDialog}
         branchId={branchId}
         onOpenChange={setCityDialog}
-        onCreated={(name) => setCities((xs) => (xs.includes(name) ? xs : [...xs, name]))}
+        onCreated={(name) => setOffCities((xs) => xs.filter((x) => x !== name))}
       />
       <TerritoryQuickCreateDialog
         open={territoryDialog}
         cityChoices={cityChoices}
         defaultCityId={tickedCity?.id}
         onOpenChange={setTerritoryDialog}
-        onCreated={(name) => setTerritories((xs) => (xs.includes(name) ? xs : [...xs, name]))}
+        onCreated={(name) => setOffTerritories((xs) => xs.filter((x) => x !== name))}
       />
     </Dialog>
   );

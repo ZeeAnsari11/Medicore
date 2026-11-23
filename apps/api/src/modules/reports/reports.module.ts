@@ -19,6 +19,10 @@ import { SsrService } from './ssr/ssr.service';
 import { SsrExportService } from './ssr/ssr-export.service';
 import { Account, AccountSchema } from '../accounting/schemas/account.schema';
 import { JournalEntry, JournalEntrySchema } from '../accounting/schemas/journal-entry.schema';
+import { ProfitBreakdownController } from './profit/profit-breakdown.controller';
+import { ProfitBreakdownService } from './profit/profit-breakdown.service';
+import { ProfitStatementController } from './profit/profit-statement.controller';
+import { ProfitStatementService } from './profit/profit-statement.service';
 import { SupplyReportsController } from './supply/supply-reports.controller';
 import { SupplyReportsService } from './supply/supply-reports.service';
 import { TenantsModule } from '../tenants/tenants.module';
@@ -46,7 +50,7 @@ import { RolesModule } from '../roles/roles.module';
     ]),
     InventoryModule,
   ],
-  providers: [ReportsService, DashboardService, SsrService, SsrExportService, SupplyReportsService],
-  controllers: [ReportsController, SsrController, SupplyReportsController],
+  providers: [ReportsService, DashboardService, SsrService, SsrExportService, SupplyReportsService, ProfitBreakdownService, ProfitStatementService],
+  controllers: [ReportsController, SsrController, SupplyReportsController, ProfitBreakdownController, ProfitStatementController],
 })
 export class ReportsModule {}

@@ -9,6 +9,8 @@ export interface SaleLine {
   batchId: string;
   batchNumber: string;
   quantity: number;
+  /** Free units taken from this batch on top of `quantity`; not charged. */
+  bonus: number;
   unitPrice: number;
   discountPercent?: number;
   taxPercent?: number;
@@ -36,7 +38,7 @@ export function usedByBatch(lines: SaleLine[], excludeGroupId?: string | null): 
   const used = new Map<string, number>();
   for (const line of lines) {
     if (line.groupId === excludeGroupId) continue;
-    used.set(line.batchId, (used.get(line.batchId) ?? 0) + line.quantity);
+    used.set(line.batchId, (used.get(line.batchId) ?? 0) + line.quantity + line.bonus);
   }
   return used;
 }
@@ -82,4 +84,17 @@ export function allocateAcrossBatches(
     remaining -= take;
   }
   return { allocations, unmet: Math.max(remaining, 0) };
+}
+
+/**
+ * Splits allocations made for "paid + bonus" units: the first `paid` units are the sold quantity,
+ * the rest are free. One entry per batch, so a batch can carry both (or only bonus).
+ */
+export function splitPaidAndBonus(allocations: Allocation[], paid: number): Array<{ batch: Batch; quantity: number; bonus: number }> {
+  let left = paid;
+  return allocations.map(({ batch, quantity }) => {
+    const sold = Math.min(quantity, left);
+    left -= sold;
+    return { batch, quantity: sold, bonus: quantity - sold };
+  });
 }

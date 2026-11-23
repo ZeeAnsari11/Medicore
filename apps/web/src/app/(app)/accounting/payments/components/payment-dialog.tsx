@@ -155,6 +155,15 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
 
   const canSubmit = partyId && amountNum > 0 && accountId && remainder >= -0.01;
 
+  // Money not tied to a bill is held as an advance; the saved description says so unless the user writes their own.
+  const isAdvance = !!partyId && amountNum > 0 && remainder > 0.005;
+  const advanceLabel =
+    allocatedTotal > 0.005
+      ? `Includes advance of ${remainder.toFixed(2)}`
+      : partyType === PartyType.CUSTOMER
+        ? 'Advance received'
+        : 'Advance payment';
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl">
@@ -245,10 +254,23 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
               <Input placeholder="Optional" value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Notes</Label>
-              <Input placeholder="Optional" value={notes} onChange={(e) => setNotes(e.target.value)} />
+              <Label>Description / notes</Label>
+              <Input
+                placeholder={isAdvance ? advanceLabel : 'Optional'}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
             </div>
           </div>
+
+          {isAdvance && (
+            <div className="rounded-md border border-primary/40 bg-primary/5 p-3 text-sm">
+              <span className="font-semibold tabular-nums">{remainder.toFixed(2)}</span>{' '}
+              {partyType === PartyType.CUSTOMER ? 'will be held as an advance from' : 'will be held as an advance with'} this{' '}
+              {partyType === PartyType.CUSTOMER ? 'customer' : 'vendor'}. It is saved as &ldquo;{notes.trim() || advanceLabel}&rdquo;
+              {partyType === PartyType.CUSTOMER ? ', and offered on their next sale.' : ', and offered on your next purchase from them.'}
+            </div>
+          )}
 
           {partyId && (
             <div className="space-y-2 rounded-md border p-3">

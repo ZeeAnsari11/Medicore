@@ -31,11 +31,17 @@ export class CreateSaleReturnItemDto {
   @IsMongoId()
   productId: string;
 
+  // Empty when only bonus units come back; the service rejects an item with neither.
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => SaleReturnBatchAllocationDto)
   batchAllocations: SaleReturnBatchAllocationDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => SaleReturnBatchAllocationDto)
+  @IsOptional()
+  bonusAllocations?: SaleReturnBatchAllocationDto[];
 }
 
 export class CreateSaleReturnDto {

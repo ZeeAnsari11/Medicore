@@ -1,8 +1,10 @@
+import { fitText } from '../../../common/pdf/fit-text';
 import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import type { Response } from 'express';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
+import { drawReportHeader, stampPageNumbers } from '../../../common/pdf/report-header';
 import { Model, Types } from 'mongoose';
 import { Branch, BranchDocument } from '../../branches/schemas/branch.schema';
 import { Manufacturer, ManufacturerDocument } from '../../manufacturers/schemas/manufacturer.schema';
@@ -34,9 +36,6 @@ const COLUMNS: Column[] = [
   { key: 'bonus', header: 'Bonus N. Sale', width: 12, value: (r) => r.bonus, numeric: true },
   { key: 'netSale', header: 'Net Sale', width: 10, value: (r) => r.netSale, numeric: true },
   { key: 'netSaleValue', header: 'Net Sale Value', width: 14, value: (r) => r.netSaleValue, numeric: true },
-  { key: 'expBrk', header: 'Exp Brk', width: 9, value: (r) => r.expBrk, numeric: true },
-  { key: 'transferIn', header: 'Trnf IN', width: 9, value: (r) => r.transferIn, numeric: true },
-  { key: 'transferOut', header: 'Trnf OUT', width: 9, value: (r) => r.transferOut, numeric: true },
   { key: 'closingQty', header: 'Closing Qty', width: 12, value: (r) => r.closingQty, numeric: true },
   { key: 'closingValue', header: 'Closing Stock (TP)', width: 18, value: (r) => r.closingValue, numeric: true },
   { key: 'closingValueCp', header: 'Closing Stock (CP)', width: 18, value: (r) => r.closingValueCp, numeric: true, cost: true },
@@ -198,8 +197,7 @@ export class SsrExportService {
   }
 
   /**
-   * "Sale & Stock Report (Regular)": landscape A4, tenant name and branch address top right, title
-   * centred, one block per manufacturer with a product line each, column heads repeated per page.
+   * "Sale & Stock Report (Regular)": landscape A4, shared report header, one block per manufacturer with a product line each, column heads repeated per page.
    */
   async sendStockPdf(res: Response, tenantId: string, branchId: string | null, dto: SsrExportQueryDto, result: SsrResult) {
     const tenantOid = new Types.ObjectId(tenantId);
@@ -209,8 +207,6 @@ export class SsrExportService {
       this.filterSummary(tenantId, branchId, dto, result),
     ]);
 
-    const GREEN = '#2e7d32';
-    const BLUE = '#3b78b5';
     const M = 30;
     const doc = new PDFDocument({ size: 'A4', layout: 'landscape', margin: M, bufferPages: true });
     res.setHeader('Content-Type', 'application/pdf');
@@ -223,7 +219,7 @@ export class SsrExportService {
     type PdfCol = { key: string; h1: string; h2: string; w: number; left?: boolean; get: (i: SsrRow) => string };
     const ALL_COLS: PdfCol[] = [
       { key: 'label', h1: '', h2: 'Item Description', w: 160, left: true, get: (i) => i.label },
-      { key: 'pack', h1: '', h2: 'Pack', w: 40, left: true, get: (i) => i.pack ?? '' },
+      { key: 'pack', h1: '', h2: 'Pack', w: 62, left: true, get: (i) => i.pack ?? '' },
       { key: 'rate', h1: '', h2: 'Rate', w: 50, get: (i) => (i.rate ?? 0).toFixed(2) },
       { key: 'opening', h1: 'Opening', h2: 'Qty', w: 42, get: (i) => num(i.opening) },
       { key: 'purchased', h1: 'Pur', h2: 'Qty', w: 42, get: (i) => num(i.purchased) },
@@ -232,9 +228,6 @@ export class SsrExportService {
       { key: 'bonus', h1: 'Bonus', h2: 'N. Sale', w: 38, get: (i) => num(i.bonus) },
       { key: 'netSale', h1: 'Net', h2: 'Sale', w: 38, get: (i) => num(i.netSale) },
       { key: 'netSaleValue', h1: 'Net Sale', h2: 'Value', w: 62, get: (i) => i.netSaleValue.toFixed(2) },
-      { key: 'expBrk', h1: 'Exp', h2: 'Brk', w: 32, get: (i) => num(i.expBrk) },
-      { key: 'transferIn', h1: 'Trnf', h2: 'IN', w: 32, get: (i) => num(i.transferIn) },
-      { key: 'transferOut', h1: 'Trnf', h2: 'OUT', w: 32, get: (i) => num(i.transferOut) },
       { key: 'closingQty', h1: 'Closing', h2: 'Qty', w: 42, get: (i) => num(i.closingQty) },
       { key: 'closingValue', h1: 'Closing Stock', h2: '(TP)', w: 62, get: (i) => money(i.closingValue) },
       { key: 'closingValueCp', h1: 'Closing Stock', h2: '(CP)', w: 62, get: (i) => money(i.closingValueCp) },
@@ -257,11 +250,11 @@ export class SsrExportService {
     COLS.reduce((x, c) => (xs.push(x), x + c.w), M);
     const cell = (text: string, i: number, y: number, bold = false) => {
       const c = COLS[i];
-      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').text(text, xs[i] + (c.left ? 2 : 0), y, {
+      doc.font(bold ? 'Helvetica-Bold' : 'Helvetica');
+      doc.text(fitText(doc, text, c.w - 4), xs[i] + (c.left ? 2 : 0), y, {
         width: c.w - 4,
         align: c.left ? 'left' : 'right',
         lineBreak: false,
-        ellipsis: true,
       });
     };
 
@@ -279,14 +272,20 @@ export class SsrExportService {
     };
 
     const pageHeader = () => {
-      doc.fillColor(GREEN).font('Helvetica').fontSize(24).text(tenant?.name ?? 'Medicore', M, M, { width: pageW - 2 * M, align: 'right', lineBreak: false });
-      doc.fontSize(10).text(branch?.address || branch?.name || 'All branches', M, M + 34, { width: pageW - 2 * M, align: 'right', lineBreak: false });
-      doc.fillColor(BLUE).fontSize(13).text(summary.title, M + 120, M + 46, { width: pageW - 2 * M - 240, height: 30, align: 'center', ellipsis: true });
+      drawReportHeader(doc, {
+        businessName: tenant?.name ?? 'Medicore',
+        businessAddress: branch?.address || branch?.name || 'All branches',
+        title: 'Sale & Stock Report (Regular)',
+        left: [branch?.name ?? 'All branches'],
+        dateRange: { from: dto.from, to: dto.to },
+      });
+      const top = doc.y;
+      doc.font('Helvetica').fillColor('#3b78b5').fontSize(13).text(summary.title, M + 120, top, { width: pageW - 2 * M - 240, height: 30, align: 'center', ellipsis: true });
       doc.fillColor('#000').fontSize(9);
-      doc.text(`From Date:  ${fmtDay(dto.from)}`, M, M + 76, { lineBreak: false });
-      doc.text(`To Date:  ${fmtDay(dto.to)}`, M + 190, M + 76, { lineBreak: false });
-      doc.text(today, M, M + 66, { width: pageW - 2 * M, align: 'right', lineBreak: false });
-      doc.y = M + 94;
+      doc.text(`From Date:  ${fmtDay(dto.from)}`, M, top + 30, { lineBreak: false });
+      doc.text(`To Date:  ${fmtDay(dto.to)}`, M + 190, top + 30, { lineBreak: false });
+      doc.text(today, M, top + 30, { width: pageW - 2 * M, align: 'right', lineBreak: false });
+      doc.y = top + 48;
       tableHeader();
     };
 
@@ -294,15 +293,16 @@ export class SsrExportService {
     const totalsLine = (label: string, t: SsrRow) => {
       const y = doc.y;
       doc.fontSize(9).fillColor('#000');
-      doc.font('Helvetica-Bold').text(label, xs[0] + 2, y, { width: COLS[0].w + (COLS[1]?.w ?? 0) - 6, lineBreak: false, ellipsis: true });
-      const put = (word: string, colKey: string, field: 'purchaseValue' | 'netSaleValue' | 'closingValue' | 'closingValueCp', extra = 0) => {
+      doc.font('Helvetica-Bold').text(fitText(doc, label, COLS[0].w + (COLS[1]?.w ?? 0) - 6), xs[0] + 2, y, { lineBreak: false });
+      const put = (word: string, colKey: string, field: 'purchaseValue' | 'netSaleValue' | 'closingValue' | 'closingValueCp', extra = 0, wordBack = 0) => {
         const valueCol = colAt(colKey);
         if (valueCol < 1) return;
-        const wordCol = valueCol - 1;
-        if (wordCol > 0) doc.font('Helvetica-Bold').text(word, xs[wordCol] + 2, y + 1, { width: COLS[wordCol].w - 4, align: 'left', lineBreak: false });
+        // The word may start further left (`wordBack` columns) when the value column is too narrow to sit beside it.
+        const wordCol = valueCol - 1 - wordBack;
+        if (wordCol > 0) doc.font('Helvetica-Bold').text(word, xs[wordCol] + 2, y, { lineBreak: false });
         doc.font('Helvetica-Bold').text(money(t[field]), xs[valueCol] - extra, y, { width: COLS[valueCol].w - 4 + extra, align: 'right', lineBreak: false });
       };
-      put('Purchase', 'totalStock', 'purchaseValue', 50);
+      put('Purchase', 'totalStock', 'purchaseValue', 50, 1);
       put('Net Sale', 'netSaleValue', 'netSaleValue', 20);
       put('Closing', 'closingValue', 'closingValue', 20);
       put('', 'closingValueCp', 'closingValueCp');
@@ -344,12 +344,7 @@ export class SsrExportService {
     ensure(30);
     totalsLine('Grand Total:', result.totals);
 
-    // "Page x of y" needs the final page count, so pages are buffered and stamped at the end.
-    const range = doc.bufferedPageRange();
-    for (let i = 0; i < range.count; i++) {
-      doc.switchToPage(range.start + i);
-      doc.font('Helvetica').fontSize(9).fillColor('#000').text(`Page ${i + 1} of ${range.count}`, M, M + 52, { width: pageW - 2 * M, align: 'right', lineBreak: false });
-    }
+    stampPageNumbers(doc);
     doc.end();
   }
 }

@@ -138,6 +138,8 @@ export interface Payment extends BranchOwnedEntity {
   reference?: string;
   notes?: string;
   allocations: PaymentAllocation[];
+  /** Written off with this payment (cash receipts only). */
+  differenceAmount?: number;
   unallocatedAmount: number;
   /** The cash-receipt transaction this payment came from, if any. */
   receipt?: LedgerReceiptRef;
@@ -182,12 +184,24 @@ export interface AllocatePaymentRequest {
 /* ------------------------------------------------------------------ */
 
 export interface Expense extends BranchOwnedEntity {
+  /** `CASH_RECEIPT` for the difference written off on a cash receipt (it has no payment method or account of its own). */
+  source?: 'CASH_RECEIPT';
+  /** The invoice a CASH_RECEIPT expense was settled against. */
+  invoiceNumber?: string;
+  invoiceId?: string;
+  /** Running number per tenant (1, 2, 3 ...). */
+  expenseNumber?: number;
   expenseAccountId: string;
   expenseAccountName?: string;
+  /** Main category and optional sub-category (absent on expenses recorded before categories existed). */
+  categoryId?: string;
+  categoryName?: string;
+  subCategoryId?: string;
+  subCategoryName?: string;
   amount: number;
   expenseDate: string;
-  paymentMethod: PaymentMethod;
-  paymentAccountId: string;
+  paymentMethod?: PaymentMethod;
+  paymentAccountId?: string;
   paymentAccountName?: string;
   vendorId?: string;
   vendorName?: string;
@@ -200,7 +214,10 @@ export interface Expense extends BranchOwnedEntity {
 
 export interface CreateExpenseRequest {
   branchId?: string;
-  expenseAccountId: string;
+  /** Send this or `categoryId`; with `categoryId` the server uses that main category's account. */
+  expenseAccountId?: string;
+  categoryId?: string;
+  subCategoryId?: string;
   amount: number;
   expenseDate?: string;
   paymentMethod: PaymentMethod;
@@ -208,6 +225,39 @@ export interface CreateExpenseRequest {
   vendorId?: string;
   description: string;
   reference?: string;
+}
+
+/** A main expense category (with its sub-categories) or, nested under `subCategories`, a sub-category. */
+export interface ExpenseCategory {
+  id: string;
+  name: string;
+  /** Null for a main category. */
+  parentId: string | null;
+  /** The branch the category belongs to (a sub-category's is its category's). */
+  branchId: string;
+  branchName?: string;
+  /** Main categories only: the expense account its expenses post to. */
+  accountId?: string;
+  /** Main categories backed by a built-in account (Operating Expenses, ...) can't be renamed or removed. */
+  isSystem?: boolean;
+  isActive: boolean;
+  /** Expenses recorded against it (a main counts every expense on its account) and their total. */
+  expenseCount: number;
+  totalAmount: number;
+  subCategories?: ExpenseCategory[];
+}
+
+export interface CreateExpenseCategoryRequest {
+  name: string;
+  /** Branch of a new main category; a sub-category always takes its category's branch. */
+  branchId?: string;
+  /** Omit for a main category; the main category's id for a sub-category. */
+  parentId?: string;
+}
+
+export interface UpdateExpenseCategoryRequest {
+  name?: string;
+  isActive?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -244,6 +294,8 @@ export interface SaleReturnItem {
   discountPercent?: number;
   taxPercent?: number;
   batchAllocations: SaleReturnBatchAllocation[];
+  /** Returned bonus (free) units: restocked like the rest, but worth nothing (total 0). */
+  bonusAllocations?: SaleReturnBatchAllocation[];
 }
 
 export interface SaleReturn extends BranchOwnedEntity {
@@ -277,6 +329,8 @@ export interface ReturnSettlementRequest {
 export interface CreateSaleReturnItemRequest {
   productId: string;
   batchAllocations: { batchId: string; quantity: number; condition?: ReturnCondition }[];
+  /** Bonus (free) units being returned; refunded at 0. Omit when none. */
+  bonusAllocations?: { batchId: string; quantity: number; condition?: ReturnCondition }[];
 }
 
 export interface CreateSaleReturnRequest {
@@ -304,6 +358,9 @@ export interface PurchaseReturnItem {
 export interface PurchaseReturn extends BranchOwnedEntity {
   purchaseId: string;
   purchaseNumber?: string;
+  /** Set on the history list only. */
+  vendorId?: string;
+  vendorName?: string;
   returnNumber?: string;
   kind?: 'RETURN' | 'CANCELLATION';
   items: PurchaseReturnItem[];
@@ -351,6 +408,8 @@ export interface ReturnableSaleItem {
   discountPercent?: number;
   taxPercent?: number;
   batchAllocations: ReturnableBatchAllocation[];
+  /** The line's bonus (free) units per batch; returnable at 0 value. */
+  bonusAllocations?: ReturnableBatchAllocation[];
 }
 
 export interface ReturnablePurchaseItem {
@@ -372,8 +431,8 @@ export interface ReturnablePurchaseItem {
 
 /** The document a ledger row came from, so the UI can open it. */
 export interface LedgerReference {
-  /** SALE_RETURN: `number` is the return id (SR-…) and `id` the sale return; open it on the Returns page. */
-  type: 'SALE' | 'PURCHASE' | 'PAYMENT' | 'EXPENSE' | 'SALE_RETURN';
+  /** SALE_RETURN / PURCHASE_RETURN: `number` is the return id and `id` the return; open it on the Returns page. */
+  type: 'SALE' | 'PURCHASE' | 'PAYMENT' | 'EXPENSE' | 'SALE_RETURN' | 'PURCHASE_RETURN';
   id: string;
   number: string;
 }
@@ -455,6 +514,10 @@ export interface PartyLedgerSummary {
 export interface PartyLedgerResponse extends LedgerPage {
   partyId: string;
   partyName: string;
+  /** Printed in the PDF header; optional because not every party has them (vendors have no code or city). */
+  partyCode?: string;
+  partyAddress?: string;
+  partyCity?: string;
   summary: PartyLedgerSummary;
 }
 
@@ -512,6 +575,81 @@ export interface ProfitLossResponse {
   expenses: ProfitLossRow[];
   totalExpenses: number;
   netIncome: number;
+}
+
+/** One dimension at a time for the grouped gross-profit report. */
+export type ProfitGroupBy =
+  | 'customer'
+  | 'vendor'
+  | 'manufacturer'
+  | 'orderBooker'
+  | 'city'
+  | 'territory'
+  | 'product';
+
+export interface ProfitBreakdownRow {
+  key: string;
+  label: string;
+  invoices: number;
+  /** Units sold less units returned (free units included in cost, not here). */
+  netUnits: number;
+  /** Net of returns, tax-inclusive (same basis as the Sales report). */
+  netSales: number;
+  cogs: number;
+  /** Net sales excluding tax, less cost of goods sold. */
+  grossProfit: number;
+  marginPct: number | null;
+  /** Gross profit per net unit sold, in currency; null when no units. */
+  profitPerUnit: number | null;
+  /** Share of the total gross profit, in percent. */
+  profitSharePct: number | null;
+}
+
+export interface ProfitBreakdownResponse {
+  groupBy: ProfitGroupBy;
+  from: string;
+  to: string;
+  /** Sorted by gross profit, highest first. */
+  rows: ProfitBreakdownRow[];
+  totals: Omit<ProfitBreakdownRow, 'key' | 'label' | 'profitSharePct'>;
+}
+
+/** The "Profit & Loss Statement" laid out as the stock-based (margin wise) printout. Stock is valued at batch cost. */
+export interface ProfitStatement {
+  from: string;
+  to: string;
+  businessName: string;
+  businessAddress?: string;
+  /** Set when the statement is limited to one company (manufacturer); expenses are never filtered. */
+  manufacturerName?: string;
+  excludeReturns: boolean;
+  /** Σ qty × price before discount, ex tax. */
+  grossSales: number;
+  /** Line discounts (Discount 1). */
+  discount: number;
+  /** Shown for information; never deducted from net sales. */
+  salesTax: number;
+  /** Returned goods, ex tax; 0 when excluded. */
+  returns: number;
+  /** A: gross sales less discount less returns. */
+  netSales: number;
+  /** B */
+  openingStock: number;
+  /** C */
+  purchases: number;
+  /** D = B + C */
+  totalStock: number;
+  /** E */
+  closingStock: number;
+  /** F = D - E */
+  cogs: number;
+  /** G = A - F */
+  grossProfit: number;
+  expenses: Array<{ name: string; amount: number }>;
+  /** H */
+  totalExpenses: number;
+  /** I = G - H */
+  netProfit: number;
 }
 
 export interface BalanceSheetRow {

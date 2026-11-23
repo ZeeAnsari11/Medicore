@@ -45,23 +45,6 @@ export interface SalesReport {
   paymentStatusBreakdown: SalesReportPaymentStatusBreakdown[];
 }
 
-/** One Order Booker's sales over a date range. Names only: ids never reach the UI. */
-export interface OrderBookerReportRow {
-  /** Used as a stable key and for filtering; never displayed. */
-  orderBookerId: string;
-  orderBookerName: string;
-  totalSales: number;
-  salesCount: number;
-  returns: number;
-  /** Sum of amount paid on the booker's sales in the range. */
-  collected: number;
-}
-
-export interface OrderBookerReport {
-  rows: OrderBookerReportRow[];
-  totals: { totalSales: number; salesCount: number; returns: number; collected: number };
-}
-
 export interface InventoryReportSummary {
   totalItems: number;
   totalCostValue: number;

@@ -621,4 +621,110 @@ describe('cash receipt transactions (e2e)', () => {
       expect(paymentLine).toContain(`"Against invoice ${inv.invoiceNumber}"`);
     });
   });
+
+  describe('difference (customer pays less and both agree the invoice is settled)', () => {
+    const ledger = async (customerId: string) =>
+      (await get(`accounting/customers/${customerId}/ledger?branchId=${K}&limit=200`)).rows as any[];
+    const expensesFor = async (invoiceNumber: string) =>
+      rows(await get(`accounting/expenses?branchId=${K}&limit=200`)).filter(
+        (e: any) => e.invoiceNumber === invoiceNumber,
+      );
+
+    it('settles the invoice, books the difference as an expense and a ledger line, and zeroes the balance', async () => {
+      const w = await world();
+      const inv = await w.invoice(10); // 150
+      const saved = await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]);
+      expect(saved.rows[0]).toMatchObject({ amount: 140, difference: 10 });
+      expect(saved.total).toBe(140);
+
+      const after = await sale(inv.id);
+      expect(after.amountPaid).toBe(150);
+      expect(after.paymentStatus).toBe('PAID');
+      expect(await customerBalance(inv.invoiceNumber)).toBe(0);
+
+      // One ledger row for the whole receipt: cash plus difference, with the difference and its expense named.
+      const ledgerRows = await ledger(w.customerId);
+      expect(ledgerRows.find((r) => r.documentType === 'Difference')).toBeUndefined();
+      const pay = ledgerRows.find((r) => r.documentType === 'Payment');
+      expect(pay.credit).toBe(150);
+      expect(pay.runningBalance).toBe(0);
+      expect(pay.invoices).toEqual([expect.objectContaining({ number: inv.invoiceNumber })]);
+
+      const [expense] = await expensesFor(inv.invoiceNumber);
+      expect(expense).toMatchObject({
+        amount: 10,
+        source: 'CASH_RECEIPT',
+        categoryName: 'Difference',
+        subCategoryName: 'Sales Difference',
+      });
+      expect(expense.expenseNumber).toBeGreaterThan(0);
+      expect(pay.description).toBe(`Against invoice ${inv.invoiceNumber} · Difference 10.00`);
+
+      const history = rows(await get(`sales/${inv.id}/payments?branchId=${K}`));
+      expect(history.find((p) => p.isDifference)).toMatchObject({ amount: 10 });
+      const initial = history.find((p) => p.isInitial);
+      expect(initial).toBeUndefined();
+
+      const loaded = await get(`sales/cash-receipts/by-number/${saved.transactionNumber}`);
+      expect(loaded.differenceTotal).toBe(10);
+      expect(loaded.rows[0].difference).toBe(10);
+    });
+
+    it('rejects amount plus difference above the balance and saves nothing', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      const res = await api()
+        .post('/api/sales/cash-receipts')
+        .set(headers())
+        .send({
+          batchId: randomUUID(),
+          date: new Date().toISOString(),
+          method: 'CASH',
+          rows: [{ invoiceId: inv.id, amount: 100, difference: 60 }],
+        });
+      expect(res.status).toBe(400);
+      expect((await sale(inv.id)).amountPaid).toBe(0);
+      expect(await expensesFor(inv.invoiceNumber)).toHaveLength(0);
+    });
+
+    it('removing the row restores the invoice and cancels the expense; an entry with a difference cannot be edited in place', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      const saved = await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]);
+      const entryId = saved.rows[0].entryId;
+
+      await patchTx(saved.transactionNumber, {
+        expectedVersion: 1,
+        rows: [{ entryId, invoiceId: inv.id, amount: 100 }],
+      }).expect(400);
+      expect((await sale(inv.id)).paymentStatus).toBe('PAID');
+
+      // Another row keeps the transaction non-empty while this one is removed.
+      const other = await w.invoice(10);
+      await patchTx(saved.transactionNumber, {
+        expectedVersion: 1,
+        rows: [{ invoiceId: other.id, amount: 20 }],
+      }).expect(200);
+
+      const back = await sale(inv.id);
+      expect(back.amountPaid).toBe(0);
+      expect(back.paymentStatus).toBe('UNPAID');
+      expect(await expensesFor(inv.invoiceNumber)).toHaveLength(0);
+      expect(await customerBalance(inv.invoiceNumber)).toBe(130 + 150);
+    });
+
+    it('voiding the payment gives back the amount and the difference and cancels the expense', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]);
+      const paymentId = (await ledger(w.customerId)).find((r) => r.documentType === 'Payment').reference.id;
+      await api().delete(`/api/accounting/payments/${paymentId}`).set(headers()).expect(204);
+
+      const back = await sale(inv.id);
+      expect(back.amountPaid).toBe(0);
+      expect(back.paymentStatus).toBe('UNPAID');
+      expect(await expensesFor(inv.invoiceNumber)).toHaveLength(0);
+      expect(await customerBalance(inv.invoiceNumber)).toBe(150);
+    });
+  });
 });

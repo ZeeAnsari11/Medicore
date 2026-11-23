@@ -230,7 +230,7 @@ export function PurchaseDetailDialog({
                         <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleString()}</TableCell>
                         <TableCell className="tabular-nums">{payment.isRefund ? '-' : ''}{payment.amount.toFixed(2)}</TableCell>
                         <TableCell className="text-sm">
-                          {payment.isRefund ? `Refund${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}` : payment.isInitial ? 'Paid at purchase' : payment.method ? METHOD_LABELS[payment.method] : '—'}
+                          {payment.isRefund ? `Refund${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}` : payment.isAdvance ? 'Paid from advance' : payment.isInitial ? 'Paid at purchase' : payment.method ? METHOD_LABELS[payment.method] : '—'}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{payment.reference ?? '—'}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{payment.recordedBy ?? '—'}</TableCell>

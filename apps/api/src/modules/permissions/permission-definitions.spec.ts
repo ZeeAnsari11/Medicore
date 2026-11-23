@@ -42,6 +42,18 @@ describe('permission definitions', () => {
     expect(out.every((k) => isKnownKey(k))).toBe(true);
   });
 
+  it('legacy accounting roles keep managing expense categories, and the accountant template gets them', () => {
+    expect(expandLegacyPermissions(['accounting:read', 'accounting:create', 'accounting:update', 'accounting:delete'])).toEqual(
+      expect.arrayContaining([
+        'acc_expense_categories:read',
+        'acc_expense_categories:create',
+        'acc_expense_categories:update',
+        'acc_expense_categories:delete',
+      ]),
+    );
+    expect(ROLE_TEMPLATES.find((t) => t.key === 'accountant')?.permissions).toContain('acc_expense_categories:create');
+  });
+
   it('has unique keys', () => {
     expect(new Set(ALL_PERMISSION_KEYS).size).toBe(ALL_PERMISSION_KEYS.length);
   });
@@ -68,6 +80,12 @@ describe('order booker permissions', () => {
     expect(expandLegacyPermissions(['sales:read'])).toEqual(
       expect.arrayContaining(['sales:view_all', 'sales:book_for_others']),
     );
+  });
+
+  it('skip_process_order is its own menu, not an action of Sales, and legacy roles do not get it', () => {
+    expect(isKnownKey('skip_process_order:read')).toBe(true);
+    expect(MODULE_DEFINITIONS.find((m) => m.key === 'sales')?.actions.map((a) => a.key)).not.toContain('skip_process_order');
+    expect(expandLegacyPermissions(['sales:read'])).not.toContain('skip_process_order:read');
   });
 
   it('ticking view_all implies view', () => {

@@ -1,11 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
+import { drawReportHeader, stampPageNumbers } from './report-header';
 
 export interface PdfLineItem {
   name: string;
   detail?: string;
   batchNumber?: string;
   quantity: number;
+  /** Free units given on top of `quantity` (not charged); a Bonus column shows only when a line has some. */
+  bonus?: number;
   unitPrice: number;
   discountPercent?: number;
   taxPercent?: number;
@@ -24,6 +27,10 @@ export interface PdfDocumentSpec {
   branchPhone?: string;
   partyLabel: string;
   partyName: string;
+  /** Customer code, address and city print in the header block when known. */
+  partyCode?: string;
+  partyAddress?: string;
+  partyCity?: string;
   partyPhone?: string;
   /** Name of the Order Booker who placed the document (sales invoices). */
   orderBooker?: string;
@@ -34,6 +41,8 @@ export interface PdfDocumentSpec {
   grandTotal: number;
   paymentStatus: string;
   amountPaid: number;
+  /** The part of `amountPaid` that came from the customer's advance (sales invoices). */
+  advanceApplied?: number;
   payments?: Array<{ date: Date; method: string; reference?: string; amount: number }>;
   /** Partial returns recorded against the document; the original lines stay as issued. */
   returnedTotal?: number;
@@ -53,26 +62,23 @@ const CURRENCY = (value: number) => value.toFixed(2);
 @Injectable()
 export class DocumentPdfService {
   build(spec: PdfDocumentSpec): PDFKit.PDFDocument {
-    const doc = new PDFDocument({ size: 'A4', margin: 50 });
+    const doc = new PDFDocument({ size: 'A4', margin: 50, bufferPages: true });
 
-    doc.fontSize(18).font('Helvetica-Bold').text(spec.companyName);
-    doc.fontSize(10).font('Helvetica').text(spec.branchName);
-    if (spec.branchAddress) doc.text(spec.branchAddress);
+    /** The shared header at the top of the current page; returns the y content continues from. */
+    const pageHeader = () =>
+      drawReportHeader(doc, {
+        businessName: spec.companyName,
+        businessAddress:
+          [spec.branchAddress, spec.branchPhone].filter(Boolean).join('  ·  ') || spec.branchName,
+        title: `${spec.documentTypeLabel}  ${spec.documentNumber}`,
+        left: [spec.partyCode, spec.partyName, spec.partyAddress],
+        date: spec.date.toISOString(),
+        rightLine: spec.partyCity,
+      });
+    pageHeader();
+    doc.font('Helvetica').fontSize(10).text(spec.branchName, 50, doc.y);
     if (spec.branchPhone) doc.text(spec.branchPhone);
-
-    doc.moveUp(
-      spec.branchAddress && spec.branchPhone ? 3 : spec.branchAddress || spec.branchPhone ? 2 : 1,
-    );
-    doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .text(spec.documentTypeLabel, { align: 'right' })
-      .fontSize(10)
-      .font('Helvetica')
-      .text(spec.documentNumber, { align: 'right' })
-      .text(spec.date.toLocaleDateString(), { align: 'right' });
-
-    doc.moveDown(2);
+    doc.moveDown(1);
     doc.font('Helvetica-Bold').fontSize(10).text(spec.partyLabel);
     doc.font('Helvetica').text(spec.partyName);
     if (spec.partyPhone) doc.text(spec.partyPhone);
@@ -81,10 +87,14 @@ export class DocumentPdfService {
     doc.moveDown(1.5);
     const tableTop = doc.y;
     const hasBatch = spec.items.some((item) => item.batchNumber);
+    const hasBonus = spec.items.some((item) => item.bonus);
+    // The Bonus column takes 40pt from the item name's share when it is shown.
+    const nameWidth = (hasBatch ? 140 : 210) - (hasBonus ? 40 : 0);
     const columns = {
-      name: { x: 50, width: hasBatch ? 140 : 210 },
-      batch: { x: 190, width: 70 },
-      qty: { x: 260, width: 50 },
+      name: { x: 50, width: nameWidth },
+      batch: { x: 50 + nameWidth, width: 70 },
+      qty: { x: 260 - (hasBonus ? 40 : 0), width: 50 },
+      bonus: { x: 260 + 10, width: 40 },
       price: { x: 310, width: 70 },
       pct: { x: 380, width: 60 },
       total: { x: 440, width: 105 },
@@ -94,6 +104,7 @@ export class DocumentPdfService {
     doc.text('Item', columns.name.x, tableTop, { width: columns.name.width });
     if (hasBatch) doc.text('Batch #', columns.batch.x, tableTop, { width: columns.batch.width });
     doc.text('Qty', columns.qty.x, tableTop, { width: columns.qty.width, align: 'right' });
+    if (hasBonus) doc.text('Bonus', columns.bonus.x, tableTop, { width: columns.bonus.width, align: 'right' });
     doc.text('Unit price', columns.price.x, tableTop, {
       width: columns.price.width,
       align: 'right',
@@ -122,7 +133,7 @@ export class DocumentPdfService {
       const rowHeight = item.detail ? 24 : 14;
       if (y + rowHeight > 760) {
         doc.addPage();
-        y = 50;
+        y = pageHeader() + 6;
       }
       doc.text(item.name, columns.name.x, y, { width: columns.name.width });
       if (item.detail) {
@@ -139,6 +150,7 @@ export class DocumentPdfService {
         width: columns.qty.width,
         align: 'right',
       });
+      if (hasBonus) doc.text(item.bonus ? String(item.bonus) : '', columns.bonus.x, y, { width: columns.bonus.width, align: 'right' });
       doc.text(CURRENCY(item.unitPrice), columns.price.x, y, {
         width: columns.price.width,
         align: 'right',
@@ -185,8 +197,13 @@ export class DocumentPdfService {
     doc.font('Helvetica').fontSize(9);
     doc.text(`Payment status: ${spec.paymentStatus}`, 50, y);
     doc.text(`Amount paid: ${CURRENCY(netPaid)}`, 50, y + 13);
+    let line = 26;
+    if ((spec.advanceApplied ?? 0) > 0) {
+      doc.text(`Paid from advance: ${CURRENCY(spec.advanceApplied!)}`, 50, y + line);
+      line += 13;
+    }
     if (due > 0.005) {
-      doc.text(`Balance due: ${CURRENCY(due)}`, 50, y + 26);
+      doc.text(`Balance due: ${CURRENCY(due)}`, 50, y + line);
     }
 
     if (spec.payments && spec.payments.length > 0) {
@@ -208,14 +225,14 @@ export class DocumentPdfService {
       let ry = y + 46 + (spec.payments?.length ? 13 * (spec.payments.length + 1) + 10 : 0);
       if (ry > 720) {
         doc.addPage();
-        ry = 50;
+        ry = pageHeader() + 6;
       }
       doc.font('Helvetica-Bold').fontSize(9).text('Returns', 50, ry);
       doc.font('Helvetica');
       for (const r of spec.returns) {
         if (ry + 26 > 750) {
           doc.addPage();
-          ry = 50 - 13;
+          ry = pageHeader() + 6 - 13;
         }
         ry += 13;
         doc.font('Helvetica-Bold').fontSize(9);
@@ -226,7 +243,7 @@ export class DocumentPdfService {
           ry += 12;
           if (ry > 750) {
             doc.addPage();
-            ry = 50;
+            ry = pageHeader() + 6;
           }
           const label = `${line.name}${line.detail ? ` (${line.detail})` : ''} × ${line.quantity}`;
           doc.fillColor('#444444').text(label, 62, ry, { width: 370 });
@@ -243,6 +260,7 @@ export class DocumentPdfService {
         .text(spec.footerNote, 50, 770, { width: 495, align: 'center' });
     }
 
+    stampPageNumbers(doc);
     return doc;
   }
 }

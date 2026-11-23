@@ -32,6 +32,7 @@ import { TenantsService } from '../tenants/tenants.service';
 import { resolvePayment } from '../../common/utils/resolve-payment';
 import { AccountingPostingService, round2 } from '../accounting/accounting-posting.service';
 import { PaymentsService } from '../accounting/payments.service';
+import { PartyBalanceService } from '../accounting/party-balance.service';
 import {
   InvoiceType,
   PartyType,
@@ -79,6 +80,7 @@ function computeLine(item: CreatePurchaseDto['items'][number]): LineComputation 
 
 import { CreatePurchaseReturnDto } from '../accounting/dto/create-purchase-return.dto';
 import { ReturnsService } from '../accounting/returns.service';
+import { splitMovedLines } from './purchase-batch-move';
 
 @Injectable()
 export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
@@ -101,6 +103,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     private readonly tenantsService: TenantsService,
     private readonly postingService: AccountingPostingService,
     private readonly paymentsService: PaymentsService,
+    private readonly partyBalanceService: PartyBalanceService,
     private readonly returnsService: ReturnsService,
     private readonly invoiceLock: InvoiceLockService,
     private readonly invoiceAudit: InvoiceAuditService,
@@ -337,6 +340,34 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
    * manual adjustments), write one StockMovement(PURCHASE_IN) per line,
    * issue the purchase number, insert the Purchase document. All-or-nothing.
    */
+  /**
+   * Takes up to `due` out of the vendor's advance and returns how much (0 when there is none). The vendor row is
+   * written first so two bills saved at the same moment write-conflict instead of spending one advance twice; the
+   * balance is read inside the transaction.
+   */
+  private async spendVendorAdvance(
+    tenantId: string,
+    vendorId: string,
+    due: number,
+    session: ClientSession,
+  ): Promise<number> {
+    if (!(due > 0.005)) return 0;
+    await this.vendorModel.updateOne({ _id: new Types.ObjectId(vendorId) }, { $inc: { advanceSeq: 1 } }, { session });
+    const available = await this.partyBalanceService.getVendorAdvanceBalance(tenantId, vendorId, session);
+    return round2(Math.min(Math.max(available, 0), due));
+  }
+
+  /** The vendor's unspent advance, for the "apply it to this purchase?" prompt on a new purchase. */
+  async getVendorAdvance(tenantId: string, branchId: string | null, vendorId: string): Promise<number> {
+    const vendor = await this.vendorModel.findOne({
+      _id: new Types.ObjectId(vendorId),
+      tenantId: new Types.ObjectId(tenantId),
+      ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}),
+    });
+    if (!vendor) throw new NotFoundException('Vendor not found');
+    return Math.max(await this.partyBalanceService.getVendorAdvanceBalance(tenantId, vendorId), 0);
+  }
+
   async createPurchase(
     tenantId: string,
     branchId: string,
@@ -454,12 +485,27 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
 
         // dto.paymentStatus only fills in a missing amountPaid; the stored status is
         // always derived from the amount so the two can never disagree.
-        const { amountPaid, paymentStatus } = resolvePayment(
+        let { amountPaid, paymentStatus } = resolvePayment(
           grandTotal,
           dto.paymentStatus,
           dto.amountPaid,
           0,
         );
+
+        // Paying from the vendor's advance: no cash moves, the advance is spent first and whatever is left follows
+        // the normal payment fields.
+        let advanceApplied = 0;
+        if (dto.applyAdvance) {
+          advanceApplied = await this.spendVendorAdvance(tenantId, dto.vendorId, grandTotal, session);
+          if (!(advanceApplied > 0)) throw new BadRequestException('This vendor has no advance to apply');
+          const cashPaid = round2(Math.min(dto.amountPaid ?? 0, grandTotal - advanceApplied));
+          ({ amountPaid, paymentStatus } = resolvePayment(
+            grandTotal,
+            undefined,
+            advanceApplied + cashPaid,
+            0,
+          ));
+        }
 
         const [created] = await this.purchaseModel.create(
           [
@@ -477,6 +523,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
               grandTotal,
               paymentStatus,
               amountPaid,
+              advanceApplied,
               purchaseDate: dto.purchaseDate ? new Date(dto.purchaseDate) : new Date(),
               notes: dto.notes,
               paymentTerms: dto.paymentTerms,
@@ -522,6 +569,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
           vendorId: dto.vendorId,
           grandTotal,
           amountPaid: created.amountPaid,
+          advanceApplied,
           createdBy: userId,
           session,
         });
@@ -619,8 +667,6 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
           );
         }
 
-        const lines = dto.items.map(computeLine);
-
         // Old receipts by batch: how much this purchase put in, and how much of the batch is gone.
         const oldByBatch = new Map<string, { productId: string; batchNumber: string; expiry: string; qty: number }>();
         for (const item of purchase.items) {
@@ -643,6 +689,12 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
           const old = oldByBatch.get(batchId)!;
           return Math.max(0, old.qty - (batchById.get(batchId)?.quantity ?? 0));
         };
+
+        // A changed batch number on a partly sold batch moves only the units still in stock (two rows result).
+        const lines = splitMovedLines(
+          dto.items,
+          new Map([...oldByBatch].map(([batchId, old]) => [batchId, { ...old, sold: soldOf(batchId) }])),
+        ).map(computeLine);
 
         if (vendorChanged) {
           for (const [batchId, old] of oldByBatch) {
@@ -812,9 +864,8 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
         if (dto.paymentTerms !== undefined) purchase.paymentTerms = dto.paymentTerms;
         await purchase.save({ session });
 
-        // The ledger is immutable: reverse the old entry, then post the new one (each gets a fresh JE number).
-        await this.postingService.postPurchaseEditReversal(tenantId, purchaseBranchId, purchase.id, userId, session);
-        await this.postingService.postPurchaseEntry({
+        // The purchase's own ledger entry is rewritten in place (same JE, new lines/totals); no reversal row.
+        await this.postingService.editPurchaseEntryInPlace({
           tenantId,
           branchId: purchaseBranchId,
           purchaseId: purchase.id,
@@ -876,7 +927,26 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       returnStatus: purchase.returnStatus,
       cancelled: purchase.status === PurchaseStatus.CANCELLED || !!purchase.deletedAt,
     });
-    return { ...this.toPurchaseResponse(purchase), isEditable: state.isEditable, lockReason: state.lockReason };
+    const response = this.toPurchaseResponse(purchase);
+    // How much of each line's batch is already gone, so the edit screen can warn before a batch change.
+    const batchIds = [...new Set(purchase.items.map((i) => String(i.batchId)).filter((id) => id !== 'undefined'))];
+    const batches = await this.batchModel.find({ _id: { $in: batchIds } }).select('quantity').lean();
+    const stockOf = new Map(batches.map((b) => [String(b._id), b.quantity]));
+    const receivedOf = new Map<string, number>();
+    for (const i of purchase.items) receivedOf.set(String(i.batchId), (receivedOf.get(String(i.batchId)) ?? 0) + i.quantity);
+    return {
+      ...response,
+      items: response.items.map((item) => ({
+        ...item,
+        soldQuantity: item.batchId
+          ? Math.max(0, Math.min(item.quantity, (receivedOf.get(item.batchId) ?? 0) - (stockOf.get(item.batchId) ?? 0)))
+          : 0,
+        // What is still on the shelf: a return cannot take back more than this (the rest was sold or moved).
+        inStockQuantity: item.batchId ? Math.max(0, stockOf.get(item.batchId) ?? 0) : undefined,
+      })),
+      isEditable: state.isEditable,
+      lockReason: state.lockReason,
+    };
   }
 
   /**
@@ -1080,13 +1150,27 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     // A payment entered when the purchase was created has no Payment record of its own.
     const initial = round2(purchase.amountPaid - rows.reduce((sum, r) => sum + r.amount, 0));
     if (initial > 0.01) {
-      rows.unshift({
-        id: 'initial',
-        paymentDate: ((purchase as any).createdAt as Date).toISOString(),
-        amount: initial,
-        isInitial: true,
-        recordedBy: nameOf(purchase.createdBy),
-      });
+      const fromAdvance = round2(Math.min(purchase.advanceApplied ?? 0, initial));
+      const at = ((purchase as any).createdAt as Date).toISOString();
+      if (initial - fromAdvance > 0.01) {
+        rows.unshift({
+          id: 'initial',
+          paymentDate: at,
+          amount: round2(initial - fromAdvance),
+          isInitial: true,
+          recordedBy: nameOf(purchase.createdBy),
+        });
+      }
+      if (fromAdvance > 0.01) {
+        rows.unshift({
+          id: 'initial-advance',
+          paymentDate: at,
+          amount: fromAdvance,
+          isInitial: true,
+          isAdvance: true,
+          recordedBy: nameOf(purchase.createdBy),
+        });
+      }
     }
     return [...rows, ...refundRows].sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
   }
@@ -1138,6 +1222,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       branchPhone: branch?.phone,
       partyLabel: 'Vendor',
       partyName: vendor?.company ?? 'Vendor',
+      partyAddress: vendor?.address,
       items: response.items.map((i) => ({
         name: i.productName ?? i.productId,
         detail: `Batch ${i.batchNumber}`,
@@ -1158,11 +1243,12 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
   async buildPurchaseOrderPdf(tenantId: string, branchId: string | null, id: string) {
     const purchase = await this.findOne(tenantId, branchId, id);
     const response = this.toPurchaseResponse(purchase);
-    const [branch, tenant, payments, returns] = await Promise.all([
+    const [branch, tenant, payments, returns, vendor] = await Promise.all([
       this.branchModel.findById(response.branchId),
       this.tenantsService.findById(tenantId),
       this.listPayments(tenantId, branchId, id),
       this.returnsService.listPurchaseReturns(tenantId, purchase.id),
+      this.vendorModel.findById(purchase.vendorId),
     ]);
 
     const nameByProduct = new Map(response.items.map((i) => [i.productId, i.productName ?? i.productId]));
@@ -1177,6 +1263,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       branchPhone: branch?.phone,
       partyLabel: 'Vendor',
       partyName: response.vendorName ?? 'Vendor',
+      partyAddress: vendor?.address,
       items: response.items.map((item) => ({
         name: item.productName ?? item.productId,
         detail: `Batch ${item.batchNumber} · exp ${new Date(item.expiryDate).toLocaleDateString()}`,
@@ -1269,6 +1356,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       grandTotal: obj.grandTotal,
       paymentStatus: obj.paymentStatus,
       amountPaid: obj.amountPaid,
+      advanceApplied: obj.advanceApplied ?? 0,
       returnedTotal: obj.returnedTotal ?? 0,
       refundedTotal: obj.refundedTotal ?? 0,
       returnStatus: obj.returnStatus ?? ReturnStatus.NONE,

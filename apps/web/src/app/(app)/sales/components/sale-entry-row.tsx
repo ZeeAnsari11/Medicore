@@ -24,6 +24,7 @@ import {
   eligibleBatches,
   lineTotal,
   restoreStock,
+  splitPaidAndBonus,
   usedByBatch,
   withRemainingStock,
   type SaleLine,
@@ -33,6 +34,7 @@ export interface EntryDraft {
   productId: string;
   batchId: string;
   quantity: string;
+  bonusQuantity: string;
   unitPrice: string;
   discountPercent: string;
   taxPercent: string;
@@ -42,6 +44,7 @@ export const EMPTY_DRAFT: EntryDraft = {
   productId: '',
   batchId: '',
   quantity: '',
+  bonusQuantity: '',
   unitPrice: '',
   discountPercent: '',
   taxPercent: '',
@@ -58,6 +61,7 @@ const IDS = {
   product: 'sale-entry-product',
   batch: 'sale-entry-batch',
   quantity: 'sale-entry-qty',
+  bonusQuantity: 'sale-entry-bonus',
   unitPrice: 'sale-entry-price',
   discountPercent: 'sale-entry-disc',
   taxPercent: 'sale-entry-tax',
@@ -67,7 +71,7 @@ const focusId = (id: string) => document.getElementById(id)?.focus();
 
 let lineSeq = 0;
 
-type EntryErrors = Partial<Record<'product' | 'quantity' | 'unitPrice' | 'discountPercent' | 'taxPercent', string>>;
+type EntryErrors = Partial<Record<'product' | 'quantity' | 'bonusQuantity' | 'unitPrice' | 'discountPercent' | 'taxPercent', string>>;
 
 interface SaleEntryRowProps {
   products: Product[];
@@ -145,12 +149,15 @@ export function SaleEntryRow({
 
   const errors = useMemo<EntryErrors>(() => {
     const e: EntryErrors = {};
-    const qty = Number(draft.quantity);
+    const qty = Number(draft.quantity) || 0;
+    const bonus = Number(draft.bonusQuantity) || 0;
     if (!draft.productId) e.product = 'Select a product';
-    if (!draft.quantity || !(qty > 0)) e.quantity = 'Qty must be greater than 0';
+    if (draft.bonusQuantity !== '' && !(bonus >= 0)) e.bonusQuantity = 'Bonus must be 0 or more';
+    // A line may be bonus only, so Qty can be 0 when a bonus is given.
+    if (!(qty >= 0) || qty + bonus <= 0) e.quantity = 'Qty must be greater than 0';
     else if (draft.productId && !batchesLoading) {
       if (available.length === 0) e.quantity = 'No stock available';
-      else if (qty > totalAvailable) e.quantity = `Only ${totalAvailable} in stock`;
+      else if (qty + bonus > totalAvailable) e.quantity = `Only ${totalAvailable} in stock${bonus ? ' (qty + bonus)' : ''}`;
     }
     const price = Number(unitPrice);
     if (unitPrice === '' || !(price >= 0)) e.unitPrice = 'Price must be 0 or more';
@@ -182,13 +189,14 @@ export function SaleEntryRow({
   const commit = () => {
     setAttempted(true);
     if (Object.keys(errors).length > 0) return;
-    const { allocations, unmet } = allocateAcrossBatches(available, batchId, Number(draft.quantity));
+    const paid = Number(draft.quantity) || 0;
+    const { allocations, unmet } = allocateAcrossBatches(available, batchId, paid + (Number(draft.bonusQuantity) || 0));
     if (unmet > 0 || allocations.length === 0) return;
 
     const groupId = editing?.groupId ?? `group-${++lineSeq}`;
     const enteredPrice = Number(unitPrice);
     const keepTypedPrice = priceTouched || lastPrice?.price != null;
-    const newLines: SaleLine[] = allocations.map(({ batch, quantity }, i) => ({
+    const newLines: SaleLine[] = splitPaidAndBonus(allocations, paid).map(({ batch, quantity, bonus }, i) => ({
       key: `${groupId}-${i}-${++lineSeq}`,
       groupId,
       productId: draft.productId,
@@ -196,6 +204,7 @@ export function SaleEntryRow({
       batchId: batch.id,
       batchNumber: batch.batchNumber,
       quantity,
+      bonus,
       unitPrice: i === 0 || keepTypedPrice ? enteredPrice : priceFor(),
       discountPercent: draft.discountPercent === '' ? undefined : Number(draft.discountPercent),
       taxPercent: draft.taxPercent === '' ? undefined : Number(draft.taxPercent),
@@ -243,7 +252,7 @@ export function SaleEntryRow({
           Editing line {editing.serial}. Press Enter on Tax % to update, Esc to cancel.
         </p>
       )}
-      <div className="grid grid-cols-6 items-start gap-2 lg:grid-cols-[2.5rem_minmax(12rem,2fr)_minmax(9rem,1.4fr)_5rem_6rem_5rem_5rem_6rem_auto]">
+      <div className="grid grid-cols-6 items-start gap-2 lg:grid-cols-[2.5rem_minmax(12rem,2fr)_minmax(9rem,1.4fr)_5rem_5rem_6rem_5rem_5rem_6rem_auto]">
         <div className="col-span-1 space-y-1 lg:col-span-1">
           <Label className="text-xs text-muted-foreground">Ser #</Label>
           <div className="flex h-9 items-center text-sm tabular-nums text-muted-foreground">
@@ -318,11 +327,26 @@ export function SaleEntryRow({
             aria-invalid={invalid('quantity')}
             value={draft.quantity}
             onChange={(e) => set({ quantity: e.target.value })}
-            onKeyDown={onEnter(IDS.unitPrice)}
+            onKeyDown={onEnter(IDS.bonusQuantity)}
           />
           {draft.productId && !batchesLoading && (
             <p className="text-[11px] leading-tight text-muted-foreground">In stock: {totalAvailable}</p>
           )}
+        </div>
+
+        <div className="col-span-3 space-y-1 lg:col-span-1">
+          <Label htmlFor={IDS.bonusQuantity} className="text-xs text-muted-foreground">Bonus</Label>
+          <Input
+            id={IDS.bonusQuantity}
+            type="number"
+            min={0}
+            className="h-9 text-sm"
+            aria-invalid={invalid('bonusQuantity')}
+            value={draft.bonusQuantity}
+            onChange={(e) => set({ bonusQuantity: e.target.value })}
+            onKeyDown={onEnter(IDS.unitPrice)}
+          />
+          <p className="text-[11px] leading-tight text-muted-foreground">Free units</p>
         </div>
 
         <div className="col-span-3 space-y-1 lg:col-span-1">

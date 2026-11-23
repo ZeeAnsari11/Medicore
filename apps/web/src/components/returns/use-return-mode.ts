@@ -16,6 +16,10 @@ export interface ReturnRow {
   returnable: number;
   /** What one returned unit is worth on the ORIGINAL line (discount and tax included). */
   unitAmount: number;
+  /** The free units given on this batch: returned in the same row, but worth nothing. */
+  bonusOriginal: number;
+  bonusReturned: number;
+  bonusReturnable: number;
 }
 
 export const REASON_LABELS: Record<ReturnReasonCode, string> = {
@@ -44,6 +48,8 @@ export function useReturnMode(input: Doc, branchId: string | null) {
   const [active, setActive] = useState(false);
   // A key present means the row is ticked; null while its qty box is being retyped (empty).
   const [qty, setQty] = useState<Record<string, number | null>>({});
+  // Free units to take back per ticked row; editable, so the bonus can stay with the customer.
+  const [bonusQty, setBonusQty] = useState<Record<string, number | null>>({});
   const [condition, setCondition] = useState<Record<string, ReturnCondition>>({});
   const [reasonCode, setReasonCode] = useState<ReturnReasonCode>(ReturnReasonCode.OTHER);
   const [notes, setNotes] = useState('');
@@ -62,6 +68,10 @@ export function useReturnMode(input: Doc, branchId: string | null) {
           for (const a of i.batchAllocations) {
             returnedByBatch.set(a.batchId, (returnedByBatch.get(a.batchId) ?? 0) + a.quantity);
           }
+          for (const a of i.bonusAllocations ?? []) {
+            const key = `bonus:${a.batchId}`;
+            returnedByBatch.set(key, (returnedByBatch.get(key) ?? 0) + a.quantity);
+          }
         }
       }
     }
@@ -78,25 +88,40 @@ export function useReturnMode(input: Doc, branchId: string | null) {
           batchNumber: item.batchNumber,
           original: item.quantity,
           returned,
-          returnable: Math.max(round2(item.quantity - returned), 0),
+          // Units already sold or moved out of the batch cannot go back to the vendor.
+          returnable: Math.max(round2(Math.min(item.quantity - returned, item.inStockQuantity ?? Infinity)), 0),
           unitAmount: item.lineTotal / item.quantity,
+          bonusOriginal: 0,
+          bonusReturned: 0,
+          bonusReturnable: 0,
         });
       }
     } else {
       for (const item of (doc as Sale).items) {
         const unit = item.unitPrice * (1 - (item.discountPercent ?? 0) / 100) * (1 + (item.taxPercent ?? 0) / 100);
-        for (const a of item.batchAllocations) {
-          const returned = returnedByBatch.get(a.batchId) ?? 0;
+        // One row per batch, carrying both the paid and the free units of that batch.
+        const batches = new Map<string, { batchNumber: string; paid: number; free: number }>();
+        for (const a of item.batchAllocations) batches.set(a.batchId, { batchNumber: a.batchNumber, paid: a.quantity, free: 0 });
+        for (const a of item.bonusAllocations ?? []) {
+          const b = batches.get(a.batchId) ?? { batchNumber: a.batchNumber, paid: 0, free: 0 };
+          batches.set(a.batchId, { ...b, free: a.quantity });
+        }
+        for (const [batchId, b] of batches) {
+          const returned = returnedByBatch.get(batchId) ?? 0;
+          const bonusReturned = returnedByBatch.get(`bonus:${batchId}`) ?? 0;
           out.push({
-            key: a.batchId,
+            key: batchId,
             productId: item.productId,
             productName: item.productName,
-            batchId: a.batchId,
-            batchNumber: a.batchNumber,
-            original: a.quantity,
+            batchId,
+            batchNumber: b.batchNumber,
+            original: b.paid,
             returned,
-            returnable: Math.max(round2(a.quantity - returned), 0),
+            returnable: Math.max(round2(b.paid - returned), 0),
             unitAmount: unit,
+            bonusOriginal: b.free,
+            bonusReturned,
+            bonusReturnable: Math.max(round2(b.free - bonusReturned), 0),
           });
         }
       }
@@ -104,12 +129,14 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     return out;
   }, [kind, doc, returns]);
 
-  const selectable = rows.filter((r) => r.returnable > 0);
+  const selectable = rows.filter((r) => r.returnable > 0 || r.bonusReturnable > 0);
   const qtyOf = (r: ReturnRow) => qty[r.key] ?? 0;
   const ticked = (r: ReturnRow) => r.key in qty;
   const qtyInput = (r: ReturnRow) => qty[r.key] ?? '';
+  const bonusOf = (r: ReturnRow) => bonusQty[r.key] ?? 0;
+  const bonusInput = (r: ReturnRow) => bonusQty[r.key] ?? '';
 
-  const allFull = selectable.length > 0 && selectable.every((r) => qtyOf(r) === r.returnable);
+  const allFull = selectable.length > 0 && selectable.every((r) => qtyOf(r) === r.returnable && bonusOf(r) === r.bonusReturnable);
   const headerState: boolean | 'indeterminate' = allFull
     ? true
     : selectable.some(ticked)
@@ -118,6 +145,7 @@ export function useReturnMode(input: Doc, branchId: string | null) {
 
   const reset = () => {
     setQty({});
+    setBonusQty({});
     setCondition({});
     setReasonCode(ReturnReasonCode.OTHER);
     setNotes('');
@@ -127,17 +155,30 @@ export function useReturnMode(input: Doc, branchId: string | null) {
 
   const toggle = (r: ReturnRow) => {
     const next = { ...qty };
-    if (ticked(r)) delete next[r.key];
-    else next[r.key] = r.returnable;
+    const nextBonus = { ...bonusQty };
+    if (ticked(r)) {
+      delete next[r.key];
+      delete nextBonus[r.key];
+    } else {
+      next[r.key] = r.returnable;
+      nextBonus[r.key] = r.bonusReturnable;
+    }
     setQty(next);
+    setBonusQty(nextBonus);
   };
   // Clearing the box keeps the row ticked; an empty or zero qty is flagged as invalid instead.
   const setRowQty = (r: ReturnRow, raw: string) => {
     const n = Number(raw);
     setQty({ ...qty, [r.key]: raw === '' || !Number.isFinite(n) ? null : n });
   };
-  const toggleAll = () =>
+  const setRowBonus = (r: ReturnRow, raw: string) => {
+    const n = Number(raw);
+    setBonusQty({ ...bonusQty, [r.key]: raw === '' || !Number.isFinite(n) ? null : n });
+  };
+  const toggleAll = () => {
     setQty(allFull ? {} : Object.fromEntries(selectable.map((r) => [r.key, r.returnable])));
+    setBonusQty(allFull ? {} : Object.fromEntries(selectable.map((r) => [r.key, r.bonusReturnable])));
+  };
 
   const amountOf = (r: ReturnRow) => round2(qtyOf(r) * r.unitAmount);
   const returnTotal = round2(rows.reduce((sum, r) => sum + qtyOf(r) * r.unitAmount, 0));
@@ -149,10 +190,21 @@ export function useReturnMode(input: Doc, branchId: string | null) {
   const refund = mode === ReturnSettlementMode.REFUND ? excess : 0;
   const credit = round2(excess - refund);
 
-  const invalid = rows.some((r) => ticked(r) && (qtyOf(r) < 1 || qtyOf(r) > r.returnable + 0.0001));
+  // A row may return only free units (paid qty 0), but never nothing at all.
+  const invalid = rows.some(
+    (r) =>
+      ticked(r) &&
+      (qty[r.key] === null ||
+        bonusQty[r.key] === null ||
+        qtyOf(r) < 0 ||
+        qtyOf(r) > r.returnable + 0.0001 ||
+        bonusOf(r) < 0 ||
+        bonusOf(r) > r.bonusReturnable + 0.0001 ||
+        qtyOf(r) + bonusOf(r) <= 0),
+  );
   const canConfirm = rows.some(ticked) && !invalid && !isCreating;
 
-  const submit = async (chosen: ReturnRow[], qtyOf: (r: ReturnRow) => number) => {
+  const submit = async (chosen: ReturnRow[], qtyOf: (r: ReturnRow) => number, bonusOf: (r: ReturnRow) => number) => {
     const base = {
       branchId: doc.branchId,
       reasonCode,
@@ -163,20 +215,24 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     if (kind === 'purchase') {
       await create({
         ...base,
-        items: chosen.map((r) => ({ productId: r.productId, batchId: r.batchId, quantity: qtyOf(r) })),
+        items: chosen.filter((r) => qtyOf(r) > 0).map((r) => ({ productId: r.productId, batchId: r.batchId, quantity: qtyOf(r) })),
       });
     } else {
+      const toAllocation = (r: ReturnRow, quantity: number) => ({
+        batchId: r.batchId,
+        quantity,
+        condition: condition[r.key] ?? ReturnCondition.RESTOCK,
+      });
       const byProduct = new Map<string, ReturnRow[]>();
       for (const r of chosen) byProduct.set(r.productId, [...(byProduct.get(r.productId) ?? []), r]);
       await create({
         ...base,
         items: [...byProduct.entries()].map(([productId, list]) => ({
           productId,
-          batchAllocations: list.map((r) => ({
-            batchId: r.batchId,
-            quantity: qtyOf(r),
-            condition: condition[r.key] ?? ReturnCondition.RESTOCK,
-          })),
+          batchAllocations: list.filter((r) => qtyOf(r) > 0).map((r) => toAllocation(r, qtyOf(r))),
+          bonusAllocations: list.some((r) => bonusOf(r) > 0)
+            ? list.filter((r) => bonusOf(r) > 0).map((r) => toAllocation(r, bonusOf(r)))
+            : undefined,
         })),
       });
     }
@@ -184,10 +240,10 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     setActive(false);
   };
 
-  const confirm = () => submit(rows.filter(ticked), qtyOf);
+  const confirm = () => submit(rows.filter(ticked), qtyOf, bonusOf);
 
   /** Returns everything still returnable on the document in one go (default ADJUST settlement). */
-  const fullReturn = () => submit(selectable, (r) => r.returnable);
+  const fullReturn = () => submit(selectable, (r) => r.returnable, (r) => r.bonusReturnable);
 
   return {
     kind,
@@ -200,6 +256,9 @@ export function useReturnMode(input: Doc, branchId: string | null) {
     rows,
     qtyOf,
     qtyInput,
+    bonusOf,
+    bonusInput,
+    setRowBonus,
     ticked,
     amountOf,
     toggle,

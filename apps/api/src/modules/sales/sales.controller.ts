@@ -222,6 +222,21 @@ export class SalesController {
     doc.end();
   }
 
+  /** Advance the customer can spend on a new invoice; `canApply` is false when the caller's sales stay pending orders. */
+  @RequirePermission('sales:create')
+  @Get('customer-advance/:customerId')
+  async customerAdvance(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('customerId') customerId: string,
+    @Query('branchId') branchId?: string,
+  ) {
+    const scope = resolveCreateBranch(user, branchId);
+    return {
+      advanceBalance: await this.salesService.getCustomerAdvance(user.tenantId, scope, customerId),
+      canApply: await this.permissionResolver.has(user, 'skip_process_order:read'),
+    };
+  }
+
   @RequirePermission('sales:read', 'sales:create')
   @Get('last-price')
   async lastPrice(
@@ -330,8 +345,10 @@ export class SalesController {
     const canBookForOthers =
       isAdminUser(user) || (await this.permissionResolver.has(user, 'sales:book_for_others'));
     const orderBooker = await this.orderBookers.resolveForCreate(user, scope, dto.orderBookerId, canBookForOthers);
-    // Every new sale waits as a pending order until someone with process_orders:read confirms it.
-    return this.salesService.createSale(user.tenantId, scope, user.userId, dto, orderBooker, true);
+    // A new sale waits as a pending order until someone with process_orders:read confirms it,
+    // unless the person placing it has skip_process_order:read: then it is an invoice at once.
+    const skipProcessing = await this.permissionResolver.has(user, 'skip_process_order:read');
+    return this.salesService.createSale(user.tenantId, scope, user.userId, dto, orderBooker, !skipProcessing);
   }
 
   @RequirePermission('sales:update')

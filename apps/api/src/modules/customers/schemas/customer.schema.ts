@@ -46,6 +46,10 @@ export class Customer {
   @Prop({ required: true, default: 0 })
   totalDue: number;
 
+  /** Bumped when an invoice spends this customer's advance: the write conflict serializes two invoices on one advance. */
+  @Prop({ required: true, default: 0 })
+  advanceSeq: number;
+
   @Prop({ type: Date, default: null })
   deletedAt: Date | null;
 }

@@ -51,6 +51,13 @@ export class SaleItem {
 
   @Prop({ type: [SaleBatchAllocationSchema], required: true })
   batchAllocations: SaleBatchAllocation[];
+
+  /** Free units given on top of `quantity`: they leave stock (and count in cost) but are not charged. */
+  @Prop({ min: 0, default: 0 })
+  bonusQuantity?: number;
+
+  @Prop({ type: [SaleBatchAllocationSchema], default: [] })
+  bonusAllocations?: SaleBatchAllocation[];
 }
 
 export const SaleItemSchema = SchemaFactory.createForClass(SaleItem);
@@ -111,6 +118,10 @@ export class Sale {
 
   @Prop({ required: true, min: 0, default: 0 })
   amountPaid: number;
+
+  /** The part of `amountPaid` that came from the customer's advance (no cash moved). */
+  @Prop({ min: 0, default: 0 })
+  advanceApplied?: number;
 
   @Prop({ required: true, default: Date.now })
   saleDate: Date;

@@ -4,6 +4,7 @@ import { Account, AccountSchema } from './schemas/account.schema';
 import { JournalEntry, JournalEntrySchema } from './schemas/journal-entry.schema';
 import { Payment, PaymentSchema } from './schemas/payment.schema';
 import { Expense, ExpenseSchema } from './schemas/expense.schema';
+import { ExpenseCategory, ExpenseCategorySchema } from './schemas/expense-category.schema';
 import { SaleReturn, SaleReturnSchema } from './schemas/sale-return.schema';
 import { PurchaseReturn, PurchaseReturnSchema } from './schemas/purchase-return.schema';
 import { Sale, SaleSchema } from '../sales/schemas/sale.schema';
@@ -26,6 +27,8 @@ import { PaymentLinksService } from './payment-links.service';
 import { PaymentsController } from './payments.controller';
 import { ExpensesService } from './expenses.service';
 import { ExpensesController } from './expenses.controller';
+import { ExpenseCategoriesService } from './expense-categories.service';
+import { ExpenseCategoriesController } from './expense-categories.controller';
 import { JournalEntriesService } from './journal-entries.service';
 import { JournalEntriesController, OpeningBalancesController } from './journal-entries.controller';
 import { ReturnsService } from './returns.service';
@@ -45,6 +48,7 @@ import { RolesModule } from '../roles/roles.module';
       { name: JournalEntry.name, schema: JournalEntrySchema },
       { name: Payment.name, schema: PaymentSchema },
       { name: Expense.name, schema: ExpenseSchema },
+      { name: ExpenseCategory.name, schema: ExpenseCategorySchema },
       { name: SaleReturn.name, schema: SaleReturnSchema },
       { name: PurchaseReturn.name, schema: PurchaseReturnSchema },
       { name: Sale.name, schema: SaleSchema },
@@ -68,6 +72,7 @@ import { RolesModule } from '../roles/roles.module';
     PaymentLinksService,
     PaymentsService,
     ExpensesService,
+    ExpenseCategoriesService,
     JournalEntriesService,
     ReturnsService,
     LedgerReportsService,
@@ -78,6 +83,7 @@ import { RolesModule } from '../roles/roles.module';
     AccountsController,
     PaymentsController,
     ExpensesController,
+    ExpenseCategoriesController,
     JournalEntriesController,
     OpeningBalancesController,
     SaleReturnsController,
@@ -87,6 +93,7 @@ import { RolesModule } from '../roles/roles.module';
   ],
   exports: [
     AccountingPostingService,
+    ExpenseCategoriesService,
     PaymentsService,
     PartyBalanceService,
     LedgerReportsService,

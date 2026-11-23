@@ -135,6 +135,17 @@ describe('SSR roll-up', () => {
     expect([...withZero.values()][0].m.closingStock).toBe(7);
   });
 
+  it('counts free units as bonus and as cost, with no revenue, net of returned bonus', () => {
+    const bonus = (qty: number) => ({ productId: 'p1', batchId: 'b1', customerId: 'c1' as string | null, qty });
+    const m = firstCell(base({ sales: [sale(10, 100)], bonusSold: [bonus(2)], bonusReturned: [bonus(1)] })).m;
+    const d = derive(m);
+    expect(d.bonus).toBe(1);
+    expect(d.netSales).toBe(100);
+    expect(d.netUnits).toBe(10);
+    // 10 sold + 2 free at cost 6, less 1 free returned: 11 units of cost.
+    expect(d.cogs).toBe(66);
+  });
+
   it('reports margin only when there is net revenue', () => {
     expect(derive(zero()).marginPct).toBeNull();
   });
@@ -143,7 +154,7 @@ describe('SSR roll-up', () => {
 function zero() {
   return {
     unitsSold: 0, unitsReturned: 0, gross: 0, discounts: 0, tax: 0, salesNet: 0, returnsValue: 0, returnsTax: 0,
-    cogsSold: 0, cogsReturned: 0, voidedUnits: 0, voidedValue: 0, closingStock: 0,
+    cogsSold: 0, cogsReturned: 0, voidedUnits: 0, voidedValue: 0, bonusUnits: 0, closingStock: 0,
     opening: 0, purchased: 0, purchaseValue: 0, transferIn: 0, transferOut: 0, closingValue: 0, closingValueCp: 0,
   };
 }

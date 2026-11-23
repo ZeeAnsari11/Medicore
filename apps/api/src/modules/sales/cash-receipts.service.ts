@@ -30,6 +30,8 @@ import { InvoiceAuditService } from '../../common/invoices/invoice-audit.service
 import { SequenceService } from '../../common/sequence/sequence.service';
 import { runWithoutBranchScope } from '../../common/tenancy/tenant-context';
 import { PaymentsService } from '../accounting/payments.service';
+import { ExpenseCategoriesService } from '../accounting/expense-categories.service';
+import { receiptAmountsError } from './cash-receipt-amounts';
 import { PartyBalanceService } from '../accounting/party-balance.service';
 import { round2 } from '../accounting/accounting-posting.service';
 import { DocumentPdfService } from '../../common/pdf/document-pdf.service';
@@ -54,8 +56,9 @@ class NothingChanged extends Error {}
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Invoice balance after returns and refunds; the same formula as SalesService.updatePayment. */
-const outstandingOf = (s: Pick<Sale, 'grandTotal' | 'returnedTotal' | 'amountPaid' | 'refundedTotal'>) =>
-  round2(s.grandTotal - (s.returnedTotal ?? 0) - (s.amountPaid - (s.refundedTotal ?? 0)));
+const outstandingOf = (
+  s: Pick<Sale, 'grandTotal' | 'returnedTotal' | 'amountPaid' | 'refundedTotal'>,
+) => round2(s.grandTotal - (s.returnedTotal ?? 0) - (s.amountPaid - (s.refundedTotal ?? 0)));
 
 @Injectable()
 export class CashReceiptsService {
@@ -69,6 +72,7 @@ export class CashReceiptsService {
     @InjectConnection() private readonly connection: Connection,
     private readonly sequenceService: SequenceService,
     private readonly paymentsService: PaymentsService,
+    private readonly expenseCategories: ExpenseCategoriesService,
     private readonly partyBalanceService: PartyBalanceService,
     private readonly documentPdfService: DocumentPdfService,
     private readonly tenantsService: TenantsService,
@@ -131,21 +135,30 @@ export class CashReceiptsService {
   }
 
   /** The single branch all of a sheet's invoices belong to; undefined when none found, 400 when mixed. */
-  async invoicesBranchId(tenantId: string, invoiceIds: string[], ownerId?: string | null): Promise<string | undefined> {
-    const sales = await runWithoutBranchScope(async () =>
-      await this.saleModel
-        .find({
-          _id: { $in: invoiceIds },
-          tenantId: new Types.ObjectId(tenantId),
-          ...(ownerId ? { orderBookerId: new Types.ObjectId(ownerId) } : {}),
-        })
-        .select('branchId')
-        .lean(),
+  async invoicesBranchId(
+    tenantId: string,
+    invoiceIds: string[],
+    ownerId?: string | null,
+  ): Promise<string | undefined> {
+    const sales = await runWithoutBranchScope(
+      async () =>
+        await this.saleModel
+          .find({
+            _id: { $in: invoiceIds },
+            tenantId: new Types.ObjectId(tenantId),
+            ...(ownerId ? { orderBookerId: new Types.ObjectId(ownerId) } : {}),
+          })
+          .select('branchId')
+          .lean(),
     );
     // An Order Booker's sheet may only hold their own invoices; any other counts as not found.
-    if (ownerId && sales.length < new Set(invoiceIds).size) throw new NotFoundException('Invoice not found');
+    if (ownerId && sales.length < new Set(invoiceIds).size)
+      throw new NotFoundException('Invoice not found');
     const branches = new Set(sales.map((s) => String(s.branchId)));
-    if (branches.size > 1) throw new BadRequestException('A cash receipt sheet cannot mix invoices from different branches');
+    if (branches.size > 1)
+      throw new BadRequestException(
+        'A cash receipt sheet cannot mix invoices from different branches',
+      );
     return [...branches][0];
   }
 
@@ -177,6 +190,8 @@ export class CashReceiptsService {
       await session.withTransaction(async () => {
         const errors: Array<{ invoiceId: string; reason: string }> = [];
         const rows: CashReceipt['rows'] = [];
+        let defaultDifference:
+          Awaited<ReturnType<ExpenseCategoriesService['defaultDifference']>> | undefined;
 
         // Revalidate every row against the live invoice; nothing the client sends about balances is trusted.
         for (const row of dto.rows) {
@@ -188,7 +203,10 @@ export class CashReceiptsService {
             continue;
           }
           if (!sale.customerId) {
-            errors.push({ invoiceId: row.invoiceId, reason: 'Walk-in invoices cannot be receipted here' });
+            errors.push({
+              invoiceId: row.invoiceId,
+              reason: 'Walk-in invoices cannot be receipted here',
+            });
             continue;
           }
           const balance = outstandingOf(sale);
@@ -196,8 +214,10 @@ export class CashReceiptsService {
             errors.push({ invoiceId: row.invoiceId, reason: 'Invoice is already paid' });
             continue;
           }
-          if (row.amount > balance + 0.01) {
-            errors.push({ invoiceId: row.invoiceId, reason: `Amount exceeds the balance of ${balance.toFixed(2)}` });
+          const difference = round2(row.difference ?? 0);
+          const amountsError = receiptAmountsError(row.amount, difference, balance);
+          if (amountsError) {
+            errors.push({ invoiceId: row.invoiceId, reason: amountsError });
             continue;
           }
           const customer = await this.customerModel
@@ -209,6 +229,11 @@ export class CashReceiptsService {
           }
 
           const method = row.method ?? dto.method;
+          // The difference is booked to the receipt branch's default Difference > Sales Difference.
+          defaultDifference ??=
+            difference > 0
+              ? await this.expenseCategories.defaultDifference(tenantId, branchId)
+              : undefined;
           const payment = await this.paymentsService.recordQuickPayment(
             tenantId,
             branchId,
@@ -219,7 +244,20 @@ export class CashReceiptsService {
             String(sale.customerId),
             method,
             row.amount,
-            { paymentDate: date.toISOString(), reference: row.reference, notes: `Cash receipt` },
+            {
+              paymentDate: date.toISOString(),
+              reference: row.reference,
+              notes: `Cash receipt`,
+              difference:
+                difference > 0 && defaultDifference
+                  ? {
+                      amount: difference,
+                      ...defaultDifference,
+                      invoiceId: sale.id,
+                      invoiceNumber: sale.invoiceNumber ?? '',
+                    }
+                  : undefined,
+            },
             session,
           );
           rows.push({
@@ -232,6 +270,7 @@ export class CashReceiptsService {
             customerName: customer.name,
             paymentId: payment.id,
             amount: row.amount,
+            difference: difference > 0 ? difference : undefined,
             method,
             reference: row.reference,
             orderBookerName: sale.orderBookerName,
@@ -264,6 +303,7 @@ export class CashReceiptsService {
               method: dto.method,
               rows,
               total: round2(rows.reduce((sum, r) => sum + r.amount, 0)),
+              differenceTotal: round2(rows.reduce((sum, r) => sum + (r.difference ?? 0), 0)),
               createdBy: new Types.ObjectId(userId),
             },
           ],
@@ -353,7 +393,9 @@ export class CashReceiptsService {
       $or: [{ createdBy: me }, { updatedBy: me }],
     };
     if (branchId) filter.branchId = new Types.ObjectId(branchId);
-    const doc = await runWithoutBranchScope(() => this.receiptModel.findOne(filter).sort({ updatedAt: -1, _id: -1 }));
+    const doc = await runWithoutBranchScope(() =>
+      this.receiptModel.findOne(filter).sort({ updatedAt: -1, _id: -1 }),
+    );
     return doc ? this.toSummary(doc) : null;
   }
 
@@ -368,7 +410,8 @@ export class CashReceiptsService {
       total: r.total,
       customers: [...new Set(r.rows.map((x) => x.customerName))],
       version: r.version ?? 1,
-      editedAt: (r.version ?? 1) > 1 ? (r as unknown as { updatedAt: Date }).updatedAt.toISOString() : null,
+      editedAt:
+        (r.version ?? 1) > 1 ? (r as unknown as { updatedAt: Date }).updatedAt.toISOString() : null,
     };
   }
 
@@ -525,8 +568,11 @@ export class CashReceiptsService {
           );
 
           // Body rows that keep an existing entry of the same invoice; anything else is an addition.
-          const kept = new Map<string, { entryId: string; invoiceId: string; amount: number }>();
-          const added: Array<{ invoiceId: string; amount: number }> = [];
+          const kept = new Map<
+            string,
+            { entryId: string; invoiceId: string; amount: number; difference?: number }
+          >();
+          const added: Array<{ invoiceId: string; amount: number; difference?: number }> = [];
           for (const row of dto.rows) {
             const old = row.entryId ? stored.get(row.entryId) : undefined;
             if (old && old.invoiceId === row.invoiceId)
@@ -577,6 +623,25 @@ export class CashReceiptsService {
               continue;
             }
             const amountChanged = Math.abs(keptRow.amount - old.amount) > 0.004;
+            const differenceChanged =
+              Math.abs((keptRow.difference ?? 0) - (old.difference ?? 0)) > 0.004;
+            if ((old.difference ?? 0) > 0 && (amountChanged || differenceChanged || dateChanged)) {
+              // Its payment, ledger lines and expense record move together; changing one in place is not supported.
+              errors.push({
+                invoiceId: old.invoiceId,
+                reason:
+                  'This entry wrote off a difference; remove it and enter it again to change it',
+              });
+              continue;
+            }
+            if (differenceChanged) {
+              errors.push({
+                invoiceId: old.invoiceId,
+                reason:
+                  'A difference can only be added with a new entry; remove this one and enter it again',
+              });
+              continue;
+            }
             if (!amountChanged && !dateChanged) {
               finalRows.push(plainRow(old));
               continue;
@@ -653,11 +718,10 @@ export class CashReceiptsService {
               errors.push({ invoiceId: row.invoiceId, reason: 'Invoice is already paid' });
               continue;
             }
-            if (row.amount > balance + 0.01) {
-              errors.push({
-                invoiceId: row.invoiceId,
-                reason: `Amount exceeds the balance of ${balance.toFixed(2)}`,
-              });
+            const difference = round2(row.difference ?? 0);
+            const amountsError = receiptAmountsError(row.amount, difference, balance);
+            if (amountsError) {
+              errors.push({ invoiceId: row.invoiceId, reason: amountsError });
               continue;
             }
             const customer = await this.customerModel
@@ -667,6 +731,10 @@ export class CashReceiptsService {
               errors.push({ invoiceId: row.invoiceId, reason: 'Customer not found' });
               continue;
             }
+            const defaultDifference =
+              difference > 0
+                ? await this.expenseCategories.defaultDifference(tenantId, branchId)
+                : undefined;
             const before = { amountPaid: sale.amountPaid, paymentStatus: sale.paymentStatus };
             const payment = await this.paymentsService.recordQuickPayment(
               tenantId,
@@ -678,7 +746,18 @@ export class CashReceiptsService {
               String(sale.customerId),
               locked.method,
               row.amount,
-              { paymentDate: date.toISOString(), notes: 'Cash receipt' },
+              {
+                paymentDate: date.toISOString(),
+                notes: 'Cash receipt',
+                difference: defaultDifference
+                  ? {
+                      amount: difference,
+                      ...defaultDifference,
+                      invoiceId: sale.id,
+                      invoiceNumber: sale.invoiceNumber ?? '',
+                    }
+                  : undefined,
+              },
               session,
             );
             const afterSale = await this.saleModel.findById(sale.id).session(session);
@@ -697,6 +776,7 @@ export class CashReceiptsService {
               customerName: customer.name,
               paymentId: payment.id,
               amount: row.amount,
+              difference: difference > 0 ? difference : undefined,
               method: locked.method,
               orderBookerName: sale.orderBookerName,
             });
@@ -718,6 +798,9 @@ export class CashReceiptsService {
 
           locked.rows = [...finalRows, ...addedRows];
           locked.total = round2(locked.rows.reduce((sum, r) => sum + r.amount, 0));
+          locked.differenceTotal = round2(
+            locked.rows.reduce((sum, r) => sum + (r.difference ?? 0), 0),
+          );
           if (dateChanged) locked.date = date;
           await locked.save({ session });
 
@@ -793,7 +876,10 @@ export class CashReceiptsService {
     const takenOff = new Map<string, number>();
     for (const r of receipt.rows) {
       if (live.has(r.paymentId))
-        takenOff.set(r.customerId, round2((takenOff.get(r.customerId) ?? 0) + r.amount));
+        takenOff.set(
+          r.customerId,
+          round2((takenOff.get(r.customerId) ?? 0) + r.amount + (r.difference ?? 0)),
+        );
     }
     const customerBalance = new Map<string, number>();
     await Promise.all(
@@ -811,7 +897,8 @@ export class CashReceiptsService {
     const rows: CashTransactionRow[] = receipt.rows.map((r) => {
       const sale = saleById.get(r.invoiceId);
       const isLive = live.has(r.paymentId);
-      const own = isLive ? r.amount : 0;
+      // What this entry settled: the cash received plus any difference written off.
+      const own = isLive ? round2(r.amount + (r.difference ?? 0)) : 0;
       const netTotal = sale ? round2(sale.grandTotal - (sale.returnedTotal ?? 0)) : 0;
       const balance = sale ? round2(outstandingOf(sale) + own) : 0;
       return {
@@ -826,6 +913,7 @@ export class CashReceiptsService {
         received: round2(netTotal - balance),
         balance,
         amount: r.amount,
+        difference: r.difference ?? 0,
         paymentVoided: !isLive || !sale,
       };
     });
@@ -839,6 +927,7 @@ export class CashReceiptsService {
       date: receipt.date.toISOString(),
       method: receipt.method,
       total: receipt.total,
+      differenceTotal: receipt.differenceTotal ?? 0,
       rows,
     };
   }
@@ -852,9 +941,16 @@ export class CashReceiptsService {
     const rows = invoiceId ? receipt.rows.filter((r) => r.invoiceId === invoiceId) : receipt.rows;
     if (rows.length === 0) throw new NotFoundException('Receipt row not found');
 
-    const [branch, tenant] = await Promise.all([
+    // A voucher for one customer prints their code, address and city in the header.
+    const customerIds = [...new Set(rows.map((r) => r.customerId))];
+    const [branch, tenant, single] = await Promise.all([
       this.branchModel.findById(receipt.branchId),
       this.tenantsService.findById(tenantId),
+      customerIds.length === 1
+        ? this.customerModel
+            .findOne({ _id: customerIds[0], tenantId: new Types.ObjectId(tenantId) })
+            .select('code address city')
+        : null,
     ]);
     const total = round2(rows.reduce((sum, r) => sum + r.amount, 0));
     const customers = [...new Set(rows.map((r) => r.customerName))];
@@ -869,8 +965,11 @@ export class CashReceiptsService {
       branchPhone: branch?.phone,
       partyLabel: 'Received from',
       partyName: customers.join(', '),
+      partyCode: single?.code,
+      partyAddress: single?.address,
+      partyCity: single?.city,
       items: rows.map((r) => ({
-        name: `${r.customerName} — Invoice ${r.invoiceNumber}`,
+        name: `${r.customerName} — Invoice ${r.invoiceNumber}${r.difference ? ` (difference ${r.difference.toFixed(2)} written off)` : ''}`,
         quantity: 1,
         unitPrice: r.amount,
         lineTotal: r.amount,
@@ -906,6 +1005,7 @@ export class CashReceiptsService {
         invoiceNumber: x.invoiceNumber,
         customerName: x.customerName,
         amount: x.amount,
+        difference: x.difference ?? undefined,
         method: x.method,
         reference: x.reference,
       })),

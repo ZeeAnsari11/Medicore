@@ -49,6 +49,12 @@ export class CreatePurchaseItemDto {
   @Max(100)
   @IsOptional()
   taxPercent?: number;
+
+  /** Edit only: the batch this line sits on today, so a changed batch number can move just the units still in stock. */
+  // Batch ids are UUID strings, not Mongo ObjectIds.
+  @IsString()
+  @IsOptional()
+  sourceBatchId?: string;
 }
 
 export class PurchasePriceUpdateDto {
@@ -91,6 +97,11 @@ export class CreatePurchaseDto {
   @Min(0)
   @IsOptional()
   amountPaid?: number;
+
+  /** Spend the vendor's unspent advance on this bill first (the form asks before saving). */
+  @IsBoolean()
+  @IsOptional()
+  applyAdvance?: boolean;
 
   @IsArray()
   @ArrayMinSize(1)

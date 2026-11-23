@@ -36,6 +36,8 @@ export function documentHref(ref: LedgerReference): string {
       return `/accounting/payments?open=${ref.id}`;
     case 'SALE_RETURN':
       return `/accounting/returns?open=${ref.id}`;
+    case 'PURCHASE_RETURN':
+      return `/accounting/returns?mode=purchase&open=${ref.id}`;
     default:
       return '/accounting/expenses';
   }
@@ -86,8 +88,22 @@ export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetchi
   );
 
   /** "Against invoice 0004": each invoice number in a payment's description is the link to that invoice. */
+  /** A cash receipt's "Difference 5.00" note stands out in bold. */
+  const boldDifference = (text: string): ReactNode => {
+    const at = text.search(/Difference [\d,.]+/);
+    if (at < 0) return text;
+    const note = /Difference [\d,.]+/.exec(text)![0];
+    return (
+      <>
+        {text.slice(0, at)}
+        <b>{note}</b>
+        {text.slice(at + note.length)}
+      </>
+    );
+  };
+
   const descriptionCell = (row: LedgerRow) => {
-    if (!row.invoices?.length) return row.description;
+    if (!row.invoices?.length) return boldDifference(row.description);
     const parts: ReactNode[] = [];
     let rest = row.description;
     for (const inv of row.invoices) {
@@ -96,7 +112,7 @@ export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetchi
       parts.push(rest.slice(0, at), invoiceLink(row, inv));
       rest = rest.slice(at + inv.number.length);
     }
-    return parts.length ? <>{parts}{rest}</> : row.description;
+    return parts.length ? <>{parts}{boldDifference(rest)}</> : boldDifference(row.description);
   };
 
   /** The document column: the invoice, purchase or payment (PMT-) number, else the journal entry. */

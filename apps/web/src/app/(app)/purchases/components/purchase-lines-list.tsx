@@ -48,7 +48,12 @@ export function PurchaseLinesList({ lines, editingKey, onEdit, onRemove }: Purch
             >
               <TableCell className="px-2 text-xs text-muted-foreground">{index + 1}</TableCell>
               <TableCell className="px-2 text-sm">{line.productName}</TableCell>
-              <TableCell className="px-2 text-sm">{line.batchNumber}</TableCell>
+              <TableCell className="px-2 text-sm">
+                {line.batchNumber}
+                {(line.soldQuantity ?? 0) > 0 && (
+                  <span className="block text-xs text-muted-foreground">{line.soldQuantity} sold</span>
+                )}
+              </TableCell>
               <TableCell className="px-2 text-sm">{new Date(line.expiryDate).toLocaleDateString()}</TableCell>
               <TableCell className="px-2 text-right text-sm tabular-nums">{line.quantity}</TableCell>
               <TableCell className="px-2 text-right text-sm tabular-nums">{line.purchasePrice.toFixed(2)}</TableCell>

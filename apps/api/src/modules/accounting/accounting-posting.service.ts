@@ -10,6 +10,7 @@ import { Account, AccountDocument } from './schemas/account.schema';
 import { JournalEntry, JournalEntryDocument } from './schemas/journal-entry.schema';
 import { Batch, BatchDocument } from '../inventory/schemas/batch.schema';
 import { SequenceService } from '../../common/sequence/sequence.service';
+import { splitPurchaseSettlement } from './purchase-settlement';
 import {
   AccountType,
   JournalEntrySourceType,
@@ -140,6 +141,8 @@ export interface PostSaleEntryParams {
   taxTotal: number;
   grandTotal: number;
   amountPaid: number;
+  /** Part of `amountPaid` settled from the customer's advance (Dr Customer Advances instead of Dr Cash). */
+  advanceApplied?: number;
   items: SaleItemInput[];
   createdBy: string;
   session: ClientSession;
@@ -158,6 +161,8 @@ export interface PostPurchaseEntryParams {
   vendorId: string;
   grandTotal: number;
   amountPaid: number;
+  /** Part of `amountPaid` settled from the vendor's advance (Cr Vendor Advances instead of Cr Cash). */
+  advanceApplied?: number;
   createdBy: string;
   session: ClientSession;
 }
@@ -278,12 +283,72 @@ export class AccountingPostingService {
    * posting time and baked into the immutable line — never re-derived later.
    */
   async postSaleEntry(params: PostSaleEntryParams): Promise<JournalEntryDocument> {
+    const lines = await this.buildSaleLines(params);
+    return this.postJournalEntry({
+      tenantId: params.tenantId,
+      branchId: params.branchId,
+      entryDate: params.saleDate,
+      sourceType: JournalEntrySourceType.SALE,
+      sourceId: params.saleId,
+      description: `Sale ${params.saleId}`,
+      lines,
+      createdBy: params.createdBy,
+      session: params.session,
+    });
+  }
+
+  /**
+   * An invoice edit: the sale's own live entry is rewritten in place (same entry, same number, new lines and
+   * totals) so the ledger shows one row per invoice instead of a reversal plus a re-post. Falls back to a fresh
+   * posting when the sale has no live entry (e.g. it was never posted).
+   */
+  async editSaleEntryInPlace(params: PostSaleEntryParams): Promise<JournalEntryDocument> {
+    const entry = await this.journalEntryModel
+      .findOne({
+        tenantId: new Types.ObjectId(params.tenantId),
+        sourceType: JournalEntrySourceType.SALE,
+        sourceId: params.saleId,
+        status: JournalEntryStatus.POSTED,
+        deletedAt: null,
+      })
+      .session(params.session);
+    if (!entry) return this.postSaleEntry(params);
+
+    const lines = await this.buildSaleLines(params);
+    const totalDebit = round2(lines.reduce((sum, l) => sum + l.debit, 0));
+    const totalCredit = round2(lines.reduce((sum, l) => sum + l.credit, 0));
+    if (Math.abs(totalDebit - totalCredit) > BALANCE_EPSILON) {
+      throw new BadRequestException(
+        `Journal entry is not balanced: total debit ${totalDebit} does not equal total credit ${totalCredit}`,
+      );
+    }
+    entry.set('lines', lines);
+    entry.totalDebit = totalDebit;
+    entry.totalCredit = totalCredit;
+    entry.entryDate = params.saleDate;
+    entry.markModified('lines');
+    return entry.save({ session: params.session });
+  }
+
+  private async buildSaleLines(params: PostSaleEntryParams): Promise<PostLineInput[]> {
     const accounts = await this.ensureDefaultAccounts(params.tenantId, params.session);
     const arPortion = round2(Math.max(params.grandTotal - params.amountPaid, 0));
-    const cashPortion = round2(Math.min(params.amountPaid, params.grandTotal));
+    const paidPortion = round2(Math.min(params.amountPaid, params.grandTotal));
+    const advancePortion = params.customerId ? round2(Math.min(params.advanceApplied ?? 0, paidPortion)) : 0;
+    const cashPortion = round2(paidPortion - advancePortion);
     const revenue = round2(params.subtotal - params.discountTotal);
 
     const lines: PostLineInput[] = [];
+    if (advancePortion > 0) {
+      lines.push({
+        accountId: accounts.get('CUSTOMER_ADVANCES')!.id,
+        debit: advancePortion,
+        credit: 0,
+        partyType: PartyType.CUSTOMER,
+        partyId: params.customerId,
+        description: 'Advance applied to invoice',
+      });
+    }
     if (arPortion > 0) {
       lines.push({
         accountId: accounts.get('ACCOUNTS_RECEIVABLE')!.id,
@@ -333,17 +398,7 @@ export class AccountingPostingService {
       });
     }
 
-    return this.postJournalEntry({
-      tenantId: params.tenantId,
-      branchId: params.branchId,
-      entryDate: params.saleDate,
-      sourceType: JournalEntrySourceType.SALE,
-      sourceId: params.saleId,
-      description: `Sale ${params.saleId}`,
-      lines,
-      createdBy: params.createdBy,
-      session: params.session,
-    });
+    return lines;
   }
 
   /** Exact equal-and-opposite reversal of the sale's own entry lines. */
@@ -439,9 +494,53 @@ export class AccountingPostingService {
 
   /** Dr Inventory(grandTotal, tax folded in) / Cr AP(apPortion) + Cr Cash(cashPortion). */
   async postPurchaseEntry(params: PostPurchaseEntryParams): Promise<JournalEntryDocument> {
+    const lines = await this.buildPurchaseLines(params);
+    return this.postJournalEntry({
+      tenantId: params.tenantId,
+      branchId: params.branchId,
+      entryDate: params.purchaseDate,
+      sourceType: JournalEntrySourceType.PURCHASE,
+      sourceId: params.purchaseId,
+      description: `Purchase ${params.purchaseId}`,
+      lines,
+      createdBy: params.createdBy,
+      session: params.session,
+    });
+  }
+
+  /**
+   * A purchase edit: the purchase's own live entry is rewritten in place (same entry, same number) so the vendor
+   * ledger shows one row per invoice instead of a reversal plus a re-post. Posts a fresh entry if none is live.
+   */
+  async editPurchaseEntryInPlace(params: PostPurchaseEntryParams): Promise<JournalEntryDocument> {
+    const entry = await this.journalEntryModel
+      .findOne({
+        tenantId: new Types.ObjectId(params.tenantId),
+        sourceType: JournalEntrySourceType.PURCHASE,
+        sourceId: params.purchaseId,
+        status: JournalEntryStatus.POSTED,
+        deletedAt: null,
+      })
+      .session(params.session);
+    if (!entry) return this.postPurchaseEntry(params);
+
+    const lines = await this.buildPurchaseLines(params);
+    const total = round2(lines.reduce((sum, l) => sum + l.debit, 0));
+    entry.set('lines', lines);
+    entry.totalDebit = total;
+    entry.totalCredit = total;
+    entry.entryDate = params.purchaseDate;
+    entry.markModified('lines');
+    return entry.save({ session: params.session });
+  }
+
+  private async buildPurchaseLines(params: PostPurchaseEntryParams): Promise<PostLineInput[]> {
     const accounts = await this.ensureDefaultAccounts(params.tenantId, params.session);
-    const apPortion = round2(Math.max(params.grandTotal - params.amountPaid, 0));
-    const cashPortion = round2(Math.min(params.amountPaid, params.grandTotal));
+    const { apPortion, advancePortion, cashPortion } = splitPurchaseSettlement(
+      params.grandTotal,
+      params.amountPaid,
+      params.advanceApplied,
+    );
 
     const lines: PostLineInput[] = [
       {
@@ -451,6 +550,16 @@ export class AccountingPostingService {
         description: 'Stock received',
       },
     ];
+    if (advancePortion > 0) {
+      lines.push({
+        accountId: accounts.get('VENDOR_ADVANCES')!.id,
+        debit: 0,
+        credit: advancePortion,
+        partyType: PartyType.VENDOR,
+        partyId: params.vendorId,
+        description: 'Advance applied to purchase',
+      });
+    }
     if (apPortion > 0) {
       lines.push({
         accountId: accounts.get('ACCOUNTS_PAYABLE')!.id,
@@ -470,17 +579,7 @@ export class AccountingPostingService {
       });
     }
 
-    return this.postJournalEntry({
-      tenantId: params.tenantId,
-      branchId: params.branchId,
-      entryDate: params.purchaseDate,
-      sourceType: JournalEntrySourceType.PURCHASE,
-      sourceId: params.purchaseId,
-      description: `Purchase ${params.purchaseId}`,
-      lines,
-      createdBy: params.createdBy,
-      session: params.session,
-    });
+    return lines;
   }
 
   async postPurchaseCancellationEntry(

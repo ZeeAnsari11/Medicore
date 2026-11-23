@@ -71,7 +71,7 @@ export class PurchaseReturnsController {
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser, @Query('purchaseId') purchaseId?: string) {
     const returns = await this.returnsService.listPurchaseReturns(user.tenantId, purchaseId);
-    return returns.map((r) => this.returnsService.toPurchaseReturnResponse(r));
+    return this.returnsService.toPurchaseReturnResponses(user.tenantId, returns);
   }
 
   @RequirePermission('acc_returns:create')

@@ -76,6 +76,9 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
   },
   // Its own menu: ticking Sales must not hand out the right to confirm or reject pending orders.
   { key: 'process_orders', label: 'Process Orders', group: 'Operations', actions: [VIEW] },
+  // Its own menu, not part of Sales: a ticked Sales menu must not skip processing. Orders placed by a user with
+  // it become invoices straight away instead of waiting on the Process Orders screen.
+  { key: 'skip_process_order', label: 'Skip process order', group: 'Operations', actions: [VIEW] },
   { key: 'cash_receipt', label: 'Cash Receipt', group: 'Operations', actions: [VIEW, CREATE, EDIT] },
   { key: 'customers', label: 'Customers', group: 'Operations', actions: [VIEW, CREATE, EDIT, DELETE] },
   { key: 'reports', label: 'Reports', group: 'Insights', actions: [VIEW, EXPORT] },
@@ -115,6 +118,8 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
     actions: [VIEW, CREATE, { key: 'void', label: 'Void' }],
   },
   { key: 'acc_expenses', label: 'Expenses', group: ACC, parent: 'acc_overview', actions: [VIEW, CREATE] },
+  // Main and sub expense categories; viewing the list itself needs only Expenses > View.
+  { key: 'acc_expense_categories', label: 'Expense Categories', group: ACC, parent: 'acc_overview', actions: [VIEW, CREATE, EDIT, DELETE] },
   { key: 'acc_returns', label: 'Returns', group: ACC, parent: 'acc_overview', actions: [VIEW, CREATE] },
   {
     key: 'acc_general_ledger',
@@ -329,14 +334,19 @@ export function expandLegacyPermissions(keys: string[]): string[] {
   if (has('accounting:create')) {
     out.add('acc_payments:create');
     out.add('acc_expenses:create');
+    out.add('acc_expense_categories:create');
     out.add('acc_returns:create');
   }
   if (has('accounting:update')) {
     out.add('acc_chart_of_accounts:create');
     out.add('acc_chart_of_accounts:update');
+    out.add('acc_expense_categories:update');
   }
   if (has('accounting:post')) out.add('acc_journal_entries:create');
-  if (has('accounting:delete')) out.add('acc_chart_of_accounts:delete');
+  if (has('accounting:delete')) {
+    out.add('acc_chart_of_accounts:delete');
+    out.add('acc_expense_categories:delete');
+  }
 
   return normalizePermissions(out);
 }

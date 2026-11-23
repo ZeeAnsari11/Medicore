@@ -19,6 +19,8 @@ export interface Metrics {
   cogsReturned: number;
   voidedUnits: number;
   voidedValue: number;
+  /** Free (bonus) units given less those returned. */
+  bonusUnits: number;
   /** Closing quantity (as at the end of the period when stock flows are supplied). */
   closingStock: number;
   opening: number;
@@ -43,6 +45,7 @@ export const zeroMetrics = (): Metrics => ({
   cogsReturned: 0,
   voidedUnits: 0,
   voidedValue: 0,
+  bonusUnits: 0,
   closingStock: 0,
   opening: 0,
   purchased: 0,
@@ -83,6 +86,12 @@ export interface VoidedBase {
   qty: number;
   net: number;
 }
+export interface BonusBase {
+  productId: string;
+  batchId: string;
+  customerId: string | null;
+  qty: number;
+}
 export interface StockBase {
   productId: string;
   batchId: string;
@@ -115,6 +124,9 @@ export interface RollupInput {
   sales: SalesBase[];
   returns: ReturnBase[];
   voided: VoidedBase[];
+  /** Free units sold / returned; they cost stock (so count in COGS) but carry no revenue. */
+  bonusSold?: BonusBase[];
+  bonusReturned?: BonusBase[];
   stock: StockBase[];
   batchCost: Map<string, number>;
   vendorWeights: Map<string, VendorWeight[]>;
@@ -208,6 +220,16 @@ export function buildCells(input: RollupInput): Map<string, Cell> {
       );
     }
   }
+  for (const [list, sign] of [[input.bonusSold ?? [], 1], [input.bonusReturned ?? [], -1]] as const) {
+    for (const b of list) {
+      const cost = input.batchCost.get(b.batchId) ?? 0;
+      for (const { vendorId, w } of weightsOf(b.batchId)) {
+        const cell = cellFor(b.productId, vendorId, true)!;
+        const add = sign === 1 ? { bonusUnits: b.qty, cogsSold: b.qty * cost } : { bonusUnits: -b.qty, cogsReturned: b.qty * cost };
+        touch(cell, b.batchId, b.customerId, add, w);
+      }
+    }
+  }
   for (const v of input.voided) {
     for (const { vendorId, w } of weightsOf(v.batchId)) {
       const cell = cellFor(v.productId, vendorId, true)!;
@@ -268,7 +290,7 @@ export interface Derived {
   totalStock: number;
   /** Units sold less units returned. */
   grossSale: number;
-  /** No bonus quantity is recorded on sales yet. */
+  /** Free (bonus) units given less those returned. */
   bonus: number;
   netSale: number;
   netSaleValue: number;
@@ -310,7 +332,7 @@ export function derive(m: Metrics): Derived {
     purchaseValue: round2(m.purchaseValue),
     totalStock: round2(m.opening + m.purchased),
     grossSale: round2(netUnits),
-    bonus: 0,
+    bonus: round2(m.bonusUnits),
     netSale: round2(netUnits),
     netSaleValue: round2(netSales),
     expBrk: 0,

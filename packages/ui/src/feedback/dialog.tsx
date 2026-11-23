@@ -31,7 +31,9 @@ interface DialogContentProps extends React.ComponentPropsWithoutRef<typeof Dialo
   expandable?: boolean;
 }
 
-// Pressing these never starts a drag, so fields stay editable and clickable.
+// Only the header drags the dialog; the body stays selectable and copyable.
+const DRAG_HANDLE_SELECTOR = '[data-dialog-drag-handle]';
+// Even in the header, pressing these never starts a drag.
 const NO_DRAG_SELECTOR =
   'input, textarea, select, button, a, label, [role="combobox"], [role="option"], [contenteditable="true"]';
 
@@ -62,7 +64,7 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
             className,
             expanded && 'h-screen max-h-screen w-screen max-w-none rounded-none',
-            !expanded && (dragging ? 'cursor-grabbing select-none' : 'cursor-grab'),
+            dragging && 'cursor-grabbing select-none',
           )}
           // Offsets left/top rather than transform, which the centering and open animation already use.
           style={expanded ? style : { ...style, left: `calc(50% + ${offset.x}px)`, top: `calc(50% + ${offset.y}px)` }}
@@ -71,7 +73,10 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
             if (e.defaultPrevented || expanded || e.button !== 0) return;
             // React events bubble out of portals (e.g. an open Select list), which must not drag the dialog.
             if (!e.currentTarget.contains(e.target as Node)) return;
-            if ((e.target as HTMLElement).closest(NO_DRAG_SELECTOR)) return;
+            const target = e.target as HTMLElement;
+            if (!target.closest(DRAG_HANDLE_SELECTOR) || target.closest(NO_DRAG_SELECTOR)) return;
+            // A press inside a nested, non-header dialog body must not move this one.
+            if (target.closest('[role="dialog"]') !== e.currentTarget) return;
             e.currentTarget.setPointerCapture(e.pointerId);
             drag.current = {
               pointerX: e.clientX,
@@ -124,7 +129,11 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-1.5 text-center sm:text-left', className)} {...props} />
+  <div
+    data-dialog-drag-handle=""
+    className={cn('flex cursor-grab flex-col space-y-1.5 text-center active:cursor-grabbing sm:text-left', className)}
+    {...props}
+  />
 );
 DialogHeader.displayName = 'DialogHeader';
 

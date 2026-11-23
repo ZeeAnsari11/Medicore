@@ -71,8 +71,12 @@ export class SaleReturnItem {
   @Prop({ min: 0, max: 100 })
   taxPercent?: number;
 
-  @Prop({ type: [SaleReturnBatchAllocationSchema], required: true })
+  @Prop({ type: [SaleReturnBatchAllocationSchema], default: [] })
   batchAllocations: SaleReturnBatchAllocation[];
+
+  /** Bonus (free) units returned: restocked or written off, never refunded. */
+  @Prop({ type: [SaleReturnBatchAllocationSchema], default: [] })
+  bonusAllocations?: SaleReturnBatchAllocation[];
 }
 
 export const SaleReturnItemSchema = SchemaFactory.createForClass(SaleReturnItem);

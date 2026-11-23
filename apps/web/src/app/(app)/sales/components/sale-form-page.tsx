@@ -18,7 +18,7 @@ import {
 } from '@medicore/ui';
 import { TopbarContent } from '@/components/layout/topbar-slot';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
-import { useOrderBookers, useSales } from '@/hooks/use-sales';
+import { useCustomerAdvance, useOrderBookers, useSales } from '@/hooks/use-sales';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useCustomers } from '@/hooks/use-customers';
@@ -42,20 +42,35 @@ interface SaleFormValues {
 
 /** Lines of an existing sale, one per batch allocation; allocations of one item share a groupId. */
 function linesFromSale(sale: Sale): SaleLine[] {
-  return sale.items.flatMap((item, index) =>
-    item.batchAllocations.map((allocation) => ({
+  return sale.items.flatMap((item, index) => {
+    // Free units ride on the line of their own batch; a batch with only bonus gets a line of its own.
+    const bonusOf = new Map<string, number>();
+    for (const b of item.bonusAllocations ?? []) bonusOf.set(b.batchId, (bonusOf.get(b.batchId) ?? 0) + b.quantity);
+    const at = (allocation: { batchId: string; batchNumber: string }, quantity: number, bonus: number): SaleLine => ({
       key: `${index}-${allocation.batchId}`,
       groupId: `existing-${index}`,
       productId: item.productId,
       productName: item.productName,
       batchId: allocation.batchId,
       batchNumber: allocation.batchNumber,
-      quantity: allocation.quantity,
+      quantity,
+      bonus,
       unitPrice: item.unitPrice,
       discountPercent: item.discountPercent,
       taxPercent: item.taxPercent,
-    })),
-  );
+    });
+    const paidLines = item.batchAllocations.map((allocation) => {
+      const bonus = bonusOf.get(allocation.batchId) ?? 0;
+      bonusOf.delete(allocation.batchId);
+      return at(allocation, allocation.quantity, bonus);
+    });
+    const bonusOnly = (item.bonusAllocations ?? []).filter((b) => bonusOf.has(b.batchId)).map((b) => {
+      const bonus = bonusOf.get(b.batchId)!;
+      bonusOf.delete(b.batchId);
+      return at(b, 0, bonus);
+    });
+    return [...paidLines, ...bonusOnly];
+  });
 }
 
 /** The New Sale screen, or (with `editSale`) the same screen prefilled to edit an unpaid sale. */
@@ -114,6 +129,19 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
   // Totals come from the committed lines only, never from the entry row's preview.
   const grandTotal = lines.reduce((sum, line) => sum + lineTotal(line), 0);
 
+  // A customer's unspent advance (e.g. from a return) can pay this invoice; the cashier has to accept it.
+  const { advanceBalance, canApply: canApplyAdvance } = useCustomerAdvance(branchId, isEdit ? undefined : customerId);
+  const [applyAdvance, setApplyAdvance] = useState(false);
+  const [advancePrompt, setAdvancePrompt] = useState(false);
+  const [advanceDeclined, setAdvanceDeclined] = useState(false);
+  useEffect(() => {
+    setApplyAdvance(false);
+    setAdvanceDeclined(false);
+  }, [customerId]);
+  const advanceOffer = Math.min(advanceBalance, grandTotal);
+  const advanceOffered = !isEdit && canApplyAdvance && advanceBalance > 0.005 && advanceOffer > 0.005;
+  const advanceUsed = applyAdvance && advanceOffered ? advanceOffer : 0;
+
   const syncAmountToStatus = (v: PaymentStatus) => {
     if (v === PaymentStatus.PAID) setValue('amountPaid', Number(grandTotal.toFixed(2)));
     else if (v === PaymentStatus.UNPAID) setValue('amountPaid', 0);
@@ -161,6 +189,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
         productId: first.productId,
         batchId: first.batchId,
         quantity: String(group.reduce((sum, l) => sum + l.quantity, 0)),
+        bonusQuantity: group.some((l) => l.bonus) ? String(group.reduce((sum, l) => sum + l.bonus, 0)) : '',
         unitPrice: String(first.unitPrice),
         discountPercent: first.discountPercent === undefined ? '' : String(first.discountPercent),
         taxPercent: first.taxPercent === undefined ? '' : String(first.taxPercent),
@@ -172,12 +201,15 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
     setLines((prev) => prev.filter((l) => l.key !== key));
   };
 
-  const onSubmit = async (values: SaleFormValues) => {
+  const onSubmit = async (values: SaleFormValues, applyOverride?: boolean) => {
     if (!branchId || lines.length === 0 || isSaving) return;
     const items = lines.map((line) => ({
       productId: line.productId,
-      manualAllocations: [{ batchId: line.batchId, quantity: line.quantity }],
+      // A bonus-only row (quantity 0) has no paid batch pick.
+      manualAllocations: line.quantity > 0 ? [{ batchId: line.batchId, quantity: line.quantity }] : [],
       quantity: line.quantity,
+      bonusQuantity: line.bonus || undefined,
+      bonusManualAllocations: line.bonus > 0 ? [{ batchId: line.batchId, quantity: line.bonus }] : undefined,
       unitPrice: line.unitPrice,
       discountPercent: line.discountPercent,
       taxPercent: line.taxPercent,
@@ -201,6 +233,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
         paymentMethod: values.paymentMethod,
         paymentStatus: values.paymentStatus,
         amountPaid: Number(values.amountPaid),
+        applyAdvance: (applyOverride ?? advanceUsed > 0) && advanceOffered ? true : undefined,
         items,
       });
     } catch {
@@ -211,6 +244,8 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
     reset({ paymentMethod: PaymentMethod.CASH, paymentStatus: PaymentStatus.UNPAID, amountPaid: 0, customerId: undefined });
     setLines([]);
     setEditing(null);
+    setApplyAdvance(false);
+    setAdvanceDeclined(false);
     setResetToken((t) => t + 1);
   };
 
@@ -372,7 +407,17 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={handleSubmit((values) => {
+          // Ask before posting: an unspent advance should not be skipped by accident.
+          if (!isEdit && advanceOffered && !applyAdvance && !advanceDeclined) {
+            setAdvancePrompt(true);
+            return;
+          }
+          return onSubmit(values);
+        })}
+        className="space-y-6"
+      >
         {/* Below lg the top bar has no room for these, so they sit above the line items instead. */}
         <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3 lg:hidden">
           {renderCustomerAndMethod(false)}
@@ -405,6 +450,34 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
             Press Enter in Tax % to add the line, Esc to clear the entry row.
           </p>
         </div>
+
+        {advanceOffered && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
+            <p className="text-sm">
+              This customer has <span className="font-semibold tabular-nums">{advanceBalance.toFixed(2)}</span> advance.
+              {applyAdvance ? (
+                <>
+                  {' '}
+                  <span className="font-semibold tabular-nums">{advanceUsed.toFixed(2)}</span> will be paid from it
+                  {advanceBalance - advanceUsed > 0.005 && (
+                    <> and <span className="font-semibold tabular-nums">{(advanceBalance - advanceUsed).toFixed(2)}</span> stays as advance</>
+                  )}
+                  .
+                </>
+              ) : (
+                <> Do you want to adjust it in this invoice?</>
+              )}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant={applyAdvance ? 'outline' : 'default'}
+              onClick={() => setApplyAdvance((v) => !v)}
+            >
+              {applyAdvance ? "Don't apply" : 'Apply advance'}
+            </Button>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border p-4">
           {isEdit ? (
@@ -452,6 +525,42 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
           </Button>
         </div>
       </form>
+
+      {advancePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-lg border bg-background p-6 shadow-lg">
+            <h2 className="text-lg font-semibold">Apply customer advance?</h2>
+            <p className="text-sm text-muted-foreground">
+              {selectedCustomer?.name ?? 'This customer'} has{' '}
+              <span className="font-semibold tabular-nums text-foreground">{advanceBalance.toFixed(2)}</span> advance.
+              Apply <span className="font-semibold tabular-nums text-foreground">{advanceOffer.toFixed(2)}</span> to this invoice?
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setAdvancePrompt(false);
+                  setAdvanceDeclined(true);
+                  void handleSubmit((v) => onSubmit(v, false))();
+                }}
+              >
+                No, keep unpaid
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  setAdvancePrompt(false);
+                  setApplyAdvance(true);
+                  void handleSubmit((v) => onSubmit(v, true))();
+                }}
+              >
+                Apply advance
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <CustomerDialog
         open={customerDialogOpen}

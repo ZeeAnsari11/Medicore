@@ -1,5 +1,6 @@
 import PDFDocument from 'pdfkit';
 import type { SupplyReportHeader } from '@medicore/shared-types';
+import { drawReportHeader, stampPageNumbers } from '../../../common/pdf/report-header';
 
 export const MARGIN = 28;
 export const GREEN = '#1b5e20';
@@ -33,15 +34,18 @@ export const pageWidth = (doc: PDFKit.PDFDocument) => doc.page.width - MARGIN * 
 /** Bottom of the usable area; the footer lives below it. */
 export const bottomOf = (doc: PDFKit.PDFDocument) => doc.page.height - MARGIN - 34;
 
-/** Tenant name and branch address top right, then the centred title. Returns the y to continue from. */
+/**
+ * The shared report header: business name, branch address and title centred; branch on the left; the date
+ * range on the right. Returns the y to continue from.
+ */
 export function letterhead(doc: PDFKit.PDFDocument, h: SupplyReportHeader, title: string): number {
-  const w = pageWidth(doc);
-  doc.font('Helvetica-Bold').fontSize(18).fillColor(GREEN).text(h.companyName, MARGIN, MARGIN, { width: w, align: 'right' });
-  const address = [h.branchAddress, h.branchPhone].filter(Boolean).join('  ·  ') || h.branchName;
-  doc.font('Helvetica').fontSize(9).fillColor(GREY).text(address, MARGIN, doc.y + 1, { width: w, align: 'right' });
-  doc.font('Helvetica-Bold').fontSize(16).fillColor('#000').text(title, MARGIN, doc.y + 4, { width: w, align: 'center' });
-  doc.moveDown(0.4);
-  return doc.y;
+  return drawReportHeader(doc, {
+    businessName: h.companyName,
+    businessAddress: [h.branchAddress, h.branchPhone].filter(Boolean).join('  ·  ') || h.branchName,
+    title,
+    left: [h.branchName],
+    dateRange: { from: h.from, to: h.to },
+  });
 }
 
 export function rule(doc: PDFKit.PDFDocument, y: number, color = LIGHT) {
@@ -49,7 +53,7 @@ export function rule(doc: PDFKit.PDFDocument, y: number, color = LIGHT) {
 }
 
 /**
- * Stamps "Page x of y" top right and "Prepared by / Printed by / Print date" at the bottom of every page,
+ * Stamps "Page x of y" into the header and "Prepared by / Printed by / Print date" at the bottom of every page,
  * once the page count is known.
  */
 export function stampPages(doc: PDFKit.PDFDocument, h: SupplyReportHeader) {
@@ -66,9 +70,9 @@ export function stampPages(doc: PDFKit.PDFDocument, h: SupplyReportHeader) {
     doc.text(`Prepared by: ${h.printedBy}`, MARGIN, y, { width: w / 3, align: 'left', lineBreak: false });
     doc.text(`Printed by: ${h.printedBy}`, MARGIN + w / 3, y, { width: w / 3, align: 'center', lineBreak: false });
     doc.text(`Print Date: ${karachi(h.printedAt)}`, MARGIN + (2 * w) / 3, y, { width: w / 3, align: 'right', lineBreak: false });
-    doc.text(`Page ${i + 1} of ${range.count}`, MARGIN, MARGIN - 14, { width: w, align: 'right', lineBreak: false });
     doc.page.margins.bottom = bottom;
   }
+  stampPageNumbers(doc);
 }
 
 /** "Order Booker: A, B   City: Kasur" for the filters that were set; empty when none. */
@@ -80,6 +84,7 @@ export function filterLine(h: SupplyReportHeader): string {
   if (f.cities?.length) parts.push(`City: ${f.cities.join(', ')}`);
   if (f.territories?.length) parts.push(`Territory: ${f.territories.join(', ')}`);
   if (f.customers?.length) parts.push(`Customer: ${f.customers.join(', ')}`);
+  if (f.manufacturers?.length) parts.push(`Manufacturer: ${f.manufacturers.join(', ')}`);
   return parts.join('     ');
 }
 

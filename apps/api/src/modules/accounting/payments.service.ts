@@ -1,7 +1,16 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectConnection, InjectModel } from '@nestjs/mongoose';
 import { ClientSession, Connection, Model, Types } from 'mongoose';
 import { v7 as uuidv7 } from 'uuid';
+import { paymentNote } from './payment-description';
+import { DIFFERENCE_LINE_DESCRIPTION, type PaymentDifference } from './difference';
+import { Expense, ExpenseDocument } from './schemas/expense.schema';
+import { ExpensesService } from './expenses.service';
 import { Payment, PaymentDocument } from './schemas/payment.schema';
 import { Account, AccountDocument } from './schemas/account.schema';
 import { Sale, SaleDocument } from '../sales/schemas/sale.schema';
@@ -43,11 +52,13 @@ export class PaymentsService {
     @InjectModel(Purchase.name) private readonly purchaseModel: Model<PurchaseDocument>,
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Vendor.name) private readonly vendorModel: Model<VendorDocument>,
+    @InjectModel(Expense.name) private readonly expenseModel: Model<ExpenseDocument>,
     @InjectConnection() private readonly connection: Connection,
     private readonly postingService: AccountingPostingService,
     private readonly partyBalanceService: PartyBalanceService,
     private readonly paymentLinks: PaymentLinksService,
     private readonly sequenceService: SequenceService,
+    private readonly expensesService: ExpensesService,
   ) {}
 
   async listForTenant(
@@ -67,8 +78,16 @@ export class PaymentsService {
   }
 
   /** One payment, or 404; same tenant and branch scope as the list. */
-  async findOneForTenant(tenantId: string, branchId: string | null, id: string): Promise<PaymentDocument> {
-    const filter: Record<string, unknown> = { _id: id, tenantId: new Types.ObjectId(tenantId), deletedAt: null };
+  async findOneForTenant(
+    tenantId: string,
+    branchId: string | null,
+    id: string,
+  ): Promise<PaymentDocument> {
+    const filter: Record<string, unknown> = {
+      _id: id,
+      tenantId: new Types.ObjectId(tenantId),
+      deletedAt: null,
+    };
     if (branchId) filter.branchId = new Types.ObjectId(branchId);
     const payment = await this.paymentModel.findOne(filter);
     if (!payment) throw new NotFoundException('Payment not found');
@@ -99,8 +118,23 @@ export class PaymentsService {
     userId: string,
     dto: CreatePaymentDto,
     externalSession?: ClientSession,
+    /** A cash receipt's difference: written off against the one invoice this payment pays (see `PaymentDifference`). */
+    difference?: PaymentDifference,
   ): Promise<PaymentDocument> {
     const allocations = dto.allocations ?? [];
+    if (difference) {
+      if (
+        dto.partyType !== PartyType.CUSTOMER ||
+        allocations.length !== 1 ||
+        allocations[0].invoiceType !== InvoiceType.SALE
+      ) {
+        throw new BadRequestException(
+          'A difference can only be written off against one sale invoice',
+        );
+      }
+      // Numbered before the payment is, so older unnumbered expenses keep the lower numbers.
+      await this.expensesService.ensureExpenseNumbers(tenantId);
+    }
     const allocatedTotal = round2(allocations.reduce((sum, a) => sum + a.amount, 0));
     if (allocatedTotal > dto.amount + 0.01) {
       throw new BadRequestException('Allocated amount cannot exceed the payment amount');
@@ -124,6 +158,13 @@ export class PaymentsService {
         const accounts = await this.postingService.ensureDefaultAccounts(tenantId, session);
         const paymentDate = dto.paymentDate ? new Date(dto.paymentDate) : new Date();
         const paymentId = uuidv7();
+
+        const note = paymentNote({
+          notes: dto.notes,
+          partyType: dto.partyType === PartyType.CUSTOMER ? 'CUSTOMER' : 'VENDOR',
+          allocated: allocatedTotal,
+          remainder,
+        });
 
         const lines: PostLineInput[] = [];
         if (dto.partyType === PartyType.CUSTOMER) {
@@ -182,6 +223,24 @@ export class PaymentsService {
           });
         }
 
+        if (difference) {
+          // Dr Difference expense / Cr Accounts Receivable: the customer's balance falls by the written-off amount.
+          lines.push({
+            accountId: difference.accountId,
+            debit: difference.amount,
+            credit: 0,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          });
+          lines.push({
+            accountId: accounts.get('ACCOUNTS_RECEIVABLE')!.id,
+            debit: 0,
+            credit: difference.amount,
+            partyType: PartyType.CUSTOMER,
+            partyId: dto.partyId,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          });
+        }
+
         const journalEntry = await this.postingService.postJournalEntry({
           tenantId,
           branchId,
@@ -192,7 +251,7 @@ export class PaymentsService {
               : JournalEntrySourceType.PAYMENT_MADE,
           sourceId: paymentId,
           description:
-            dto.notes ||
+            note ||
             `Payment ${dto.partyType === PartyType.CUSTOMER ? 'received from' : 'made to'} ${dto.partyId}`,
           lines,
           createdBy: userId,
@@ -205,9 +264,39 @@ export class PaymentsService {
             branchId,
             allocation.invoiceType,
             allocation.invoiceId,
-            allocation.amount,
+            // The invoice is settled by what was received plus what was written off.
+            round2(allocation.amount + (difference?.amount ?? 0)),
             session,
           );
+        }
+
+        let differenceExpenseId: string | undefined;
+        if (difference) {
+          // The same journal entry, shown in the Expenses list as Difference > Sales Difference against the invoice.
+          const [expense] = await this.expenseModel.create(
+            [
+              {
+                tenantId: new Types.ObjectId(tenantId),
+                branchId: new Types.ObjectId(branchId),
+                expenseSeq: await this.sequenceService.next(tenantId, null, 'expense', session),
+                expenseAccountId: difference.accountId,
+                categoryId: difference.categoryId,
+                subCategoryId: difference.subCategoryId,
+                amount: difference.amount,
+                expenseDate: paymentDate,
+                description: `Sales difference on invoice ${difference.invoiceNumber}`,
+                reference: dto.reference,
+                journalEntryId: journalEntry.id,
+                createdBy: new Types.ObjectId(userId),
+                sourceType: 'CASH_RECEIPT',
+                sourceId: paymentId,
+                invoiceId: difference.invoiceId,
+                invoiceNumber: difference.invoiceNumber,
+              },
+            ],
+            { session },
+          );
+          differenceExpenseId = expense._id;
         }
 
         const orderBooker = await this.saleOrderBooker(tenantId, allocations, session);
@@ -227,8 +316,10 @@ export class PaymentsService {
               accountId: account.id,
               paymentDate,
               reference: dto.reference,
-              notes: dto.notes,
+              notes: note,
               allocations,
+              differenceAmount: difference?.amount,
+              differenceExpenseId,
               journalEntryId: journalEntry.id,
               createdBy: new Types.ObjectId(userId),
               orderBookerId: orderBooker?.id ? new Types.ObjectId(orderBooker.id) : undefined,
@@ -262,7 +353,12 @@ export class PaymentsService {
 
       await session.withTransaction(async () => {
         const payment = await this.paymentModel
-          .findOne({ _id: id, tenantId: new Types.ObjectId(tenantId), branchId: new Types.ObjectId(branchId), deletedAt: null })
+          .findOne({
+            _id: id,
+            tenantId: new Types.ObjectId(tenantId),
+            branchId: new Types.ObjectId(branchId),
+            deletedAt: null,
+          })
           .session(session);
         if (!payment) throw new NotFoundException('Payment not found');
 
@@ -361,7 +457,11 @@ export class PaymentsService {
     const session = await this.connection.startSession();
     try {
       await session.withTransaction(async () => {
-        const filter: Record<string, unknown> = { _id: id, tenantId: new Types.ObjectId(tenantId), deletedAt: null };
+        const filter: Record<string, unknown> = {
+          _id: id,
+          tenantId: new Types.ObjectId(tenantId),
+          deletedAt: null,
+        };
         if (branchId) filter.branchId = new Types.ObjectId(branchId);
         const payment = await this.paymentModel.findOne(filter).session(session);
         if (!payment) throw new NotFoundException('Payment not found');
@@ -376,12 +476,17 @@ export class PaymentsService {
               ? await this.partyBalanceService.getCustomerAdvanceBalance(tenantId, payment.partyId)
               : await this.partyBalanceService.getVendorAdvanceBalance(tenantId, payment.partyId);
           if (advance + 0.01 < unapplied) {
-            throw new ConflictException('Cannot void: the advance from this payment has already been applied elsewhere');
+            throw new ConflictException(
+              'Cannot void: the advance from this payment has already been applied elsewhere',
+            );
           }
         }
 
-        for (const allocation of payment.allocations) {
-          const Model: Model<any> = allocation.invoiceType === InvoiceType.SALE ? this.saleModel : this.purchaseModel;
+        // A cash receipt's difference also settled its invoice, so voiding gives that back too.
+        const writtenOff = payment.differenceAmount ?? 0;
+        for (const [index, allocation] of payment.allocations.entries()) {
+          const Model: Model<any> =
+            allocation.invoiceType === InvoiceType.SALE ? this.saleModel : this.purchaseModel;
           const invoice = await Model.findOne({
             _id: allocation.invoiceId,
             tenantId: new Types.ObjectId(tenantId),
@@ -391,7 +496,9 @@ export class PaymentsService {
           if ((invoice.returnedTotal ?? 0) > 0) {
             throw new ConflictException('Cannot void: an invoice paid by this payment has returns');
           }
-          invoice.amountPaid = round2(Math.max(invoice.amountPaid - allocation.amount, 0));
+          invoice.amountPaid = round2(
+            Math.max(invoice.amountPaid - allocation.amount - (index === 0 ? writtenOff : 0), 0),
+          );
           invoice.paymentStatus = resolvePaymentStatus(invoice.amountPaid, invoice.grandTotal);
           invoice.editVersion = (invoice.editVersion ?? 0) + 1;
           await invoice.save({ session });
@@ -410,10 +517,33 @@ export class PaymentsService {
 
         payment.deletedAt = new Date();
         await payment.save({ session });
+        await this.cancelDifferenceExpense(payment, session);
       });
     } finally {
       await session.endSession();
     }
+  }
+
+  /** Per-tenant numbers of the given expenses, keyed by id. */
+  async expenseNumbers(tenantId: string, ids: string[]): Promise<Map<string, number>> {
+    if (ids.length === 0) return new Map();
+    const found = await this.expenseModel
+      .find({ _id: { $in: ids }, tenantId: new Types.ObjectId(tenantId) })
+      .select('expenseSeq')
+      .lean();
+    return new Map(found.map((e): [string, number] => [String(e._id), e.expenseSeq as number]));
+  }
+
+  /** Takes the Expenses-list record of a payment's written-off difference out with the payment (its journal lines are reversed or removed with the entry). */
+  private async cancelDifferenceExpense(payment: PaymentDocument, session: ClientSession) {
+    if (!payment.differenceExpenseId) return;
+    await runWithoutBranchScope(() =>
+      this.expenseModel.updateOne(
+        { _id: payment.differenceExpenseId },
+        { $set: { deletedAt: new Date() } },
+        { session },
+      ),
+    );
   }
 
   /** Ids among `paymentIds` whose payment still exists (not voided). */
@@ -443,6 +573,11 @@ export class PaymentsService {
     session: ClientSession,
   ): Promise<{ previousAmount: number; invoiceId: string }> {
     const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session);
+    if ((payment.differenceAmount ?? 0) > 0) {
+      throw new ConflictException(
+        'This receipt wrote off a difference; remove the row and enter it again to change it',
+      );
+    }
     const previousAmount = payment.amount;
     payment.amount = change.amount;
     payment.allocations[0].amount = change.amount;
@@ -470,7 +605,12 @@ export class PaymentsService {
     payment.deletedAt = new Date();
     await payment.save({ session });
     await this.postingService.removeReceiptPaymentEntry(tenantId, paymentId, session);
-    return { previousAmount: payment.amount, invoiceId: payment.allocations[0].invoiceId };
+    await this.cancelDifferenceExpense(payment, session);
+    // What the invoice had counted for this payment: the cash received plus any difference written off.
+    return {
+      previousAmount: round2(payment.amount + (payment.differenceAmount ?? 0)),
+      invoiceId: payment.allocations[0].invoiceId,
+    };
   }
 
   private async liveReceiptPayment(
@@ -559,7 +699,12 @@ export class PaymentsService {
     partyId: string,
     method: import('@medicore/shared-types').PaymentMethod,
     delta: number,
-    extra?: { paymentDate?: string; reference?: string; notes?: string },
+    extra?: {
+      paymentDate?: string;
+      reference?: string;
+      notes?: string;
+      difference?: PaymentDifference;
+    },
     session?: ClientSession,
   ): Promise<PaymentDocument> {
     // By construction, a Sale/Purchase already exists by the time a quick
@@ -577,17 +722,18 @@ export class PaymentsService {
       branchId,
       userId,
       {
-      partyType,
-      partyId,
-      amount: delta,
-      method,
-      accountId: account.id,
-      paymentDate: extra?.paymentDate,
-      reference: extra?.reference,
-      notes: extra?.notes,
-      allocations: [{ invoiceType, invoiceId, amount: delta }],
+        partyType,
+        partyId,
+        amount: delta,
+        method,
+        accountId: account.id,
+        paymentDate: extra?.paymentDate,
+        reference: extra?.reference,
+        notes: extra?.notes,
+        allocations: [{ invoiceType, invoiceId, amount: delta }],
       },
       session,
+      extra?.difference,
     );
   }
 
@@ -597,7 +743,9 @@ export class PaymentsService {
     allocations: Array<{ invoiceType: InvoiceType; invoiceId: string }>,
     session: ClientSession,
   ): Promise<{ id: string; name: string } | undefined> {
-    const saleIds = allocations.filter((a) => a.invoiceType === InvoiceType.SALE).map((a) => a.invoiceId);
+    const saleIds = allocations
+      .filter((a) => a.invoiceType === InvoiceType.SALE)
+      .map((a) => a.invoiceId);
     if (saleIds.length === 0) return undefined;
     const sales = await this.saleModel
       .find({ _id: { $in: saleIds }, tenantId: new Types.ObjectId(tenantId) })
@@ -639,7 +787,11 @@ export class PaymentsService {
   ) {
     if (invoiceType === InvoiceType.SALE) {
       const sale = await this.saleModel
-        .findOne({ _id: invoiceId, tenantId: new Types.ObjectId(tenantId), branchId: new Types.ObjectId(branchId) })
+        .findOne({
+          _id: invoiceId,
+          tenantId: new Types.ObjectId(tenantId),
+          branchId: new Types.ObjectId(branchId),
+        })
         .session(session);
       if (!sale) throw new NotFoundException(`Sale ${invoiceId} not found`);
       sale.amountPaid = round2(sale.amountPaid + amount);
@@ -652,7 +804,11 @@ export class PaymentsService {
       await sale.save({ session });
     } else {
       const purchase = await this.purchaseModel
-        .findOne({ _id: invoiceId, tenantId: new Types.ObjectId(tenantId), branchId: new Types.ObjectId(branchId) })
+        .findOne({
+          _id: invoiceId,
+          tenantId: new Types.ObjectId(tenantId),
+          branchId: new Types.ObjectId(branchId),
+        })
         .session(session);
       if (!purchase) throw new NotFoundException(`Purchase ${invoiceId} not found`);
       purchase.amountPaid = round2(purchase.amountPaid + amount);
@@ -666,16 +822,31 @@ export class PaymentsService {
   }
 
   /** Branch of the party being paid (read outside the branch filter so the header can't hide it). */
-  async partyBranchId(tenantId: string, partyType: PartyType, partyId: string): Promise<string | undefined> {
-    const model = (partyType === PartyType.CUSTOMER ? this.customerModel : this.vendorModel) as Model<any>;
-    const party = await runWithoutBranchScope(async () =>
-      await model.findOne({ _id: partyId, tenantId: new Types.ObjectId(tenantId) }).select('branchId').lean<{ branchId?: Types.ObjectId }>(),
+  async partyBranchId(
+    tenantId: string,
+    partyType: PartyType,
+    partyId: string,
+  ): Promise<string | undefined> {
+    const model = (
+      partyType === PartyType.CUSTOMER ? this.customerModel : this.vendorModel
+    ) as Model<any>;
+    const party = await runWithoutBranchScope(
+      async () =>
+        await model
+          .findOne({ _id: partyId, tenantId: new Types.ObjectId(tenantId) })
+          .select('branchId')
+          .lean<{ branchId?: Types.ObjectId }>(),
     );
     return party?.branchId ? String(party.branchId) : undefined;
   }
 
   /** The party must belong to the payment's branch (customers and vendors are branch-owned). */
-  private async assertPartyExists(tenantId: string, branchId: string, partyType: PartyType, partyId: string) {
+  private async assertPartyExists(
+    tenantId: string,
+    branchId: string,
+    partyType: PartyType,
+    partyId: string,
+  ) {
     if (partyType === PartyType.CUSTOMER) {
       const exists = await this.customerModel.exists({
         _id: partyId,
@@ -718,10 +889,13 @@ export class PaymentsService {
         invoiceNumber: links?.invoices.find((i) => i.id === a.invoiceId)?.number ?? a.invoiceNumber,
       })),
       unallocatedAmount: round2(obj.amount - allocated),
+      differenceAmount: obj.differenceAmount ?? undefined,
       receipt: links?.receipt,
       paymentNumber: paymentNumber(obj.paymentSeq),
       // The cash-receipt transaction id only (never the CR- voucher number), else the typed reference.
-      displayReference: links?.receipt?.transactionNumber || (CR_VOUCHER.test(obj.reference ?? '') ? undefined : obj.reference || undefined),
+      displayReference:
+        links?.receipt?.transactionNumber ||
+        (CR_VOUCHER.test(obj.reference ?? '') ? undefined : obj.reference || undefined),
       journalEntryId: obj.journalEntryId,
       createdBy: obj.createdBy.toString(),
       orderBookerName: obj.orderBookerName,

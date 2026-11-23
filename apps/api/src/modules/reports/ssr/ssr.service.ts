@@ -22,6 +22,7 @@ import {
   NO_MANUFACTURER,
   ProductInfo,
   ReturnBase,
+  BonusBase,
   SalesBase,
   StockBase,
   UNASSIGNED_VENDOR,
@@ -94,7 +95,7 @@ export interface StockStatementItem {
   totalStock: number;
   /** Units sold less units returned in the period. */
   grossSale: number;
-  /** No bonus quantity is recorded on sales yet. */
+  /** Free (bonus) units given less those returned. */
   bonus: number;
   netSale: number;
   netSaleValue: number;
@@ -268,7 +269,7 @@ export class SsrService {
         purchaseValue: round2(purchased * rate),
         totalStock: opening + purchased,
         grossSale: d?.netUnits ?? 0,
-        bonus: 0,
+        bonus: d?.bonus ?? 0,
         netSale: d?.netUnits ?? 0,
         netSaleValue: d?.netSales ?? 0,
         expBrk: 0,
@@ -711,6 +712,20 @@ export class SsrService {
       saleIds: string[];
     }>(salesPipeline(this.saleMatch(ctx, range)));
 
+    // Free (bonus) units sold: they cost stock but carry no revenue, so they are counted apart from the paid lines.
+    const bonusRaw = await this.saleModel.aggregate<{ _id: { p: Types.ObjectId; b: string; c: string | null }; qty: number }>([
+      { $match: this.saleMatch(ctx, range) },
+      { $unwind: '$items' },
+      ...this.itemProductMatch(ctx, 'items.productId'),
+      { $unwind: '$items.bonusAllocations' },
+      {
+        $group: {
+          _id: { p: '$items.productId', b: '$items.bonusAllocations.batchId', c: { $ifNull: ['$customerId', null] } },
+          qty: { $sum: '$items.bonusAllocations.quantity' },
+        },
+      },
+    ]);
+
     const voidedRaw = dto.includeVoided
       ? await this.saleModel.aggregate<{ _id: { p: Types.ObjectId; b: string; c: string | null }; qty: number; net: number }>([
           ...salesPipeline({ ...this.saleMatch(ctx, range), deletedAt: { $ne: null } }),
@@ -772,6 +787,41 @@ export class SsrService {
               ],
             },
           },
+        },
+      },
+    ]);
+
+    // Bonus units that came back (restocked or written off) with a return.
+    const bonusReturnsRaw = await this.returnModel.aggregate<{
+      _id: { p: Types.ObjectId; b: string; c: string | null };
+      qty: number;
+    }>([
+      { $match: returnMatch },
+      {
+        $lookup: {
+          from: 'sales',
+          localField: 'saleId',
+          foreignField: '_id',
+          pipeline: [
+            { $match: { tenantId: ctx.tenantOid } },
+            { $project: { customerId: 1, deletedAt: 1, saleDate: 1, orderBookerId: 1, paymentMethod: 1 } },
+          ],
+          as: 'sale',
+        },
+      },
+      { $unwind: '$sale' },
+      { $match: saleLookupMatch },
+      { $unwind: '$items' },
+      ...this.itemProductMatch(ctx, 'items.productId'),
+      { $unwind: '$items.bonusAllocations' },
+      {
+        $group: {
+          _id: {
+            p: '$items.productId',
+            b: '$items.bonusAllocations.batchId',
+            c: { $ifNull: ['$sale.customerId', null] },
+          },
+          qty: { $sum: '$items.bonusAllocations.quantity' },
         },
       },
     ]);
@@ -849,6 +899,14 @@ export class SsrService {
       amount: r.amount,
       tax: r.tax,
     }));
+    const toBonus = (r: { _id: { p: Types.ObjectId; b: string; c: string | null }; qty: number }): BonusBase => ({
+      productId: r._id.p.toString(),
+      batchId: r._id.b,
+      customerId: r._id.c || null,
+      qty: r.qty,
+    });
+    const bonusSold = bonusRaw.map(toBonus);
+    const bonusReturned = bonusReturnsRaw.map(toBonus);
     const voided: VoidedBase[] = voidedRaw.map((r) => ({
       productId: r._id.p.toString(),
       batchId: r._id.b,
@@ -857,7 +915,7 @@ export class SsrService {
       net: r.net,
     }));
 
-    const batchIds = [...new Set([...sales, ...returns, ...voided, ...stock].map((r) => r.batchId))];
+    const batchIds = [...new Set([...sales, ...returns, ...voided, ...stock, ...bonusSold, ...bonusReturned].map((r) => r.batchId))];
     const [batches, purchaseRows]: [BatchDocument[], Array<{ _id: { b: string; v: Types.ObjectId }; qty: number }>] =
       await Promise.all([
       batchIds.length
@@ -896,7 +954,7 @@ export class SsrService {
     }
 
     // Product info for every product in play (plus, for "zero sales", the candidate catalogue).
-    const productIds = new Set<string>([...sales, ...returns, ...voided, ...stock].map((r) => r.productId));
+    const productIds = new Set<string>([...sales, ...returns, ...voided, ...stock, ...bonusSold, ...bonusReturned].map((r) => r.productId));
     const soldOids = [...productIds].map(oid);
     const catalogue: Record<string, unknown> = {
       ...(ctx.productOids ? { _id: { $in: ctx.productOids } } : {}),
@@ -930,6 +988,8 @@ export class SsrService {
       sales,
       returns,
       voided,
+      bonusSold,
+      bonusReturned,
       stock,
       batchCost,
       vendorWeights,

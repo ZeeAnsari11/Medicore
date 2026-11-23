@@ -1,3 +1,4 @@
+import PDFDocument from 'pdfkit';
 import type { SupplyLedgerReport, SupplyReportHeader, SupplySummaryReport } from '@medicore/shared-types';
 import { buildSupplyLedgerPdf } from './supply-ledger-pdf';
 import { buildSupplySummaryPdf } from './supply-summary-pdf';
@@ -65,10 +66,47 @@ describe('supply ledger pdf', () => {
     saleTax: 0,
     net: invoices.reduce((s, i) => s + i.net, 0),
   });
-  const report = (bookers: ReturnType<typeof booker>[]): SupplyLedgerReport => ({
+  const cityOf = (city: string, bookers: ReturnType<typeof booker>[]) => ({
+    city,
+    invoices: bookers.flatMap((b) => b.invoices),
+    advTax: 0,
+    gross: bookers.reduce((s, b) => s + b.gross, 0),
+    discount: 0,
+    saleTax: 0,
+    net: bookers.reduce((s, b) => s + b.net, 0),
+  });
+  const report = (bookers: ReturnType<typeof booker>[], cities = bookers.length ? [cityOf('Kasur', bookers)] : []): SupplyLedgerReport => ({
     header,
+    cities,
     bookers,
     grand: { advTax: 0, gross: bookers.reduce((s, b) => s + b.gross, 0), discount: 0, saleTax: 0, net: bookers.reduce((s, b) => s + b.net, 0) },
+  });
+
+  it('renders a section per city, each with its invoices and a sub total', async () => {
+    const kasur = booker('b1', [invoice(1, 2)]);
+    const lahore = [booker('b2', [invoice(2, 1)]), booker('b3', [invoice(3, 1)])];
+    const doc = buildSupplyLedgerPdf(report([kasur, ...lahore], [cityOf('Kasur', [kasur]), cityOf('Lahore', lahore)]));
+    const done = render(doc);
+    doc.end();
+    const pdf = await done;
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pageCount(pdf)).toBe(1);
+  });
+
+  it('prints a Bonus column and the free quantity of a line', async () => {
+    const withBonus = invoice(1, 1);
+    withBonus.lines[0] = { ...withBonus.lines[0], bonus: 7 };
+    const b = booker('b1', [withBonus]);
+    // The pages are drawn while the document is built, so listen on the class before building.
+    const text = jest.spyOn(PDFDocument.prototype, 'text');
+    const doc = buildSupplyLedgerPdf(report([b], [cityOf('Kasur', [b])]));
+    const done = render(doc);
+    doc.end();
+    await done;
+    const drawn = text.mock.calls.map((c) => c[0]);
+    text.mockRestore();
+    expect(drawn).toContain('Bonus');
+    expect(drawn).toContain('7');
   });
 
   it('renders an empty sheet', async () => {
@@ -109,8 +147,14 @@ describe('supply summary pdf', () => {
     areas,
     subtotal: { previous: 1000 * areas.length, net: areas.reduce((s, a) => s + a.subtotal.net, 0), total: 0 },
   });
-  const report = (bookers: ReturnType<typeof booker>[], h = header): SupplySummaryReport => ({
+  const cityOf = (city: string, bookers: ReturnType<typeof booker>[]) => ({
+    city,
+    areas: bookers.flatMap((b) => b.areas),
+    subtotal: { previous: 1000, net: bookers.reduce((s, b) => s + b.subtotal.net, 0), total: 0 },
+  });
+  const report = (bookers: ReturnType<typeof booker>[], h = header, cities = bookers.length ? [cityOf('Kasur', bookers)] : []): SupplySummaryReport => ({
     header: h,
+    cities,
     bookers,
     grand: { previous: 1000, net: bookers.reduce((s, b) => s + b.subtotal.net, 0), total: 0 },
   });
@@ -132,6 +176,15 @@ describe('supply summary pdf', () => {
     expect(pageCount(pdf)).toBe(1);
   });
 
+  it('renders a section per city, each with its areas and a sub total', async () => {
+    const kasur = booker('Ali', [area('Kangan Pur', 3)]);
+    const lahore = [booker('Ali', [area('Model Town', 2)]), booker('Zain', [area('Johar Town', 2)])];
+    const all = [kasur, ...lahore];
+    const pdf = await textOf(report(all, header, [cityOf('Kasur', [kasur]), cityOf('Lahore', lahore), cityOf('No city', [booker('Walk', [area('Unassigned', 1)])])]));
+    expect(pdf.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(pageCount(pdf)).toBe(1);
+  });
+
   it('spills a long area onto further pages', async () => {
     const pdf = await textOf(report([booker('Ali', [area('Usman Wala', 120)])]));
     expect(pageCount(pdf)).toBeGreaterThan(2);
@@ -148,5 +201,6 @@ describe('filterLine', () => {
   it('lists only the filters that were set', () => {
     expect(filterLine(header)).toBe('');
     expect(filterLine({ ...header, filters: { orderBookers: ['Ali', 'Zain'], territories: ['North'] } })).toBe('Order Booker: Ali, Zain     Territory: North');
+    expect(filterLine({ ...header, filters: { manufacturers: ['GSK', 'Getz'] } })).toBe('Manufacturer: GSK, Getz');
   });
 });

@@ -35,6 +35,7 @@
     "migrate:cash-receipt-transactions": "ts-node scripts/cash-receipt-transaction-numbers.ts",
     "migrate:payment-numbers": "ts-node scripts/payment-numbers.ts",
     "migrate:sale-return-numbers": "ts-node scripts/sale-return-numbers.ts",
+    "migrate:purchase-return-numbers": "ts-node scripts/purchase-return-numbers.ts",
     "migrate:customer-location": "ts-node scripts/customer-location-backfill.ts",
     "migrate:locations": "ts-node scripts/locations-backfill.ts",
     "seed:demo": "ts-node scripts/seed-demo.ts",

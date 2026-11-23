@@ -17,7 +17,10 @@ export interface LookupInvoice {
 
 export interface CashReceiptRowInput {
   invoiceId: string;
+  /** Cash received (> 0). */
   amount: number;
+  /** Written off with the customer's agreement so the invoice is settled (booked to the branch's Difference > Sales Difference). `amount + difference` can't exceed the balance. */
+  difference?: number;
   method?: PaymentMethod;
   reference?: string;
 }
@@ -50,6 +53,7 @@ export interface CashReceiptResult {
     invoiceNumber: string;
     customerName: string;
     amount: number;
+    difference?: number;
     method: PaymentMethod;
     reference?: string;
   }>;
@@ -73,6 +77,8 @@ export interface CashTransactionRow {
   received: number;
   balance: number;
   amount: number;
+  /** The difference settled with this entry (0 when none). An entry with a difference can only be removed, not edited. */
+  difference?: number;
   /** The entry's payment was voided elsewhere; it can no longer be edited here. */
   paymentVoided: boolean;
 }
@@ -85,7 +91,10 @@ export interface CashTransaction {
   version: number;
   date: string;
   method: PaymentMethod;
+  /** Cash received. */
   total: number;
+  /** Differences settled by this transaction's entries. */
+  differenceTotal?: number;
   rows: CashTransactionRow[];
 }
 
@@ -93,7 +102,7 @@ export interface CashTransaction {
 export interface UpdateCashTransactionRequest {
   expectedVersion: number;
   date?: string;
-  rows: Array<{ entryId?: string; invoiceId: string; amount: number }>;
+  rows: Array<{ entryId?: string; invoiceId: string; amount: number; difference?: number }>;
 }
 
 export interface CashTransactionHistoryEntry {

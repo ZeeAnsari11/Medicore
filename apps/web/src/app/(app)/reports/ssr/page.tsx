@@ -237,8 +237,8 @@ function SsrContent() {
               ? 'Returns are counted on the date they were made.'
               : 'Returns are counted against the original sale date.'}{' '}
             Gross Sale is units sold less units returned; Net Sale Value includes tax. Pur Qty is net receipts (purchases
-            less cancellations and returns, plus manual stock adjustments). Rate is the selling price. Bonus and Exp Brk
-            are not recorded yet. Opening and Closing are rebuilt from stock movements. Dates are Pakistan time.
+            less cancellations and returns, plus manual stock adjustments). Rate is the selling price. Bonus is the free
+            units given (less any returned). Opening and Closing are rebuilt from stock movements. Dates are Pakistan time.
           </p>
         </div>
       ) : null}

@@ -19,6 +19,7 @@ const WATCHED: Array<{ collection: string; topic: RealtimeTopic }> = [
   { collection: 'journal_entries', topic: 'accounting' },
   { collection: 'payments', topic: 'accounting' },
   { collection: 'expenses', topic: 'accounting' },
+  { collection: 'expense_categories', topic: 'accounting' },
   { collection: 'batches', topic: 'inventory' },
   { collection: 'stock_movements', topic: 'inventory' },
   { collection: 'manufacturers', topic: 'catalog' },

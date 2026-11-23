@@ -4,7 +4,6 @@ import { DashboardService } from './dashboard.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { resolveBranchScope } from '../../common/branch/branch-scope.util';
-import { resolveOwnSalesScope } from '../../common/branch/order-booker-scope.util';
 import { PermissionResolverService } from '../roles/permission-resolver.service';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
@@ -47,21 +46,6 @@ export class ReportsController {
     await this.requireView(user, 'sales:read');
     const scope = resolveBranchScope(user, branchId);
     return this.reportsService.getSalesReport(user.tenantId, scope, startDate, endDate);
-  }
-
-  @RequirePermission('reports:read')
-  @Get('order-bookers')
-  async orderBookerReport(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('branchId') branchId?: string,
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    await this.requireView(user, 'sales:read');
-    const scope = resolveBranchScope(user, branchId);
-    // Without sales:view_all an Order Booker only ever sees their own row.
-    const owner = resolveOwnSalesScope(user, await this.permissionResolver.has(user, 'sales:view_all'));
-    return this.reportsService.getOrderBookerReport(user.tenantId, scope, startDate, endDate, owner);
   }
 
   @RequirePermission('reports:read')

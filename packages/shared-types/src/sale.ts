@@ -18,7 +18,14 @@ export interface SaleItem {
   lineTotal: number;
   allocationMode: AllocationMode;
   batchAllocations: SaleBatchAllocation[];
+  /** Free units given on top of `quantity` (a scheme): they leave stock but add nothing to the line total. */
+  bonusQuantity?: number;
+  /** Batches the bonus units were taken from. */
+  bonusAllocations?: SaleBatchAllocation[];
 }
+
+/** `customerId` filter value on the sales list and report that selects sales made without a customer. */
+export const WALK_IN_CUSTOMER_ID = 'walkin';
 
 /** Sale is the invoice — no separate Invoice entity. */
 export interface Sale extends BranchOwnedEntity {
@@ -38,6 +45,8 @@ export interface Sale extends BranchOwnedEntity {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   amountPaid: number;
+  /** The part of `amountPaid` paid from the customer's advance. */
+  advanceApplied?: number;
   saleDate: string;
   createdBy: string;
   /** The user who placed the sale; the UI shows `orderBookerName`, never the id. */
@@ -66,6 +75,10 @@ export interface CreateSaleItemRequest {
   taxPercent?: number;
   /** Omit for FEFO (default). Provide to override which batches this line draws from. */
   manualAllocations?: { batchId: string; quantity: number }[];
+  /** Free units on top of `quantity`; with `quantity` 0 the line is bonus only. */
+  bonusQuantity?: number;
+  /** Omit for FEFO. Provide to choose which batches the bonus units come from. */
+  bonusManualAllocations?: { batchId: string; quantity: number }[];
 }
 
 export interface CreateSaleRequest {
@@ -78,8 +91,17 @@ export interface CreateSaleRequest {
   paymentMethod: PaymentMethod;
   paymentStatus?: PaymentStatus;
   amountPaid?: number;
+  /** Pay (part of) the invoice from the customer's advance; the server decides the amount. */
+  applyAdvance?: boolean;
   saleDate?: string;
   items: CreateSaleItemRequest[];
+}
+
+/** What a cashier needs to offer a customer's advance on a new invoice. */
+export interface CustomerAdvanceResponse {
+  advanceBalance: number;
+  /** False when the caller's sales become pending orders, which cannot spend an advance. */
+  canApply: boolean;
 }
 
 export interface UpdateSalePaymentRequest {
@@ -105,6 +127,13 @@ export interface SalePaymentRow {
   notes?: string;
   recordedBy?: string;
   isInitial?: boolean;
+  /** The initial amount that was paid from the customer's advance, not cash. */
+  isAdvance?: boolean;
+  /** Written off at the cash receipt (a difference the customer was not asked to pay). */
+  isDifference?: boolean;
+  /** The Expenses-list record of that difference (id and its per-tenant number). */
+  expenseId?: string;
+  expenseNumber?: number;
   /** Money handed back to the customer for a return. */
   isRefund?: boolean;
 }
@@ -159,6 +188,8 @@ export interface PendingOrderRow {
   customerName?: string;
   itemCount: number;
   grandTotal: number;
+  /** What confirming would pay from the customer's advance (absent when none); the invoice is created already paid. */
+  advanceWouldCover?: number;
 }
 
 /** Confirm or reject a selection of pending orders in one transaction. */

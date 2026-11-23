@@ -24,7 +24,7 @@ import type { SaleReturn } from '@medicore/shared-types';
 const money = (n: number) => n.toFixed(2);
 
 /** How the return was settled: taken off the invoice, refunded (with the method) and/or left as customer credit. */
-function settlementLabel(r: SaleReturn): string {
+export function settlementLabel(r: Pick<SaleReturn, 'settlement'>): string {
   const s = r.settlement;
   if (!s) return '—';
   const parts: string[] = [];
@@ -91,7 +91,10 @@ function SaleReturnDetailDialog({ value: r, onOpenChange }: { value: SaleReturn 
         ['Notes', r.notes || '—'],
       ]
     : [];
-  const lines = (r?.items ?? []).flatMap((i) => i.batchAllocations.map((b) => ({ key: `${i.productId}:${b.batchId}`, product: i.productName, ...b })));
+  const lines = (r?.items ?? []).flatMap((i) => [
+    ...i.batchAllocations.map((b) => ({ key: `${i.productId}:${b.batchId}`, product: i.productName, ...b })),
+    ...(i.bonusAllocations ?? []).map((b) => ({ key: `${i.productId}:bonus:${b.batchId}`, product: `${i.productName} (bonus)`, ...b })),
+  ]);
 
   return (
     <Dialog open={r !== null} onOpenChange={onOpenChange}>

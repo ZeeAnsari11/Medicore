@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEnum,
   IsMongoId,
@@ -28,9 +29,15 @@ export class CreateSaleItemDto {
   @IsMongoId()
   productId: string;
 
+  // 0 is allowed so a line can be bonus only; planItems rejects a line with neither quantity nor bonus.
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   quantity: number;
+
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  bonusQuantity?: number;
 
   @IsNumber()
   @Min(0)
@@ -54,6 +61,12 @@ export class CreateSaleItemDto {
   @Type(() => ManualBatchAllocationDto)
   @IsOptional()
   manualAllocations?: ManualBatchAllocationDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ManualBatchAllocationDto)
+  @IsOptional()
+  bonusManualAllocations?: ManualBatchAllocationDto[];
 }
 
 export class CreateSaleDto {
@@ -81,6 +94,11 @@ export class CreateSaleDto {
   @Min(0)
   @IsOptional()
   amountPaid?: number;
+
+  /** Pay (part of) the invoice from the customer's advance; the server works out how much. */
+  @IsBoolean()
+  @IsOptional()
+  applyAdvance?: boolean;
 
   @IsDateString()
   @IsOptional()

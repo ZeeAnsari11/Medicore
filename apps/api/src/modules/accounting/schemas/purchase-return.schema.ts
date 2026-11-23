@@ -95,3 +95,5 @@ export const PurchaseReturnSchema = SchemaFactory.createForClass(PurchaseReturn)
 
 PurchaseReturnSchema.index({ tenantId: 1, purchaseId: 1 });
 PurchaseReturnSchema.index({ tenantId: 1, branchId: 1, returnNumber: 1 }, { unique: true, sparse: true });
+// Purchase return numbers are 1, 2, 3 per tenant (purchase-return-seq counter); old ones are renumbered by migrate:purchase-return-numbers.
+PurchaseReturnSchema.index({ tenantId: 1, returnNumber: 1 }, { unique: true, partialFilterExpression: { returnNumber: { $type: 'string' } } });

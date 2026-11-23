@@ -105,7 +105,7 @@ export default function PaymentsPage() {
         cell: ({ row }) =>
           row.original.receipt?.transactionNumber ? (
             <Link
-              href={`/sales/cash-receipt?transaction=${encodeURIComponent(row.original.receipt.transactionNumber)}`}
+              href={`/sales/cash-receipt?transaction=${encodeURIComponent(row.original.receipt.transactionNumber)}&readonly=1${row.original.allocations[0] ? `&invoice=${row.original.allocations[0].invoiceId}` : ''}`}
               className="text-primary hover:underline"
             >
               {row.original.displayReference}
@@ -120,6 +120,16 @@ export default function PaymentsPage() {
         cell: ({ getValue }) => {
           const v = getValue() as number;
           return v > 0.01 ? <Badge variant="secondary">{v.toFixed(2)}</Badge> : <span className="text-muted-foreground">—</span>;
+        },
+      },
+      {
+        // What the payment was for; an advance says so even when no note was typed (payments from before notes defaulted).
+        id: 'description',
+        header: 'Description',
+        accessorFn: (p) => p.notes || (p.unallocatedAmount > 0.01 ? (p.allocations.length > 0 ? `Includes advance of ${p.unallocatedAmount.toFixed(2)}` : p.partyType === 'CUSTOMER' ? 'Advance received' : 'Advance payment') : ''),
+        cell: ({ getValue }) => {
+          const text = getValue() as string;
+          return text ? <span className="text-sm">{text}</span> : <span className="text-muted-foreground">—</span>;
         },
       },
       {

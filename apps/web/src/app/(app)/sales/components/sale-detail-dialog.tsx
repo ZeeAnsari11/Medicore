@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Pencil } from 'lucide-react';
 import {
@@ -95,14 +96,20 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
   const { openPdf, isOpening } = useDocumentPdf();
   const netTotal = round2(sale.grandTotal - (sale.returnedTotal ?? 0));
   const outstanding = Math.max(round2(netTotal - (sale.amountPaid - (sale.refundedTotal ?? 0))), 0);
+  // Written off at a cash receipt: counted in the paid total, but not money received.
+  const differenceTotal = round2(payments.filter((p) => p.isDifference).reduce((s, p) => s + p.amount, 0));
   const { returns } = useDocumentReturns<SaleReturn>('sale', initialSale.id, branchId);
   const ret = useReturnMode({ kind: 'sale', doc: sale, returns }, branchId);
-  const returnedQty = (batchIds: string[]) =>
+  const returnedQty = (batchIds: string[], free = false) =>
     returns.reduce(
       (sum, r) =>
         sum +
         r.items.reduce(
-          (s, i) => s + i.batchAllocations.filter((a) => batchIds.includes(a.batchId)).reduce((t, a) => t + a.quantity, 0),
+          (s, i) =>
+            s +
+            (free ? (i.bonusAllocations ?? []) : i.batchAllocations)
+              .filter((a) => batchIds.includes(a.batchId))
+              .reduce((t, a) => t + a.quantity, 0),
           0,
         ),
       0,
@@ -163,6 +170,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
             <span>{new Date(sale.saleDate).toLocaleDateString()}</span>
             <Badge variant="outline">{sale.paymentMethod}</Badge>
             <Badge variant={paymentVariant[sale.paymentStatus]}>{sale.paymentStatus}</Badge>
+            {(sale.advanceApplied ?? 0) > 0 && <Badge variant="secondary">Paid from advance</Badge>}
             {sale.returnStatus === ReturnStatus.PARTIAL && <Badge variant="warning">Partially returned</Badge>}
             {sale.returnStatus === ReturnStatus.FULL && <Badge variant="secondary">Fully returned</Badge>}
           </div>
@@ -233,6 +241,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                   <TableHead>Product</TableHead>
                   <TableHead>Batch #</TableHead>
                   <TableHead>Qty</TableHead>
+                  <TableHead>Bonus</TableHead>
                   <TableHead>Returned</TableHead>
                   <TableHead>Price</TableHead>
                   <TableHead>Total</TableHead>
@@ -250,7 +259,15 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                         .join(', ')}
                     </TableCell>
                     <TableCell>{item.quantity}</TableCell>
-                    <TableCell>{returnedQty(item.batchAllocations.map((a) => a.batchId)) || '—'}</TableCell>
+                    <TableCell>{item.bonusQuantity || '—'}</TableCell>
+                    <TableCell>
+                      {(() => {
+                        const batchIds = [...item.batchAllocations, ...(item.bonusAllocations ?? [])].map((a) => a.batchId);
+                        const paid = returnedQty(batchIds);
+                        const free = returnedQty(batchIds, true);
+                        return paid || free ? `${paid}${free ? ` (+${free} bonus)` : ''}` : '—';
+                      })()}
+                    </TableCell>
                     <TableCell>{item.unitPrice.toFixed(2)}</TableCell>
                     <TableCell>{item.lineTotal.toFixed(2)}</TableCell>
                   </TableRow>
@@ -305,6 +322,22 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                         <TableCell className="text-sm">
                           {payment.isRefund
                             ? `Refund${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}`
+                            : payment.isDifference
+                            ? (
+                                <>
+                                  Difference (Sales Difference)
+                                  {payment.expenseId && (
+                                    <>
+                                      {' · '}
+                                      <Link href={`/accounting/expenses?open=${payment.expenseId}`} className="text-primary hover:underline">
+                                        Expense {payment.expenseNumber ?? ''}
+                                      </Link>
+                                    </>
+                                  )}
+                                </>
+                              )
+                            : payment.isAdvance
+                            ? 'Paid from advance'
                             : payment.isInitial
                             ? `Paid at sale${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}`
                             : payment.method
@@ -326,9 +359,21 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
           {!ret.active && has('sales:return') && (
             <div className="space-y-3 rounded-lg border p-4 bg-muted/30">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total paid</span>
-                <span>{sale.amountPaid.toFixed(2)}</span>
+                <span className="text-muted-foreground">{differenceTotal > 0 ? 'Received' : 'Total paid'}</span>
+                <span>{(sale.amountPaid - differenceTotal).toFixed(2)}</span>
               </div>
+              {differenceTotal > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Difference (written off)</span>
+                    <span>{differenceTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Total settled</span>
+                    <span>{sale.amountPaid.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between text-sm font-medium">
                 <span>Outstanding</span>
                 <span>{outstanding.toFixed(2)}</span>

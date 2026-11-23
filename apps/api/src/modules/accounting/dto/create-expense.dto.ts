@@ -7,6 +7,7 @@ import {
   IsPositive,
   IsString,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { PaymentMethod } from '@medicore/shared-types';
 
@@ -15,8 +16,19 @@ export class CreateExpenseDto {
   @IsOptional()
   branchId?: string;
 
+  /** The account to charge. Optional when `categoryId` is sent (that category's account is used). */
+  @IsString({ message: 'Choose an expense category' })
+  @ValidateIf((o: CreateExpenseDto) => !o.categoryId)
+  expenseAccountId?: string;
+
   @IsString()
-  expenseAccountId: string;
+  @IsOptional()
+  categoryId?: string;
+
+  /** Must belong to `categoryId`. */
+  @IsString()
+  @IsOptional()
+  subCategoryId?: string;
 
   @IsNumber()
   @IsPositive()
