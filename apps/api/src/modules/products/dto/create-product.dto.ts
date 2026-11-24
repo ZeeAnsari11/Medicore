@@ -43,7 +43,8 @@ export class CreateProductDto {
 
   @IsNumber()
   @Min(0)
-  rp: number;
+  @IsOptional()
+  rp?: number;
 
   @IsNumber()
   @Min(0)

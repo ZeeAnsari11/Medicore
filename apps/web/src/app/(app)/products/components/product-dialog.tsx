@@ -38,7 +38,7 @@ export function ProductDialog({ open, mode, product, onOpenChange, onCreated, de
       barcode: values.barcode?.trim() || undefined,
       tp: Number(values.tp),
       cp: Number(values.cp),
-      rp: Number(values.rp),
+      rp: values.rp === undefined || Number.isNaN(Number(values.rp)) ? undefined : Number(values.rp),
       minStockLevel: values.minStockLevel !== undefined ? Number(values.minStockLevel) : undefined,
     };
 

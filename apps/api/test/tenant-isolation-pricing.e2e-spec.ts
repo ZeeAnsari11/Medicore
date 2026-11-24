@@ -68,8 +68,13 @@ describe('product prices: TP / CP / RP (e2e)', () => {
       expect(res.status).toBe(400);
       expect(JSON.stringify(res.body)).toMatch(/Retail price/);
     });
-    it('requires all three prices and non-negative values', async () => {
-      expect((await send(A, 'products', { name: 'Missing', genericName: 'Missing', manufacturerId, unit: 'Strip', tp: 15, cp: 10 })).status).toBe(400);
+    it('requires TP and CP, allows RP to be omitted, and rejects negative values', async () => {
+      const base = { genericName: 'Missing', manufacturerId, unit: 'Strip' };
+      expect((await send(A, 'products', { ...base, name: 'Missing CP', tp: 15 })).status).toBe(400);
+      expect((await send(A, 'products', { ...base, name: 'Missing TP', cp: 10 })).status).toBe(400);
+      const noRp = await send(A, 'products', { ...base, name: 'No RP', tp: 15, cp: 10 });
+      expect(noRp.status).toBe(201);
+      expect(noRp.body.rp).toBeUndefined();
       expect((await product('Negative', { cp: -1 })).status).toBe(400);
     });
     it('checks the merged values on update', async () => {

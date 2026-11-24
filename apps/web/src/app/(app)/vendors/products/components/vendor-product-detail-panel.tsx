@@ -76,7 +76,7 @@ export function VendorProductDetailPanel({ link, product, update, remove, onEdit
             <DetailRow label="Packing" value={product.packing || '—'} />
             <DetailRow label="TP (trade)" value={`Rs. ${product.tp.toFixed(2)}`} />
             <DetailRow label="CP (cost)" value={`Rs. ${product.cp.toFixed(2)}`} />
-            <DetailRow label="RP (retail)" value={`Rs. ${product.rp.toFixed(2)}`} />
+            <DetailRow label="RP (retail)" value={product.rp !== undefined ? `Rs. ${product.rp.toFixed(2)}` : '—'} />
             <DetailRow label="Min stock level" value={product.minStockLevel !== undefined ? String(product.minStockLevel) : '—'} />
             <DetailRow label="Status" value={product.status === 'ACTIVE' ? 'Active' : 'Discontinued'} />
           </div>

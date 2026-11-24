@@ -33,7 +33,7 @@ export interface ProductFormValues {
   packing?: string;
   tp: number;
   cp: number;
-  rp: number;
+  rp?: number;
   minStockLevel?: number;
   /** Create-mode only: vendor to link the new product to (not part of the Product itself). */
   vendorId?: string;
@@ -254,18 +254,18 @@ export function ProductForm({ formId, product, showVendor, lockedBranchId, onSub
                 id={name}
                 type="number"
                 step="0.01"
-                placeholder="0.00"
+                placeholder={name === 'rp' ? 'Optional' : '0.00'}
                 disabled={priceLocked}
                 aria-invalid={!!errors[name]}
                 {...register(name, {
-                  required: 'Required',
+                  required: name === 'rp' ? false : 'Required',
                   valueAsNumber: true,
                   min: { value: 0, message: 'Must be ≥ 0' },
                   // TP depends on CP and RP on TP, so editing one re-checks its neighbours.
                   onChange: () => void trigger(['tp', 'rp']),
                   validate: (v) => {
                     const { tp, cp } = getValues();
-                    if (Number.isNaN(v)) return 'Required';
+                    if (v === undefined || Number.isNaN(v)) return name === 'rp' ? true : 'Required';
                     if (name === 'tp' && v < cp) return `Must be ≥ CP (${cp})`;
                     if (name === 'rp' && v < tp) return `Must be ≥ TP (${tp})`;
                     return true;

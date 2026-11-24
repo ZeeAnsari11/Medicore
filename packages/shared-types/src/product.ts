@@ -15,8 +15,8 @@ export interface Product extends BranchOwnedEntity {
   tp: number;
   /** Cost price: purchase price and the floor for sale prices. */
   cp: number;
-  /** Retail price printed on the pack (reference only). */
-  rp: number;
+  /** Retail price printed on the pack (reference only, optional). */
+  rp?: number;
   status: ProductStatus;
   minStockLevel?: number;
 }
@@ -35,8 +35,8 @@ export interface CreateProductRequest {
   tp: number;
   /** Cost price: purchase price and the floor for sale prices. */
   cp: number;
-  /** Retail price printed on the pack (reference only). */
-  rp: number;
+  /** Retail price printed on the pack (reference only, optional). */
+  rp?: number;
   minStockLevel?: number;
 }
 

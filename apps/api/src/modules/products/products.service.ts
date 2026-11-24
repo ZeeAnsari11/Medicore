@@ -52,12 +52,12 @@ export class ProductsService extends TenantScopedRepository<ProductDocument> {
     }
   }
 
-  /** TP must cover the cost price, and the printed retail price must not undercut TP. */
-  private assertPriceRules({ tp, cp, rp }: { tp: number; cp: number; rp: number }) {
+  /** TP must cover the cost price, and the printed retail price (when given) must not undercut TP. */
+  private assertPriceRules({ tp, cp, rp }: { tp: number; cp: number; rp?: number }) {
     if (tp < cp) {
       throw new BadRequestException(`Trade price (TP ${tp}) must be at least the cost price (CP ${cp})`);
     }
-    if (rp < tp) {
+    if (rp !== undefined && rp !== null && rp < tp) {
       throw new BadRequestException(`Retail price (RP ${rp}) must be at least the trade price (TP ${tp})`);
     }
   }

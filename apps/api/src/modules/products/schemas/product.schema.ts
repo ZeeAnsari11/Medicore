@@ -44,8 +44,8 @@ export class Product {
   cp: number;
 
   /** Retail price printed on the pack; reference only. */
-  @Prop({ required: true, min: 0 })
-  rp: number;
+  @Prop({ min: 0 })
+  rp?: number;
 
   @Prop({ required: true, enum: ProductStatus, default: ProductStatus.ACTIVE })
   status: ProductStatus;
