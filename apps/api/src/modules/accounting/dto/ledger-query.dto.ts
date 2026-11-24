@@ -59,6 +59,11 @@ export class PartyBalancesQueryDto {
   @IsIn(['name', 'balance'])
   sortBy?: 'name' | 'balance';
 
+  /** Export only (`.../balances/export`): the file type. */
+  @IsOptional()
+  @IsIn(['csv', 'pdf'])
+  format?: 'csv' | 'pdf';
+
   @IsOptional()
   @IsIn(['asc', 'desc'])
   sortDir?: 'asc' | 'desc';

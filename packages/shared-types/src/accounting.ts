@@ -530,6 +530,10 @@ export interface PartyBalanceRow {
   advanceBalance: number;
   /** accountBalance minus advanceBalance. */
   balance: number;
+  /** Over all time: invoiced / billed, received / paid and returned for this party (absent from older servers). */
+  billed?: number;
+  settled?: number;
+  returns?: number;
 }
 
 export interface PartyBalancesResponse {
@@ -546,6 +550,8 @@ export interface PartyBalancesResponse {
     unattributed: number;
     advanceTotal: number;
   };
+  /** Ledger summary cards for all parties together, over all time (absent from older servers). */
+  summary?: PartyLedgerSummary;
 }
 
 export interface TrialBalanceRow {

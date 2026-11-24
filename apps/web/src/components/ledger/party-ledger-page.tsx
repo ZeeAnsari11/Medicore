@@ -139,6 +139,14 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
 
   const closing = ledger?.closingBalance ?? 0;
   const s = ledger?.summary;
+  const all = balances?.summary;
+  const allExtras = all
+    ? [
+        all.voids ? `${config.voidLabel} ${money(all.voids)}` : null,
+        all.advances ? `Advances ${money(all.advances)}` : null,
+        all.other ? `Adjustments ${money(all.other)}` : null,
+      ].filter(Boolean)
+    : [];
   const extras = s
     ? [
         s.voids ? `${config.voidLabel} ${money(s.voids)}` : null,
@@ -218,6 +226,21 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
             >
               Clear filters
             </Button>
+            <div className="ml-auto">
+              <LedgerExportButtons
+                permission={exportPermission}
+                path={`/accounting/${config.kind}/balances/export`}
+                query={{
+                  branchId: branchId || undefined,
+                  search: q || undefined,
+                  hasBalance: hasBalance ? 'true' : undefined,
+                  sortBy,
+                  sortDir,
+                }}
+                baseName={`all-${config.kind}-ledger`}
+                disabled={!balances}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -227,15 +250,21 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
           spinner
         ) : (
           <div className={listFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
-            {Math.abs(balances.totals.unattributed) > 0.005 && (
-              <Alert className="mb-4">
-                <AlertCircle className="h-4 w-4" />
-                <span>
-                  {config.accountLabel} is {money(balances.totals.accountTotal)}, but {config.singular.toLowerCase()} balances add up to{' '}
-                  {money(balances.totals.partiesAccountTotal)}. {money(balances.totals.unattributed)} is not linked to any{' '}
-                  {config.singular.toLowerCase()} (for example, the unpaid part of walk-in invoices).
-                </span>
-              </Alert>
+            {balances.summary && (
+              <div className="mb-4 space-y-3">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                  <SummaryCard title="Opening balance" value={balances.summary.openingBalance} />
+                  <SummaryCard title={config.billedLabel} value={balances.summary.billed} />
+                  <SummaryCard title={config.settledLabel} value={balances.summary.settled} />
+                  <SummaryCard title="Total returns" value={balances.summary.returns} />
+                  <SummaryCard
+                    title="Closing balance"
+                    value={balances.summary.closingBalance}
+                    hint={balances.summary.closingBalance >= 0 ? config.positiveHint : config.negativeHint}
+                  />
+                </div>
+                {allExtras.length > 0 && <p className="text-sm text-muted-foreground">{allExtras.join(' · ')}</p>}
+              </div>
             )}
             <div className="rounded-lg border">
               <Table>
@@ -246,6 +275,9 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
                         {config.singular} {sortIcon('name')}
                       </button>
                     </TableHead>
+                    <TableHead className="text-right">{config.billedLabel}</TableHead>
+                    <TableHead className="text-right">{config.settledLabel}</TableHead>
+                    <TableHead className="text-right">Total returns</TableHead>
                     <TableHead className="text-right">{config.accountLabel}</TableHead>
                     <TableHead className="text-right">Advance</TableHead>
                     <TableHead className="text-right">
@@ -258,7 +290,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
                 <TableBody>
                   {balances.items.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
+                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
                         No {config.plural} found.
                       </TableCell>
                     </TableRow>
@@ -270,6 +302,9 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
                         onClick={() => url.set({ view: 'ledger', party: row.partyId, page: null })}
                       >
                         <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(row.billed ?? 0)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(row.settled ?? 0)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{money(row.returns ?? 0)}</TableCell>
                         <TableCell className="text-right tabular-nums">{money(row.accountBalance)}</TableCell>
                         <TableCell className="text-right tabular-nums">{money(row.advanceBalance)}</TableCell>
                         <TableCell className="text-right font-medium tabular-nums">{money(row.balance)}</TableCell>

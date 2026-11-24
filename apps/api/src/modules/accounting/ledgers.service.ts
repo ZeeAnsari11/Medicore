@@ -360,6 +360,9 @@ export class LedgersService {
 
     const accountBalance = new Map<string, number>();
     const advanceBalance = new Map<string, number>();
+    const billedBy = new Map<string, number>();
+    const settledBy = new Map<string, number>();
+    const returnsBy = new Map<string, number>();
     let accountTotal = 0;
     let partiesAccountTotal = 0;
     let advanceTotal = 0;
@@ -373,7 +376,7 @@ export class LedgersService {
       };
       if (branchId) match.branchId = new Types.ObjectId(branchId);
       const groups = await this.journalEntryModel.aggregate<{
-        _id: { accountId: string; partyId: string | null };
+        _id: { accountId: string; partyId: string | null; sourceType: JournalEntrySourceType };
         debit: number;
         credit: number;
       }>([
@@ -382,7 +385,11 @@ export class LedgersService {
         { $match: { 'lines.accountId': { $in: accountIds } } },
         {
           $group: {
-            _id: { accountId: '$lines.accountId', partyId: { $ifNull: ['$lines.partyId', null] } },
+            _id: {
+              accountId: '$lines.accountId',
+              partyId: { $ifNull: ['$lines.partyId', null] },
+              sourceType: '$sourceType',
+            },
             debit: { $sum: '$lines.debit' },
             credit: { $sum: '$lines.credit' },
           },
@@ -407,6 +414,17 @@ export class LedgersService {
           if (g._id.partyId) {
             partiesAccountTotal += value;
             accountBalance.set(g._id.partyId, (accountBalance.get(g._id.partyId) ?? 0) + value);
+            // The same source-type classification as the ledger summary cards, per party.
+            const T = JournalEntrySourceType;
+            const add = (map: Map<string, number>, amount: number) =>
+              map.set(g._id.partyId!, (map.get(g._id.partyId!) ?? 0) + amount);
+            if (isCustomer) {
+              if (g._id.sourceType === T.SALE) add(billedBy, g.debit);
+              else if (g._id.sourceType === T.PAYMENT_RECEIVED) add(settledBy, g.credit);
+              else if (g._id.sourceType === T.SALE_RETURN) add(returnsBy, g.credit);
+            } else if (g._id.sourceType === T.PURCHASE) add(billedBy, g.credit);
+            else if (g._id.sourceType === T.PAYMENT_MADE) add(settledBy, g.debit);
+            else if (g._id.sourceType === T.PURCHASE_RETURN) add(returnsBy, g.debit);
           }
         }
       }
@@ -440,6 +458,9 @@ export class LedgersService {
         accountBalance: acct,
         advanceBalance: adv,
         balance: round2(acct - adv),
+        billed: round2(billedBy.get(id) ?? 0),
+        settled: round2(settledBy.get(id) ?? 0),
+        returns: round2(returnsBy.get(id) ?? 0),
       };
     });
     if (q.hasBalance === 'true') {
@@ -468,6 +489,91 @@ export class LedgersService {
         unattributed: round2(accountTotal - partiesAccountTotal),
         advanceTotal: round2(advanceTotal),
       },
+      summary: await this.allPartiesSummary(tenantId, branchId, kind),
+    };
+  }
+
+  /**
+   * The ledger summary cards for every customer (or vendor) together, over all time: invoiced, received, returns,
+   * reversals, advances and the closing balance. Only lines tied to a party count, so the closing balance equals the
+   * sum of the parties' balances in the list (walk-in amounts with no party are left out).
+   */
+  private async allPartiesSummary(
+    tenantId: string,
+    branchId: string | null,
+    kind: 'CUSTOMER' | 'VENDOR',
+  ): Promise<PartyLedgerSummary> {
+    const { main, advance } = await this.partyAccounts(tenantId, kind);
+    const accountIds = [main?.id, advance?.id].filter((id): id is string => !!id);
+    const isCustomer = kind === 'CUSTOMER';
+    const empty: PartyLedgerSummary = {
+      openingBalance: 0,
+      billed: 0,
+      settled: 0,
+      returns: 0,
+      voids: 0,
+      advances: 0,
+      other: 0,
+      closingBalance: 0,
+    };
+    if (accountIds.length === 0) return empty;
+
+    const match: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      status: { $in: LEDGER_VISIBLE_STATUSES },
+      deletedAt: null,
+      'lines.accountId': { $in: accountIds },
+    };
+    if (branchId) match.branchId = new Types.ObjectId(branchId);
+
+    const bySource = await this.journalEntryModel.aggregate<SourceTotal>([
+      { $match: match },
+      { $unwind: '$lines' },
+      { $match: { 'lines.accountId': { $in: accountIds }, 'lines.partyId': { $nin: [null, ''] } } },
+      {
+        $group: {
+          _id: { sourceType: '$sourceType', accountId: '$lines.accountId' },
+          debit: { $sum: '$lines.debit' },
+          credit: { $sum: '$lines.credit' },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+
+    const T = JournalEntrySourceType;
+    const sum = (types: JournalEntrySourceType[], side: 'debit' | 'credit', advanceAccount: boolean) =>
+      bySource
+        .filter((b) => types.includes(b._id.sourceType) && (b._id.accountId === advance?.id) === advanceAccount)
+        .reduce((total, b) => total + b[side], 0);
+
+    const billed = isCustomer ? sum([T.SALE], 'debit', false) : sum([T.PURCHASE], 'credit', false);
+    const settled = isCustomer
+      ? sum([T.PAYMENT_RECEIVED], 'credit', false)
+      : sum([T.PAYMENT_MADE], 'debit', false);
+    const returns = isCustomer
+      ? sum([T.SALE_RETURN], 'credit', false)
+      : sum([T.PURCHASE_RETURN], 'debit', false);
+    const voids = isCustomer
+      ? sum([T.SALE_CANCELLATION, T.SALE_EDIT], 'credit', false)
+      : sum([T.PURCHASE_CANCELLATION, T.PURCHASE_EDIT], 'debit', false);
+    const advances = bySource
+      .filter((b) => b._id.accountId === advance?.id)
+      .reduce((total, b) => total + (isCustomer ? b.credit - b.debit : b.debit - b.credit), 0);
+    const totalDebit = bySource.reduce((total, b) => total + b.debit, 0);
+    const totalCredit = bySource.reduce((total, b) => total + b.credit, 0);
+    const closing = signed(isCustomer ? 'debit' : 'credit', totalDebit, totalCredit);
+    // closing = opening (0, all time) + billed - settled - returns - voids - advances + other
+    const other = closing - (billed - settled - returns - voids - advances);
+
+    return {
+      openingBalance: 0,
+      billed: round2(billed),
+      settled: round2(settled),
+      returns: round2(returns),
+      voids: round2(voids),
+      advances: round2(advances),
+      other: round2(other),
+      closingBalance: round2(closing),
     };
   }
 
@@ -655,9 +761,10 @@ export class LedgersService {
       running += signed(p.direction, r.debit, r.credit);
       // The part of a cash receipt written off as a difference is its own line of the payment's entry.
       const isDifference =
-        r.sourceType === T.PAYMENT_RECEIVED &&
         r.description === DIFFERENCE_LINE_DESCRIPTION &&
-        p.kind === 'CUSTOMER';
+        (p.kind === 'CUSTOMER'
+          ? r.sourceType === T.PAYMENT_RECEIVED
+          : r.sourceType === T.PAYMENT_MADE);
       const documentType = isDifference
         ? 'Difference'
         : documentTypeLabel(
@@ -709,7 +816,11 @@ export class LedgersService {
         sourceType: r.sourceType,
         documentType,
         description: isDifference
-          ? `Difference (Sales Difference)${links?.invoices.length ? ` · Against invoice ${links.invoices.map((i) => i.number).join(', ')}` : ''}`
+          ? `Difference (${p.kind === 'CUSTOMER' ? 'Sales Difference' : 'Purchase Discount'})${
+              links?.invoices.length
+                ? ` · Against ${p.kind === 'CUSTOMER' ? 'invoice' : 'purchase'} ${links.invoices.map((i) => i.number).join(', ')}`
+                : ''
+            }`
           : links
             ? paymentDescription(p.kind, links)
             : (REVERSAL_DESCRIPTION[r.sourceType as JournalEntrySourceType] ?? r.description),
@@ -717,7 +828,7 @@ export class LedgersService {
         ...(links?.invoices.length
           ? {
               invoices: isDifference
-                ? links.invoices.map((i) => ({ ...i, amount: round2(r.credit) }))
+                ? links.invoices.map((i) => ({ ...i, amount: round2(Math.max(r.debit, r.credit)) }))
                 : links.invoices,
             }
           : {}),
@@ -727,17 +838,18 @@ export class LedgersService {
       };
     });
 
-    // A cash receipt's difference is part of the same payment: one row, with the difference named in its description.
+    // A cash receipt's (or bulk purchase receipt's) difference is part of the same payment: one row, with the difference named in its description.
     const differenceRows = rows.filter((r) => r.documentType === 'Difference' && r.reference?.type === 'PAYMENT');
     if (differenceRows.length > 0) {
       for (const diff of differenceRows) {
         const base = rows.find((r) => r !== diff && r.entryId === diff.entryId && r.documentType === 'Payment');
-        const note = `Difference ${money2(diff.credit)}`;
+        const note = `Difference ${money2(Math.max(diff.debit, diff.credit))}`;
         if (!base) {
           diff.description = `${diff.description} · ${note}`;
           continue;
         }
         base.credit = round2(base.credit + diff.credit);
+        base.debit = round2(base.debit + diff.debit);
         base.runningBalance = diff.runningBalance;
         base.description = `${base.description} · ${note}`;
         rows.splice(rows.indexOf(diff), 1);
