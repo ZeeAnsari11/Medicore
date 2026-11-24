@@ -389,7 +389,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <div className="min-w-0">
+        <div className="min-w-0 shrink-0 max-w-[24rem]">
           <h1 className="truncate text-lg font-bold leading-tight tracking-tight">
             {isEdit ? `Edit Invoice ${editSale.invoiceNumber}` : 'New Sale'}
           </h1>

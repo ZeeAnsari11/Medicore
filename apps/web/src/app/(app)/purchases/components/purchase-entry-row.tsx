@@ -172,7 +172,7 @@ export function PurchaseEntryRow({
     <div
       role="group"
       aria-label="New line item"
-      className="border-b bg-muted/40 p-3"
+      className="@container border-b bg-muted/40 p-3"
       onKeyDown={(e) => {
         // Only keys from the row itself; Esc inside the portaled product popover just closes it.
         if (e.key === 'Escape' && e.currentTarget.contains(e.target as Node)) {
@@ -186,15 +186,15 @@ export function PurchaseEntryRow({
           Editing line {editing.serial}. Press Enter on Tax % to update, Esc to cancel.
         </p>
       )}
-      <div className="grid grid-cols-6 items-start gap-2 lg:grid-cols-[2.5rem_minmax(12rem,2fr)_7rem_9rem_5rem_6rem_6rem_5rem_5rem_6rem_auto]">
-        <div className="col-span-1 space-y-1 lg:col-span-1">
+      <div className="grid grid-cols-6 items-start gap-2 @min-[1040px]:grid-cols-[2.5rem_minmax(8rem,2fr)_6rem_8.5rem_4.5rem_5.5rem_5.5rem_4rem_4rem_5rem_auto]">
+        <div className="col-span-1 space-y-1 @min-[1040px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Ser #</Label>
           <div className="flex h-9 items-center text-sm tabular-nums text-muted-foreground">
             {editing?.serial ?? serial}
           </div>
         </div>
 
-        <div className="col-span-5 space-y-1 lg:col-span-1">
+        <div className="col-span-5 space-y-1 @min-[1040px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Product</Label>
           <ComboboxWithCreate
             id={IDS.product}
@@ -206,14 +206,15 @@ export function PurchaseEntryRow({
               e.preventDefault();
               focusId(IDS.batchNumber);
             }}
-            options={products.map((p) => ({ value: p.id, label: p.name }))}
+            options={products.map((p) => ({ value: p.id, label: p.name, hint: p.genericName }))}
+            hintSearchLabel="Search by generic name"
             placeholder={vendorSelected ? 'Search product' : 'Select a vendor first'}
             disabled={!vendorSelected}
             className={`h-9 text-sm ${invalid('productId') ? 'border-destructive' : ''}`}
           />
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.batchNumber} className="text-xs text-muted-foreground">Batch #</Label>
           <Input
             id={IDS.batchNumber}
@@ -225,7 +226,7 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.expiryDate} className="text-xs text-muted-foreground">Expiry</Label>
           <Input
             id={IDS.expiryDate}
@@ -239,7 +240,7 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.quantity} className="text-xs text-muted-foreground">Qty</Label>
           <Input
             id={IDS.quantity}
@@ -253,7 +254,7 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.purchasePrice} className="text-xs text-muted-foreground">Price</Label>
           <Input
             id={IDS.purchasePrice}
@@ -276,7 +277,7 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.sellingPrice} className="text-xs text-muted-foreground">Sale</Label>
           <Input
             id={IDS.sellingPrice}
@@ -291,7 +292,7 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.discountPercent} className="text-xs text-muted-foreground">Disc %</Label>
           <Input
             id={IDS.discountPercent}
@@ -306,7 +307,7 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[1040px]:col-span-1">
           <Label htmlFor={IDS.taxPercent} className="text-xs text-muted-foreground">Tax %</Label>
           <Input
             id={IDS.taxPercent}
@@ -321,13 +322,13 @@ export function PurchaseEntryRow({
           />
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[1040px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Total</Label>
           <div className="flex h-9 items-center text-sm font-medium tabular-nums">{preview.toFixed(2)}</div>
         </div>
 
-        <div className="col-span-6 space-y-1 lg:col-span-1">
-          <Label className="invisible hidden text-xs lg:block">Add</Label>
+        <div className="col-span-6 space-y-1 @min-[1040px]:col-span-1">
+          <Label className="invisible hidden text-xs @min-[1040px]:block">Add</Label>
           <Button type="button" size="sm" className="h-9" onClick={commit}>
             <Plus className="mr-1 h-3.5 w-3.5" />
             {editing ? 'Update' : 'Add'}

@@ -361,7 +361,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
     const controlClass = inHeader ? 'h-9 text-sm' : undefined;
     return (
       <>
-        <div className={inHeader ? 'space-y-0.5' : 'min-w-[16rem] flex-1 space-y-1'}>
+        <div className={inHeader ? 'min-w-[9rem] space-y-0.5' : 'min-w-[16rem] flex-1 space-y-1'}>
           <Label className={labelClass}>Vendor *</Label>
           <ComboboxWithCreate
             id={`purchase-vendor-${suffix}`}
@@ -436,7 +436,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
-        <div className="min-w-0">
+        <div className="min-w-0 shrink-0 max-w-[24rem]">
           <h1 className="truncate text-lg font-bold leading-tight tracking-tight">
             {isEdit ? `Edit Purchase ${editPurchase.purchaseNumber}` : 'New Purchase'}
           </h1>
@@ -444,7 +444,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
             {isEdit ? 'Stock is adjusted; changing the batch of a partly sold line moves only the units still in stock' : branchName ? `Receiving stock at ${branchName}` : 'Receiving stock'}
           </p>
         </div>
-        <div className="ml-4 hidden items-end gap-3 xl:flex">{renderPurchaseFields(true)}</div>
+        <div className="ml-4 hidden min-w-0 items-end gap-3 xl:flex">{renderPurchaseFields(true)}</div>
       </TopbarContent>
 
       {saveError && (

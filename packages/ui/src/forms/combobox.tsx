@@ -10,6 +10,8 @@ import { Popover, PopoverTrigger, PopoverContent } from '../primitives/popover';
 export interface ComboboxOption {
   value: string;
   label: string;
+  /** Secondary text shown beside the label (e.g. a product's generic name); searchable when `hintSearchLabel` is on. */
+  hint?: string;
 }
 
 export interface ComboboxWithCreateProps {
@@ -26,6 +28,11 @@ export interface ComboboxWithCreateProps {
    */
   onCreateNew?: (searchTerm: string) => void;
   createLabel?: (searchTerm: string) => string;
+  /**
+   * Adds a checkbox with this label under the search box. While ticked, the search matches the options'
+   * `hint` instead of their label (e.g. "Search by generic name"). It resets each time the list closes.
+   */
+  hintSearchLabel?: string;
   disabled?: boolean;
   className?: string;
   /** Applied to the trigger button — lets callers target it for imperative focus (e.g. after appending a new row). */
@@ -43,6 +50,7 @@ export function ComboboxWithCreate({
   emptyMessage = 'No results found.',
   onCreateNew,
   createLabel = (term) => (term ? `Create "${term}"` : 'Create new'),
+  hintSearchLabel,
   disabled,
   className,
   id,
@@ -51,12 +59,14 @@ export function ComboboxWithCreate({
   const [open, setOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const [activeIndex, setActiveIndex] = React.useState(0);
+  const [byHint, setByHint] = React.useState(false);
   const listId = React.useId();
   const optionId = (i: number) => `${listId}-opt-${i}`;
 
   const selected = options.find((option) => option.value === value);
+  const needle = search.toLowerCase();
   const filtered = search
-    ? options.filter((option) => option.label.toLowerCase().includes(search.toLowerCase()))
+    ? options.filter((option) => (byHint ? (option.hint ?? '') : option.label).toLowerCase().includes(needle))
     : options;
 
   // The optional "Create new" row is the last keyboard-reachable row.
@@ -85,6 +95,7 @@ export function ComboboxWithCreate({
       onOpenChange={(next) => {
         setOpen(next);
         setActiveIndex(0);
+        if (!next) setByHint(false);
       }}
     >
       <PopoverTrigger asChild>
@@ -134,6 +145,20 @@ export function ComboboxWithCreate({
               }
             }}
           />
+          {hintSearchLabel && (
+            <label className="mt-2 flex cursor-pointer items-center gap-2 px-1 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                className="size-3.5 accent-primary"
+                checked={byHint}
+                onChange={(e) => {
+                  setByHint(e.target.checked);
+                  setActiveIndex(0);
+                }}
+              />
+              {hintSearchLabel}
+            </label>
+          )}
         </div>
         <div ref={listRef} id={listId} role="listbox" className="max-h-64 overflow-y-auto p-1">
           {filtered.length === 0 && !onCreateNew && (
@@ -155,8 +180,9 @@ export function ComboboxWithCreate({
                 'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none data-[active=true]:bg-accent data-[active=true]:text-accent-foreground',
               )}
             >
-              <Check className={cn('size-4', option.value === value ? 'opacity-100' : 'opacity-0')} />
-              {option.label}
+              <Check className={cn('size-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')} />
+              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              {option.hint && <span className="ml-2 max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">{option.hint}</span>}
             </button>
           ))}
           {onCreateNew && (

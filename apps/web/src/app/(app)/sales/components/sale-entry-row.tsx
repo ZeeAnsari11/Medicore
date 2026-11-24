@@ -238,7 +238,7 @@ export function SaleEntryRow({
     <div
       role="group"
       aria-label="New line item"
-      className="border-b bg-muted/40 p-3"
+      className="@container border-b bg-muted/40 p-3"
       onKeyDown={(e) => {
         // Only keys from the row itself; Esc inside the portaled product/batch popovers just closes them.
         if (e.key === 'Escape' && e.currentTarget.contains(e.target as Node)) {
@@ -252,15 +252,15 @@ export function SaleEntryRow({
           Editing line {editing.serial}. Press Enter on Tax % to update, Esc to cancel.
         </p>
       )}
-      <div className="grid grid-cols-6 items-start gap-2 lg:grid-cols-[2.5rem_minmax(12rem,2fr)_minmax(9rem,1.4fr)_5rem_5rem_6rem_5rem_5rem_6rem_auto]">
-        <div className="col-span-1 space-y-1 lg:col-span-1">
+      <div className="grid grid-cols-6 items-start gap-2 @min-[960px]:grid-cols-[2.5rem_minmax(9rem,2fr)_minmax(8rem,1.4fr)_4.5rem_4.5rem_5.5rem_4.5rem_4.5rem_5.5rem_auto]">
+        <div className="col-span-1 space-y-1 @min-[960px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Ser #</Label>
           <div className="flex h-9 items-center text-sm tabular-nums text-muted-foreground">
             {editing?.serial ?? lines.length + 1}
           </div>
         </div>
 
-        <div className="col-span-5 space-y-1 lg:col-span-1">
+        <div className="col-span-5 space-y-1 @min-[960px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Product</Label>
           <ComboboxWithCreate
             id={IDS.product}
@@ -274,7 +274,8 @@ export function SaleEntryRow({
               // The effect above moves focus on; don't let the popover hand it back to the trigger.
               if (focusBatchPending.current) e.preventDefault();
             }}
-            options={products.map((p) => ({ value: p.id, label: p.name }))}
+            options={products.map((p) => ({ value: p.id, label: p.name, hint: p.genericName }))}
+            hintSearchLabel="Search by generic name"
             placeholder="Search product"
             onCreateNew={() => setProductDialogOpen(true)}
             createLabel={() => 'Create new product'}
@@ -282,12 +283,12 @@ export function SaleEntryRow({
           />
           {canViewPrices && product && (
             <p className="text-xs font-semibold leading-tight text-foreground">
-              TP {product.tp.toFixed(2)} · CP {product.cp.toFixed(2)} · RP {product.rp.toFixed(2)}
+              TP {product.tp.toFixed(2)} · CP {product.cp.toFixed(2)}{product.rp !== undefined ? ` · RP ${product.rp.toFixed(2)}` : ''}
             </p>
           )}
         </div>
 
-        <div className="col-span-6 space-y-1 lg:col-span-1">
+        <div className="col-span-6 space-y-1 @min-[960px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Batch #</Label>
           <Select
             value={batchId}
@@ -317,7 +318,7 @@ export function SaleEntryRow({
           </Select>
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[960px]:col-span-1">
           <Label htmlFor={IDS.quantity} className="text-xs text-muted-foreground">Qty</Label>
           <Input
             id={IDS.quantity}
@@ -334,7 +335,7 @@ export function SaleEntryRow({
           )}
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[960px]:col-span-1">
           <Label htmlFor={IDS.bonusQuantity} className="text-xs text-muted-foreground">Bonus</Label>
           <Input
             id={IDS.bonusQuantity}
@@ -349,7 +350,7 @@ export function SaleEntryRow({
           <p className="text-[11px] leading-tight text-muted-foreground">Free units</p>
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[960px]:col-span-1">
           <Label htmlFor={IDS.unitPrice} className="text-xs text-muted-foreground">Unit price</Label>
           <Input
             id={IDS.unitPrice}
@@ -374,7 +375,7 @@ export function SaleEntryRow({
           />
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[960px]:col-span-1">
           <Label htmlFor={IDS.discountPercent} className="text-xs text-muted-foreground">Disc %</Label>
           <Input
             id={IDS.discountPercent}
@@ -389,7 +390,7 @@ export function SaleEntryRow({
           />
         </div>
 
-        <div className="col-span-3 space-y-1 lg:col-span-1">
+        <div className="col-span-3 space-y-1 @min-[960px]:col-span-1">
           <Label htmlFor={IDS.taxPercent} className="text-xs text-muted-foreground">Tax %</Label>
           <Input
             id={IDS.taxPercent}
@@ -404,12 +405,12 @@ export function SaleEntryRow({
           />
         </div>
 
-        <div className="col-span-4 space-y-1 lg:col-span-1">
+        <div className="col-span-4 space-y-1 @min-[960px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Total</Label>
           <div className="flex h-9 items-center text-sm font-medium tabular-nums">{preview.toFixed(2)}</div>
         </div>
 
-        <div className="col-span-2 space-y-1 lg:col-span-1">
+        <div className="col-span-2 space-y-1 @min-[960px]:col-span-1">
           <Label className="invisible text-xs">Add</Label>
           <Button type="button" size="sm" className="h-9" onClick={commit}>
             <Plus className="mr-1 h-3.5 w-3.5" />
