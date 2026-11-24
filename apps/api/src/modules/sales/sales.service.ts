@@ -169,7 +169,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     const filter = this.buildListFilter(tenantId, branchId, query);
     return this.saleModel
       .find(filter)
-      .populate('customerId', 'name')
+      .populate('customerId', 'name address city territory')
       .sort({ saleDate: -1, createdAt: -1 });
   }
 
@@ -182,7 +182,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     const [items, total, summary] = await Promise.all([
       this.saleModel
         .find(filter)
-        .populate('customerId', 'name')
+        .populate('customerId', 'name address city territory')
         .sort({ saleDate: -1, createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
@@ -254,7 +254,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     const [docs, total, summary, tenant, branch, customer] = await Promise.all([
       this.saleModel
         .find(filter)
-        .populate('customerId', 'name')
+        .populate('customerId', 'name address city territory')
         .sort({ saleDate: -1, createdAt: -1 })
         .limit(SALES_REPORT_LIMIT),
       this.saleModel.countDocuments(filter),
@@ -339,7 +339,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       ...(includePending ? {} : NOT_PENDING),
       ...(ownerId ? { orderBookerId: new Types.ObjectId(ownerId) } : {}),
     });
-    const sale = await this.saleModel.findOne(filter).populate('customerId', 'name');
+    const sale = await this.saleModel.findOne(filter).populate('customerId', 'name address city territory');
     if (!sale) {
       throw new NotFoundException('Sale not found');
     }
@@ -653,7 +653,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         result = created;
       });
 
-      const populated = await this.saleModel.findById(result!._id).populate('customerId', 'name');
+      const populated = await this.saleModel.findById(result!._id).populate('customerId', 'name address city territory');
       return this.toSaleResponse(populated!);
     } finally {
       await session.endSession();
@@ -823,7 +823,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
         resultId = sale.id;
       });
 
-      const populated = await this.saleModel.findById(resultId).populate('customerId', 'name');
+      const populated = await this.saleModel.findById(resultId).populate('customerId', 'name address city territory');
       return this.toSaleResponse(populated!);
     } finally {
       await session.endSession();
@@ -941,7 +941,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
   ): Promise<PendingOrderRow[]> {
     const orders = await this.saleModel
       .find(this.pendingFilter(tenantId, branchId, date, orderBookerId))
-      .populate('customerId', 'name')
+      .populate('customerId', 'name address city territory')
       .sort({ createdAt: 1 });
 
     // What confirming would take from each customer's advance, oldest order first (as confirmOrders does), so the
@@ -982,7 +982,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
   ): Promise<SaleType[]> {
     const orders = await this.saleModel
       .find(this.pendingFilter(tenantId, branchId, date, orderBookerId))
-      .populate('customerId', 'name')
+      .populate('customerId', 'name address city territory')
       .sort({ createdAt: 1 });
     return orders.map((o) => this.toSaleResponse(o));
   }
@@ -1619,10 +1619,16 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
 
     let customerId: string | undefined;
     let customerName: string | undefined;
+    let customerAddress: string | undefined;
+    let customerCity: string | undefined;
+    let customerTerritory: string | undefined;
     if (obj.customerId) {
       if (typeof obj.customerId === 'object') {
         customerId = obj.customerId._id.toString();
         customerName = obj.customerId.name;
+        customerAddress = obj.customerId.address;
+        customerCity = obj.customerId.city;
+        customerTerritory = obj.customerId.territory;
       } else {
         customerId = obj.customerId.toString();
       }
@@ -1634,6 +1640,9 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       branchId: obj.branchId.toString(),
       customerId,
       customerName,
+      customerAddress,
+      customerCity,
+      customerTerritory,
       invoiceNumber: obj.invoiceNumber ?? '',
       status: obj.status ?? SaleStatus.CONFIRMED,
       orderNumber: obj.orderNumber,

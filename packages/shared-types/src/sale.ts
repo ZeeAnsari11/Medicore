@@ -31,6 +31,10 @@ export const WALK_IN_CUSTOMER_ID = 'walkin';
 export interface Sale extends BranchOwnedEntity {
   customerId?: string;
   customerName?: string;
+  /** The customer's address, city and territory, shown on the invoice (absent for walk-in sales and older servers). */
+  customerAddress?: string;
+  customerCity?: string;
+  customerTerritory?: string;
   /** Empty while the sale is a PENDING order: the number is issued on confirmation. */
   invoiceNumber: string;
   /** Absent on sales that predate order processing, which are CONFIRMED. */

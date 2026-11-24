@@ -163,9 +163,11 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Name, location and order booker sit close together; the gaps below this block stay roomy. */}
+          <div className="-mt-1 space-y-0.5">
           {readOnly && <p className="text-sm text-muted-foreground">Opened from the ledger. View only: nothing can be changed here.</p>}
           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <span>{sale.customerName ?? 'Walk-in customer'}</span>
+            <span className="text-xl font-bold capitalize text-foreground">{sale.customerName ?? 'Walk-in customer'}</span>
             <span>·</span>
             <span>{new Date(sale.saleDate).toLocaleDateString()}</span>
             <Badge variant="outline">{sale.paymentMethod}</Badge>
@@ -174,6 +176,13 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
             {sale.returnStatus === ReturnStatus.PARTIAL && <Badge variant="warning">Partially returned</Badge>}
             {sale.returnStatus === ReturnStatus.FULL && <Badge variant="secondary">Fully returned</Badge>}
           </div>
+          {(sale.customerAddress || sale.customerCity || sale.customerTerritory) && (
+            <p className="flex flex-wrap gap-x-4 gap-y-0 text-base font-bold capitalize leading-snug text-foreground" data-testid="customer-location">
+              {sale.customerAddress && <span><span className="font-bold text-muted-foreground">Address:</span> {sale.customerAddress}</span>}
+              {sale.customerCity && <span><span className="font-bold text-muted-foreground">City:</span> {sale.customerCity}</span>}
+              {sale.customerTerritory && <span><span className="font-bold text-muted-foreground">Territory:</span> {sale.customerTerritory}</span>}
+            </p>
+          )}
 
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <span>
@@ -181,10 +190,11 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               <span className="font-medium">{sale.orderBookerName ?? '—'}</span>
             </span>
             {isAdmin && !reassigning && !readOnly && (
-              <Button variant="ghost" size="sm" onClick={() => setReassigning(true)}>
+              <Button variant="ghost" size="sm" className="h-6 px-2" onClick={() => setReassigning(true)}>
                 Reassign
               </Button>
             )}
+          </div>
           </div>
           {isAdmin && reassigning && (
             <div className="flex flex-wrap items-end gap-2 rounded-lg border p-3">

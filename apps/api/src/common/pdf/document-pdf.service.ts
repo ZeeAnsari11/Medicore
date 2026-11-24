@@ -59,6 +59,9 @@ export interface PdfDocumentSpec {
 
 const CURRENCY = (value: number) => value.toFixed(2);
 
+/** First letter of every word in capitals ("shahbax road" -> "Shahbax Road"); the rest of each word is left as typed. */
+const titleCase = (text?: string) => text?.replace(/(^|[\s,./()-])(\p{L})/gu, (_, before: string, letter: string) => before + letter.toUpperCase());
+
 @Injectable()
 export class DocumentPdfService {
   build(spec: PdfDocumentSpec): PDFKit.PDFDocument {
@@ -69,22 +72,22 @@ export class DocumentPdfService {
       drawReportHeader(doc, {
         businessName: spec.companyName,
         businessAddress:
-          [spec.branchAddress, spec.branchPhone].filter(Boolean).join('  ·  ') || spec.branchName,
+          [spec.branchName, spec.branchAddress, spec.branchPhone].filter(Boolean).join('  ·  '),
         title: `${spec.documentTypeLabel}  ${spec.documentNumber}`,
-        left: [spec.partyCode, spec.partyName, spec.partyAddress],
+        // Who it is for, where, and (sales invoices) who booked it, so nothing needs a section below the header.
+        leftBold: true,
+        left: [
+          titleCase(spec.partyLabel),
+          titleCase(spec.partyName),
+          titleCase(spec.partyAddress),
+          spec.orderBooker ? `Order Booker: ${titleCase(spec.orderBooker)}` : undefined,
+        ],
         date: spec.date.toISOString(),
-        rightLine: spec.partyCity,
+        rightLine: titleCase(spec.partyCity),
       });
     pageHeader();
-    doc.font('Helvetica').fontSize(10).text(spec.branchName, 50, doc.y);
-    if (spec.branchPhone) doc.text(spec.branchPhone);
-    doc.moveDown(1);
-    doc.font('Helvetica-Bold').fontSize(10).text(spec.partyLabel);
-    doc.font('Helvetica').text(spec.partyName);
-    if (spec.partyPhone) doc.text(spec.partyPhone);
-    if (spec.orderBooker) doc.text(`Order Booker: ${spec.orderBooker}`);
 
-    doc.moveDown(1.5);
+    doc.moveDown(0.5);
     const tableTop = doc.y;
     const hasBatch = spec.items.some((item) => item.batchNumber);
     const hasBonus = spec.items.some((item) => item.bonus);

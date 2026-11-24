@@ -175,7 +175,7 @@ export default function SalesPage() {
       },
       {
         accessorKey: 'paymentStatus',
-        header: 'Status',
+        header: 'Payment Status',
         cell: ({ row, getValue }) => {
           const status = getValue() as PaymentStatus;
           return (

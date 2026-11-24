@@ -12,6 +12,8 @@ export interface ReportHeaderSpec {
   title: string;
   /** Up to three lines, e.g. code / name / address. */
   left?: Array<string | undefined>;
+  /** Print the left-hand lines in bold (invoices: who it is billed to, where, and who booked it). */
+  leftBold?: boolean;
   /** ISO dates shown as "02 Aug, 2026 > 17 Nov, 2026"; a lone date is shown on its own. */
   dateRange?: { from?: string; to?: string };
   /** A single ISO date (documents such as invoices); wins over `dateRange`. */
@@ -56,9 +58,13 @@ export function drawReportHeader(doc: PDFKit.PDFDocument, spec: ReportHeaderSpec
   doc.fontSize(11);
   const half = w / 2 - 6;
   const left = (spec.left ?? []).filter((l): l is string => !!l);
-  left.slice(0, 3).forEach((line, i) =>
+  // Up to four lines on the left (e.g. order booker, party name, address); the right column keeps three.
+  const leftLines = left.slice(0, 4);
+  if (spec.leftBold) doc.font('Helvetica-Bold');
+  leftLines.forEach((line, i) =>
     doc.text(line, x, blockTop + i * LINE, { width: half, align: 'left', lineBreak: false, ellipsis: true }),
   );
+  doc.font('Helvetica');
   doc.text(spec.date ? headerDate(spec.date) : dateRangeText(spec.dateRange), x + w / 2 + 6, blockTop + LINE, { width: half, align: 'right', lineBreak: false });
   if (spec.rightLine) doc.text(spec.rightLine, x + w / 2 + 6, blockTop + 2 * LINE, { width: half, align: 'right', lineBreak: false, ellipsis: true });
 
@@ -67,7 +73,7 @@ export function drawReportHeader(doc: PDFKit.PDFDocument, spec: ReportHeaderSpec
   byPage.set(range.start + range.count - 1, blockTop);
   slots.set(doc, byPage);
 
-  const ruleY = blockTop + 3 * LINE + 2;
+  const ruleY = blockTop + Math.max(3, leftLines.length) * LINE + 2;
   doc.moveTo(x, ruleY).lineTo(x + w, ruleY).strokeColor('#000').lineWidth(2).stroke();
   doc.fillColor('#000').strokeColor('#000').lineWidth(1);
   doc.x = x;
