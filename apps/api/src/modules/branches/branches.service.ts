@@ -11,7 +11,7 @@ import type { Branch as BranchType } from '@medicore/shared-types';
 /** Collections that hold branch-owned data; a branch with rows in any of them cannot be deleted. */
 const BRANCH_DATA_COLLECTIONS = [
   'sales', 'purchases', 'batches', 'stock_movements', 'customers', 'vendors', 'payments', 'expenses',
-  'journal_entries', 'sale_returns', 'purchase_returns', 'cash_receipts', 'stock_transfers',
+  'journal_entries', 'sale_returns', 'purchase_returns', 'cash_receipts', 'cash_payments', 'stock_transfers',
 ];
 
 @Injectable()

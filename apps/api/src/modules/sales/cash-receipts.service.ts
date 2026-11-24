@@ -60,6 +60,14 @@ const outstandingOf = (
   s: Pick<Sale, 'grandTotal' | 'returnedTotal' | 'amountPaid' | 'refundedTotal'>,
 ) => round2(s.grandTotal - (s.returnedTotal ?? 0) - (s.amountPaid - (s.refundedTotal ?? 0)));
 
+/** Once an invoice is fully paid its receipt entries are final: they can be removed, not edited. */
+const PAID_ENTRY_LOCKED = 'This invoice is fully paid; its entry can no longer be edited (remove it instead)';
+
+/** A sheet holds at most this many entries (`CreateCashReceiptDto.rows`). */
+const MAX_SHEET_ROWS = 200;
+/** The by-customer picker lists at most this many customers. */
+const MAX_PARTIES = 1000;
+
 @Injectable()
 export class CashReceiptsService {
   constructor(
@@ -79,25 +87,107 @@ export class CashReceiptsService {
     private readonly invoiceAuditService: InvoiceAuditService,
   ) {}
 
-  /** Customer invoices matching the typed number; `payable` is false once nothing is owed. */
-  async lookup(tenantId: string, branchId: string | null, q: string, ownerId?: string | null) {
-    const term = q.trim();
-    if (!term) return [];
-    const filter: Record<string, unknown> = {
+  /**
+   * Customers with something left to pay, with how many invoices and how much: two indexed queries, so the picker
+   * opens at once (the full customer list also computes every ledger balance, which is far slower).
+   */
+  async outstandingCustomers(tenantId: string, branchId: string | null, ownerId?: string | null) {
+    const match: Record<string, unknown> = {
       tenantId: new Types.ObjectId(tenantId),
       deletedAt: null,
       ...NOT_PENDING,
       customerId: { $nin: [null, ''] },
-      invoiceNumber: { $regex: escapeRegex(term), $options: 'i' },
+      $expr: {
+        $gt: [
+          {
+            $subtract: [
+              { $subtract: ['$grandTotal', { $ifNull: ['$returnedTotal', 0] }] },
+              { $subtract: [{ $ifNull: ['$amountPaid', 0] }, { $ifNull: ['$refundedTotal', 0] }] },
+            ],
+          },
+          0.01,
+        ],
+      },
     };
+    if (branchId) match.branchId = new Types.ObjectId(branchId);
+    if (ownerId) match.orderBookerId = new Types.ObjectId(ownerId);
+
+    const groups = await this.saleModel.aggregate<{ _id: string; openInvoices: number; due: number }>([
+      { $match: match },
+      {
+        $group: {
+          _id: '$customerId',
+          openInvoices: { $sum: 1 },
+          due: {
+            $sum: {
+              $subtract: [
+                { $subtract: ['$grandTotal', { $ifNull: ['$returnedTotal', 0] }] },
+                { $subtract: [{ $ifNull: ['$amountPaid', 0] }, { $ifNull: ['$refundedTotal', 0] }] },
+              ],
+            },
+          },
+        },
+      },
+      { $limit: MAX_PARTIES },
+    ]);
+    if (groups.length === 0) return [];
+
+    const customers = await this.customerModel
+      .find({ _id: { $in: groups.map((g) => g._id) }, tenantId: new Types.ObjectId(tenantId) }, { name: 1, phone: 1 })
+      .lean();
+    const byId = new Map(customers.map((c) => [String(c._id), c]));
+    return groups
+      .filter((g) => byId.has(g._id))
+      .map((g) => ({
+        id: g._id,
+        name: byId.get(g._id)!.name,
+        phone: byId.get(g._id)!.phone,
+        openInvoices: g.openInvoices,
+        due: round2(g.due),
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /**
+   * Customer invoices matching the typed number; `payable` is false once nothing is owed. With `customerId` it
+   * instead lists every invoice of that customer that still has a balance (oldest first, at most `MAX_SHEET_ROWS`),
+   * so a payment can be spread over invoices whose numbers the payer doesn't know.
+   */
+  async lookup(tenantId: string, branchId: string | null, q: string, ownerId?: string | null, customerId?: string) {
+    const term = q.trim();
+    if (!term && !customerId) return [];
+    const filter: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      deletedAt: null,
+      ...NOT_PENDING,
+      customerId: customerId ?? { $nin: [null, ''] },
+    };
+    if (!customerId) filter.invoiceNumber = { $regex: escapeRegex(term), $options: 'i' };
     if (branchId) filter.branchId = new Types.ObjectId(branchId);
     if (ownerId) filter.orderBookerId = new Types.ObjectId(ownerId);
 
-    const found = await this.saleModel.find(filter).sort({ saleDate: -1 }).limit(50);
-    // Invoices with a balance first so paid ones never crowd them out of the list.
-    const open = [...found]
-      .sort((a, b) => Number(outstandingOf(b) > 0.01) - Number(outstandingOf(a) > 0.01))
-      .slice(0, 10);
+    let open: SaleDocument[];
+    if (customerId) {
+      // Same arithmetic as `outstandingOf`, evaluated in the query so paid invoices never fill the cap.
+      filter.$expr = {
+        $gt: [
+          {
+            $subtract: [
+              { $subtract: ['$grandTotal', { $ifNull: ['$returnedTotal', 0] }] },
+              { $subtract: [{ $ifNull: ['$amountPaid', 0] }, { $ifNull: ['$refundedTotal', 0] }] },
+            ],
+          },
+          0.01,
+        ],
+      };
+      open = await this.saleModel.find(filter).sort({ saleDate: 1, createdAt: 1 }).limit(MAX_SHEET_ROWS);
+    } else {
+      const found = await this.saleModel.find(filter).sort({ saleDate: -1 }).limit(50);
+      // Invoices with a balance first so paid ones never crowd them out of the list.
+      open = [...found]
+        .sort((a, b) => Number(outstandingOf(b) > 0.01) - Number(outstandingOf(a) > 0.01))
+        .slice(0, 10);
+    }
     if (open.length === 0) return [];
 
     const customerIds = [...new Set(open.map((s) => String(s.customerId)))];
@@ -474,8 +564,8 @@ export class CashReceiptsService {
           op: c.op,
           invoiceId: c.invoiceId,
           invoiceNumber: c.invoiceNumber,
-          before: c.before ? { amount: c.before.amount, date: c.before.date?.toISOString() } : null,
-          after: c.after ? { amount: c.after.amount, date: c.after.date?.toISOString() } : null,
+          before: c.before ? { amount: c.before.amount, difference: c.before.difference, date: c.before.date?.toISOString() } : null,
+          after: c.after ? { amount: c.after.amount, difference: c.after.difference, date: c.after.date?.toISOString() } : null,
         })),
       }));
     });
@@ -622,27 +712,12 @@ export class CashReceiptsService {
               });
               continue;
             }
+            const oldDifference = old.difference ?? 0;
+            // A row that sends no difference (older clients) keeps the stored one; 0 takes it off.
+            const newDifference = round2(keptRow.difference ?? oldDifference);
             const amountChanged = Math.abs(keptRow.amount - old.amount) > 0.004;
-            const differenceChanged =
-              Math.abs((keptRow.difference ?? 0) - (old.difference ?? 0)) > 0.004;
-            if ((old.difference ?? 0) > 0 && (amountChanged || differenceChanged || dateChanged)) {
-              // Its payment, ledger lines and expense record move together; changing one in place is not supported.
-              errors.push({
-                invoiceId: old.invoiceId,
-                reason:
-                  'This entry wrote off a difference; remove it and enter it again to change it',
-              });
-              continue;
-            }
-            if (differenceChanged) {
-              errors.push({
-                invoiceId: old.invoiceId,
-                reason:
-                  'A difference can only be added with a new entry; remove this one and enter it again',
-              });
-              continue;
-            }
-            if (!amountChanged && !dateChanged) {
+            const differenceChanged = Math.abs(newDifference - oldDifference) > 0.004;
+            if (!amountChanged && !differenceChanged && !dateChanged) {
               finalRows.push(plainRow(old));
               continue;
             }
@@ -653,27 +728,43 @@ export class CashReceiptsService {
               errors.push({ invoiceId: old.invoiceId, reason: 'Invoice not found or voided' });
               continue;
             }
-            const limit = round2(outstandingOf(sale) + old.amount);
-            if (keptRow.amount > limit + 0.01) {
-              errors.push({
-                invoiceId: old.invoiceId,
-                reason: `Amount exceeds the balance of ${limit.toFixed(2)}`,
-              });
+            if (outstandingOf(sale) <= 0.01) {
+              errors.push({ invoiceId: old.invoiceId, reason: PAID_ENTRY_LOCKED });
               continue;
             }
+            // The most this entry can settle: what is still owed plus what it settles now (cash and difference).
+            const limit = round2(outstandingOf(sale) + old.amount + oldDifference);
+            const amountsError = receiptAmountsError(keptRow.amount, newDifference, limit);
+            if (amountsError) {
+              errors.push({ invoiceId: old.invoiceId, reason: amountsError });
+              continue;
+            }
+            const differenceMeta =
+              newDifference > 0
+                ? await this.expenseCategories.defaultDifference(tenantId, branchId)
+                : undefined;
             await this.paymentsService.editReceiptPayment(
               tenantId,
               branchId,
               old.paymentId,
-              { amount: keptRow.amount, paymentDate: dateChanged ? date : undefined },
+              {
+                amount: keptRow.amount,
+                paymentDate: dateChanged ? date : undefined,
+                difference: newDifference,
+                differenceMeta: differenceMeta
+                  ? { ...differenceMeta, invoiceId: sale.id, invoiceNumber: sale.invoiceNumber ?? '' }
+                  : undefined,
+                userId,
+              },
               session,
             );
-            if (amountChanged) {
+            const settledDelta = round2(keptRow.amount + newDifference - (old.amount + oldDifference));
+            if (Math.abs(settledDelta) > 0.004) {
               const moved = await this.paymentsService.adjustSalePaid(
                 tenantId,
                 branchId,
                 old.invoiceId,
-                round2(keptRow.amount - old.amount),
+                settledDelta,
                 session,
               );
               noteAudit(old.invoiceId, old.invoiceNumber, moved);
@@ -683,15 +774,21 @@ export class CashReceiptsService {
               op: 'CHANGED',
               invoiceId: old.invoiceId,
               invoiceNumber: old.invoiceNumber,
-              before: { amount: old.amount, date: old.date ?? locked.date },
+              before: {
+                amount: old.amount,
+                difference: oldDifference || undefined,
+                date: old.date ?? locked.date,
+              },
               after: {
                 amount: keptRow.amount,
+                difference: newDifference || undefined,
                 date: dateChanged ? date : (old.date ?? locked.date),
               },
             });
             finalRows.push({
               ...plainRow(old),
               amount: keptRow.amount,
+              difference: newDifference > 0 ? newDifference : undefined,
               date: dateChanged ? date : old.date,
             });
           }
@@ -915,6 +1012,7 @@ export class CashReceiptsService {
         amount: r.amount,
         difference: r.difference ?? 0,
         paymentVoided: !isLive || !sale,
+        invoicePaid: !!sale && outstandingOf(sale) <= 0.01,
       };
     });
 

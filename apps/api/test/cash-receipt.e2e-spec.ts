@@ -75,7 +75,8 @@ async function world() {
       paymentStatus: 'UNPAID',
       items: [{ productId, quantity, unitPrice: 15 }],
     });
-    await post('sales/orders/confirm', { saleIds: [order.id], branchId: K }, 200);
+    // Whether a new sale starts as a pending order depends on who books it; only confirm one that is.
+    if (order.status === 'PENDING') await post('sales/orders/confirm', { saleIds: [order.id], branchId: K }, 200);
     return get(`sales/${order.id}?branchId=${K}`);
   };
   return { customerId, invoice };
@@ -494,6 +495,119 @@ describe('cash receipt transactions (e2e)', () => {
     expect((await get('sales/cash-receipts?startDate=2099-01-01')).items).toEqual([]);
   });
 
+  describe('lookup by customer (pay several invoices without knowing their numbers)', () => {
+    const byCustomer = (customerId: string, token = headers()) =>
+      api().get(`/api/sales/invoices/lookup?customerId=${customerId}&branchId=${K}`).set(token);
+
+    it('lists only that customer\'s invoices that still owe money, oldest first, with the balance left', async () => {
+      const w = await world();
+      const other = await world();
+      const [a, b, paid] = [await w.invoice(10), await w.invoice(20), await w.invoice(4)]; // 150, 300, 60
+      await other.invoice(10);
+      await receipt([{ invoiceId: paid.id, amount: 60 }]);
+      await receipt([{ invoiceId: a.id, amount: 50 }]);
+
+      const res = await byCustomer(w.customerId).expect(200);
+      expect(res.body.map((i: any) => i.invoiceNumber)).toEqual([a.invoiceNumber, b.invoiceNumber]);
+      expect(res.body.map((i: any) => i.balance)).toEqual([100, 300]);
+      expect(res.body.every((i: any) => i.payable && i.customerId === w.customerId)).toBe(true);
+      expect(res.body[0].received).toBe(50);
+      expect(res.body[0].customerBalance).toBe(400);
+    });
+
+    it('feeds one multi-invoice save that updates each invoice and the customer balance', async () => {
+      const w = await world();
+      const [a, b, c] = [await w.invoice(10), await w.invoice(20), await w.invoice(30)]; // 150, 300, 450
+      const listed = (await byCustomer(w.customerId).expect(200)).body;
+      expect(listed).toHaveLength(3);
+
+      const saved = await receipt([
+        { invoiceId: a.id, amount: 150 },
+        { invoiceId: b.id, amount: 100 },
+      ]);
+      expect(saved.rows).toHaveLength(2);
+      expect((await sale(a.id)).paymentStatus).toBe('PAID');
+      expect((await sale(b.id)).paymentStatus).toBe('PARTIAL');
+      expect((await sale(c.id)).paymentStatus).toBe('UNPAID');
+
+      const after = (await byCustomer(w.customerId).expect(200)).body;
+      expect(after.map((i: any) => [i.invoiceNumber, i.balance])).toEqual([
+        [b.invoiceNumber, 200],
+        [c.invoiceNumber, 450],
+      ]);
+      expect(after[0].customerBalance).toBe(650);
+    });
+
+    it('lists only customers who owe money (with count and amount), and shows nothing for an unknown customer or another tenant', async () => {
+      const w = await world();
+      const settled = await world();
+      const [a, b] = [await w.invoice(10), await w.invoice(20)]; // 150, 300
+      const done = await settled.invoice(4); // 60
+      await receipt([{ invoiceId: done.id, amount: 60 }]);
+      await receipt([{ invoiceId: a.id, amount: 50 }]);
+
+      const parties = (await get(`sales/invoices/outstanding-parties?branchId=${K}`)) as any[];
+      expect(parties.find((p) => p.id === w.customerId)).toMatchObject({ name: expect.any(String), openInvoices: 2, due: 400 });
+      expect(parties.find((p) => p.id === settled.customerId)).toBeUndefined();
+      expect(b.id).toBeTruthy();
+
+      expect((await byCustomer('no-such-customer').expect(200)).body).toEqual([]);
+      const foreign = await byCustomer(w.customerId, as({ token: env.B.token }));
+      expect(foreign.status === 200 ? foreign.body : []).toEqual([]);
+      const foreignParties = await api().get(`/api/sales/invoices/outstanding-parties`).set(as({ token: env.B.token }));
+      expect(foreignParties.status === 200 ? foreignParties.body : []).toEqual([]);
+    });
+  });
+
+  it('the customer balances list carries the all-customers summary: invoiced, received, closing = what the customers owe', async () => {
+    const w = await world();
+    const [a, b] = [await w.invoice(10), await w.invoice(20)]; // 150 + 300
+    await receipt([{ invoiceId: a.id, amount: 50 }]);
+    const res = await get(`accounting/customers/balances?branchId=${K}&limit=100`);
+    const { summary, totals } = res;
+    // Each customer row carries its own invoiced / received / returned totals.
+    expect(res.items.find((r: any) => r.partyId === w.customerId)).toMatchObject({
+      billed: 450,
+      settled: 50,
+      returns: 0,
+      balance: 400,
+    });
+    expect(summary.openingBalance).toBe(0);
+    expect(summary.billed).toBeGreaterThanOrEqual(450);
+    expect(summary.settled).toBeGreaterThanOrEqual(50);
+    // Only customer-linked lines count, so the closing balance is what the customers in the list owe in total.
+    expect(summary.closingBalance).toBeCloseTo(totals.partiesAccountTotal - totals.advanceTotal, 2);
+    expect(summary.billed - summary.settled - summary.returns - summary.voids - summary.advances + summary.other).toBeCloseTo(
+      summary.closingBalance,
+      2,
+    );
+    expect(b.id).toBeTruthy();
+  });
+
+  it('exports the all-customers table as CSV and PDF, with the summary totals', async () => {
+    const w = await world();
+    const inv = await w.invoice(10); // 150
+    await receipt([{ invoiceId: inv.id, amount: 50 }]);
+    const csv = await api().get(`/api/accounting/customers/balances/export?format=csv&branchId=${K}`).set(headers()).expect(200);
+    expect(csv.headers['content-type']).toMatch(/text\/csv/);
+    const text = csv.text.replace(/^\uFEFF/, '');
+    expect(text).toContain('"All Customers Ledger"');
+    expect(text).toContain('"Total invoiced"');
+    expect(text).toContain('"Closing balance"');
+    expect(text).toMatch(/"Totals"/);
+    expect(text).toContain(`"Customer ${seq}"`);
+    const pdf = await api().get(`/api/accounting/customers/balances/export?format=pdf&branchId=${K}`).set(headers()).buffer(true).parse((r, cb) => {
+      const chunks: Buffer[] = [];
+      r.on('data', (c: Buffer) => chunks.push(c));
+      r.on('end', () => cb(null, Buffer.concat(chunks)));
+    }).expect(200);
+    expect(pdf.headers['content-type']).toMatch(/application\/pdf/);
+    expect((pdf.body as Buffer).subarray(0, 4).toString()).toBe('%PDF');
+    // Another tenant cannot export these customers.
+    const foreign = await api().get(`/api/accounting/customers/balances/export?format=csv`).set(as({ token: env.B.token }));
+    expect(foreign.status === 200 ? foreign.text : '').not.toContain(`"Customer ${seq}"`);
+  });
+
   it('keeps the list tenant-isolated', async () => {
     const list = await get('sales/cash-receipts?limit=100', as({ token: env.B.token }));
     expect(list.items).toEqual([]);
@@ -687,17 +801,104 @@ describe('cash receipt transactions (e2e)', () => {
       expect(await expensesFor(inv.invoiceNumber)).toHaveLength(0);
     });
 
-    it('removing the row restores the invoice and cancels the expense; an entry with a difference cannot be edited in place', async () => {
+    it('edits amount and difference in place: same payment, ledger entry and expense; invoice and balance follow', async () => {
       const w = await world();
-      const inv = await w.invoice(10);
-      const saved = await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]);
+      const inv = await w.invoice(10); // 150
+      const saved = await receipt([{ invoiceId: inv.id, amount: 100, difference: 20 } as any]); // 30 still owed
       const entryId = saved.rows[0].entryId;
+      const paymentOf = async () => (await ledger(w.customerId)).find((r) => r.documentType === 'Payment');
+      const first = await paymentOf();
+      const [expense] = await expensesFor(inv.invoiceNumber);
+      expect((await sale(inv.id)).paymentStatus).toBe('PARTIAL');
+
+      // 100 + 20  ->  120 + 10: still 20 owed; the same payment, entry and expense are edited.
+      const v2 = await patchTx(saved.transactionNumber, {
+        expectedVersion: 1,
+        rows: [{ entryId, invoiceId: inv.id, amount: 120, difference: 10 }],
+      }).expect(200);
+      expect(v2.body.rows[0]).toMatchObject({ entryId, amount: 120, difference: 10 });
+      expect(await sale(inv.id)).toMatchObject({ amountPaid: 130, paymentStatus: 'PARTIAL' });
+      expect(await customerBalance(inv.invoiceNumber)).toBe(20);
+      const second = await paymentOf();
+      expect(second.reference.id).toBe(first.reference.id); // same payment, same ledger entry
+      expect(second.credit).toBe(130);
+      expect(second.description).toBe(`Against invoice ${inv.invoiceNumber} · Difference 10.00`);
+      const [expenseAfter] = await expensesFor(inv.invoiceNumber);
+      expect(expenseAfter).toMatchObject({ amount: 10, expenseNumber: expense.expenseNumber });
+      expect(await expensesFor(inv.invoiceNumber)).toHaveLength(1);
+
+      // The difference is taken off: the expense goes.
+      await patchTx(saved.transactionNumber, {
+        expectedVersion: 2,
+        rows: [{ entryId, invoiceId: inv.id, amount: 120, difference: 0 }],
+      }).expect(200);
+      expect(await sale(inv.id)).toMatchObject({ amountPaid: 120, paymentStatus: 'PARTIAL' });
+      expect(await expensesFor(inv.invoiceNumber)).toHaveLength(0);
+      expect((await paymentOf()).credit).toBe(120);
+      expect(await customerBalance(inv.invoiceNumber)).toBe(30);
+
+      // A difference is written off on an entry that had none, and it settles the invoice.
+      await patchTx(saved.transactionNumber, {
+        expectedVersion: 3,
+        rows: [{ entryId, invoiceId: inv.id, amount: 120, difference: 30 }],
+      }).expect(200);
+      expect(await sale(inv.id)).toMatchObject({ amountPaid: 150, paymentStatus: 'PAID' });
+      expect(await expensesFor(inv.invoiceNumber)).toEqual([expect.objectContaining({ amount: 30 })]);
+      expect((await paymentOf()).credit).toBe(150);
+      expect((await get(`sales/cash-receipts/by-number/${saved.transactionNumber}`)).differenceTotal).toBe(30);
+    });
+
+    it('locks an entry once its invoice is fully paid: it loads as invoicePaid, refuses edits and can still be removed', async () => {
+      const w = await world();
+      const inv = await w.invoice(10); // 150
+      const saved = await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]); // settles it
+      const entryId = saved.rows[0].entryId;
+      expect((await get(`sales/cash-receipts/by-number/${saved.transactionNumber}`)).rows[0].invoicePaid).toBe(true);
+
+      for (const body of [{ amount: 130, difference: 20 }, { amount: 100, difference: 0 }, { amount: 100 }]) {
+        const res = await patchTx(saved.transactionNumber, { expectedVersion: 1, rows: [{ entryId, invoiceId: inv.id, ...body }] });
+        expect(res.status).toBe(400);
+        expect(res.body.errors[0].reason).toMatch(/fully paid/);
+      }
+      expect(await sale(inv.id)).toMatchObject({ amountPaid: 150, paymentStatus: 'PAID' });
+      expect(await expensesFor(inv.invoiceNumber)).toEqual([expect.objectContaining({ amount: 10 })]);
+
+      // Unchanged entries are not "edits", and removing is still allowed.
+      const other = await w.invoice(4);
+      await patchTx(saved.transactionNumber, {
+        expectedVersion: 1,
+        rows: [{ entryId, invoiceId: inv.id, amount: 140, difference: 10 }, { invoiceId: other.id, amount: 10 }],
+      }).expect(200);
+      await patchTx(saved.transactionNumber, { expectedVersion: 2, rows: [{ invoiceId: other.id, amount: 10, entryId: (await get(`sales/cash-receipts/by-number/${saved.transactionNumber}`)).rows.find((r: any) => r.invoiceId === other.id).entryId }] }).expect(200);
+      expect((await sale(inv.id)).paymentStatus).toBe('UNPAID');
+    });
+
+    it('keeps the stored difference when an older client sends only the amount, and refuses amount plus difference above the limit', async () => {
+      const w = await world();
+      const inv = await w.invoice(10); // 150
+      const saved = await receipt([{ invoiceId: inv.id, amount: 100, difference: 10 } as any]); // 40 still owed
+      const entryId = saved.rows[0].entryId;
+
+      const tooMuch = await patchTx(saved.transactionNumber, {
+        expectedVersion: 1,
+        rows: [{ entryId, invoiceId: inv.id, amount: 140, difference: 20 }],
+      });
+      expect(tooMuch.status).toBe(400);
+      expect(tooMuch.body.errors[0].reason).toMatch(/Amount plus difference exceeds the balance of 150\.00/);
+      expect((await sale(inv.id)).amountPaid).toBe(110);
 
       await patchTx(saved.transactionNumber, {
         expectedVersion: 1,
-        rows: [{ entryId, invoiceId: inv.id, amount: 100 }],
-      }).expect(400);
-      expect((await sale(inv.id)).paymentStatus).toBe('PAID');
+        rows: [{ entryId, invoiceId: inv.id, amount: 90 }],
+      }).expect(200);
+      expect(await sale(inv.id)).toMatchObject({ amountPaid: 100, paymentStatus: 'PARTIAL' });
+      expect(await expensesFor(inv.invoiceNumber)).toEqual([expect.objectContaining({ amount: 10 })]);
+    });
+
+    it('removing the row restores the invoice and cancels the expense', async () => {
+      const w = await world();
+      const inv = await w.invoice(10);
+      const saved = await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]);
 
       // Another row keeps the transaction non-empty while this one is removed.
       const other = await w.invoice(10);

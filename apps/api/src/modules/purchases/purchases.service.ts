@@ -1107,20 +1107,35 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     const purchase = await this.findOne(tenantId, branchId, id);
     const payments = await this.paymentsService.listForInvoice(tenantId, purchase.id);
 
-    const rows: PurchasePaymentRow[] = payments.map((p) => {
+    const rows: PurchasePaymentRow[] = payments.flatMap((p) => {
       const obj = p.toObject() as any;
       const applied = (obj.allocations as Array<{ invoiceId: string; amount: number }>)
         .filter((a) => a.invoiceId === purchase.id)
         .reduce((sum, a) => sum + a.amount, 0);
-      return {
+      const recordedBy = typeof obj.createdBy === 'object' ? obj.createdBy?.fullName : undefined;
+      const row: PurchasePaymentRow = {
         id: obj._id.toString(),
         paymentDate: new Date(obj.paymentDate).toISOString(),
         amount: round2(applied),
         method: obj.method,
         reference: obj.reference,
         notes: obj.notes,
-        recordedBy: typeof obj.createdBy === 'object' ? obj.createdBy?.fullName : undefined,
+        recordedBy,
       };
+      // A bulk purchase receipt's written-off difference also counted towards this invoice's paid total.
+      return (obj.differenceAmount ?? 0) > 0
+        ? [
+            row,
+            {
+              id: `${row.id}-difference`,
+              paymentDate: row.paymentDate,
+              amount: round2(obj.differenceAmount),
+              isDifference: true,
+              notes: 'Difference (Purchase Discount)',
+              recordedBy,
+            },
+          ]
+        : [row];
     });
 
     // Refunds received from the vendor for returns sit on the return record, not as Payment documents.
@@ -1285,7 +1300,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       paymentStatus: response.paymentStatus,
       payments: payments.map((p) => ({
         date: new Date(p.paymentDate),
-        method: p.isRefund ? 'Refund' : p.isInitial ? 'At purchase' : (p.method ?? ''),
+        method: p.isRefund ? 'Refund' : p.isDifference ? 'Difference (Purchase Discount)' : p.isInitial ? 'At purchase' : (p.method ?? ''),
         reference: p.reference,
         amount: p.isRefund ? -p.amount : p.amount,
       })),

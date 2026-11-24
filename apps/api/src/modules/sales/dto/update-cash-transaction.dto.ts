@@ -26,7 +26,10 @@ export class UpdateCashTransactionRowDto {
   @IsPositive()
   amount: number;
 
-  /** Only for a new row; an entry that already has a difference can't be edited, only removed. */
+  /**
+   * The difference written off with this entry. Omitted on an existing entry = keep the stored one; 0 takes it off;
+   * a number sets it (the entry's payment, ledger lines and Expenses record are edited in place).
+   */
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)

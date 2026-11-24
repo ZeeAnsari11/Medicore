@@ -15,6 +15,17 @@ export interface LookupInvoice {
   customerBalance: number;
 }
 
+/** A customer (or vendor) with something left to pay: one row of the Cash Receipt "by customer" picker. */
+export interface OutstandingParty {
+  id: string;
+  name: string;
+  phone?: string;
+  /** Invoices with a balance. */
+  openInvoices: number;
+  /** Total still owed across them. */
+  due: number;
+}
+
 export interface CashReceiptRowInput {
   invoiceId: string;
   /** Cash received (> 0). */
@@ -77,10 +88,12 @@ export interface CashTransactionRow {
   received: number;
   balance: number;
   amount: number;
-  /** The difference settled with this entry (0 when none). An entry with a difference can only be removed, not edited. */
+  /** The difference settled with this entry (0 when none). */
   difference?: number;
   /** The entry's payment was voided elsewhere; it can no longer be edited here. */
   paymentVoided: boolean;
+  /** The invoice is fully paid, so this entry is final: it can be removed but no longer edited. Absent from older servers. */
+  invoicePaid?: boolean;
 }
 
 export interface CashTransaction {
@@ -115,8 +128,8 @@ export interface CashTransactionHistoryEntry {
     op: 'ADDED' | 'CHANGED' | 'REMOVED';
     invoiceId: string;
     invoiceNumber: string;
-    before: { amount: number; date?: string } | null;
-    after: { amount: number; date?: string } | null;
+    before: { amount: number; difference?: number; date?: string } | null;
+    after: { amount: number; difference?: number; date?: string } | null;
   }>;
 }
 

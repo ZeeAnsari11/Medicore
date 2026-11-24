@@ -113,9 +113,18 @@ export class SalesController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('q') q = '',
     @Query('branchId') branchId?: string,
+    @Query('customerId') customerId?: string,
   ) {
     const scope = resolveBranchScope(user, branchId);
-    return this.cashReceiptsService.lookup(user.tenantId, scope, q, await this.ownScope(user));
+    return this.cashReceiptsService.lookup(user.tenantId, scope, q, await this.ownScope(user), customerId || undefined);
+  }
+
+  /** Customers who still owe money on at least one invoice: the Cash Receipt "by customer" picker. */
+  @RequirePermission('cash_receipt:read')
+  @Get('invoices/outstanding-parties')
+  async outstandingCustomers(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string) {
+    const scope = resolveBranchScope(user, branchId);
+    return this.cashReceiptsService.outstandingCustomers(user.tenantId, scope, await this.ownScope(user));
   }
 
   @RequirePermission('cash_receipt:create')

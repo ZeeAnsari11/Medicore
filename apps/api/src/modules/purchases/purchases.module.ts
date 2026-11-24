@@ -19,6 +19,13 @@ import { PdfModule } from '../../common/pdf/pdf.module';
 import { TenantsModule } from '../tenants/tenants.module';
 import { AccountingModule } from '../accounting/accounting.module';
 import { InvoicesModule } from '../../common/invoices/invoices.module';
+import { CashPayment, CashPaymentSchema } from './cash-payments/cash-payment.schema';
+import {
+  CashPaymentHistory,
+  CashPaymentHistorySchema,
+} from './cash-payments/cash-payment-history.schema';
+import { CashPaymentsService } from './cash-payments/cash-payments.service';
+import { CashPaymentsController } from './cash-payments/cash-payments.controller';
 
 @Module({
   imports: [
@@ -32,6 +39,8 @@ import { InvoicesModule } from '../../common/invoices/invoices.module';
       { name: VendorProduct.name, schema: VendorProductSchema },
       { name: Branch.name, schema: BranchSchema },
       { name: User.name, schema: UserSchema },
+      { name: CashPayment.name, schema: CashPaymentSchema },
+      { name: CashPaymentHistory.name, schema: CashPaymentHistorySchema },
     ]),
     SequenceModule,
     PdfModule,
@@ -39,8 +48,9 @@ import { InvoicesModule } from '../../common/invoices/invoices.module';
     AccountingModule,
     InvoicesModule,
   ],
-  providers: [PurchasesService],
-  controllers: [PurchasesController],
+  providers: [PurchasesService, CashPaymentsService],
+  // The sheet's static routes must come before `PurchasesController`'s `:id` routes.
+  controllers: [CashPaymentsController, PurchasesController],
   exports: [PurchasesService],
 })
 export class PurchasesModule {}

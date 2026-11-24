@@ -8,7 +8,8 @@ import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import { Alert, Badge, Button, DataTable, Input, type ColumnDef } from '@medicore/ui';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
-import { useCashTransactionsPage, type CashTransactionSummary } from '@/hooks/use-cash-receipts';
+import { usePermissions } from '@/hooks/use-permissions';
+import { RECEIPT_KIND, useCashTransactionsPage, type CashTransactionSummary, type ReceiptKind } from '@/hooks/use-cash-receipts';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 // Marks a filter that is currently narrowing the list.
@@ -20,6 +21,10 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB');
 export default function CashReceiptTransactionsPage() {
   const router = useRouter();
   const { branchId } = useBranchFilter();
+  const { has } = usePermissions();
+  // Sales cash receipts (T-) or purchase receipts (PT-).
+  const [kind, setKind] = useState<ReceiptKind>('sale');
+  const purchase = kind === 'purchase';
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -35,16 +40,20 @@ export default function CashReceiptTransactionsPage() {
   // Any filter change goes back to the first page.
   useEffect(() => {
     setPageIndex(0);
-  }, [branchId, startDate, endDate, search, pageSize]);
+  }, [branchId, startDate, endDate, search, pageSize, kind]);
 
-  const { transactions, total, isLoading, error } = useCashTransactionsPage({
-    branchId,
-    q: search || undefined,
-    startDate: startDate || undefined,
-    endDate: endDate || undefined,
-    page: pageIndex + 1,
-    limit: pageSize,
-  });
+  const { transactions, total, isLoading, error } = useCashTransactionsPage(
+    {
+      branchId,
+      q: search || undefined,
+      startDate: startDate || undefined,
+      endDate: endDate || undefined,
+      page: pageIndex + 1,
+      limit: pageSize,
+    },
+    true,
+    kind,
+  );
 
   const hasFilters = !!startDate || !!endDate || !!search;
   const clearFilters = () => {
@@ -55,11 +64,11 @@ export default function CashReceiptTransactionsPage() {
 
   const columns = useMemo<ColumnDef<CashTransactionSummary>[]>(
     () => [
-      { accessorKey: 'transactionNumber', header: 'CR Transaction #' },
+      { accessorKey: 'transactionNumber', header: purchase ? 'CP Transaction #' : 'CR Transaction #' },
       { accessorKey: 'date', header: 'Date', cell: ({ getValue }) => fmtDate(getValue() as string) },
       {
         id: 'customers',
-        header: 'Customers',
+        header: purchase ? 'Vendors' : 'Customers',
         cell: ({ row }) => {
           const names = row.original.customers;
           return names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
@@ -81,12 +90,30 @@ export default function CashReceiptTransactionsPage() {
           ),
       },
     ],
-    [],
+    [purchase],
   );
 
   return (
-    <PageAccessGuard requires="cash_receipt:read">
-      <PageHeader title="Cash Receipt Transactions" description="Saved cash receipts. Open one to view or edit it" />
+    <PageAccessGuard requires={['cash_receipt:read', 'cash_payment:read']}>
+      <PageHeader
+        title={purchase ? 'Bulk Purchase Receipt Transactions' : 'Cash Receipt Transactions'}
+        description={purchase ? 'Saved vendor payments. Open one to view or edit it' : 'Saved cash receipts. Open one to view or edit it'}
+      />
+      <div className="mb-4 inline-flex rounded-md border p-0.5" role="group" aria-label="Transaction type">
+        {(['sale', 'purchase'] as const).map((k) => (
+          <Button
+            key={k}
+            type="button"
+            size="sm"
+            variant={kind === k ? 'default' : 'ghost'}
+            aria-pressed={kind === k}
+            disabled={!has(`${RECEIPT_KIND[k].permission}:read`)}
+            onClick={() => setKind(k)}
+          >
+            {k === 'sale' ? 'Sales' : 'Purchase'}
+          </Button>
+        ))}
+      </div>
 
       {error && (
         <Alert variant="destructive" className="mb-6">
@@ -120,7 +147,7 @@ export default function CashReceiptTransactionsPage() {
           Clear filters
         </Button>
         <Button className="ml-auto" size="sm" onClick={() => router.push('/sales/cash-receipt')}>
-          New Cash Receipt
+          {purchase ? 'New Purchase Receipt' : 'New Cash Receipt'}
         </Button>
       </div>
 
@@ -129,12 +156,12 @@ export default function CashReceiptTransactionsPage() {
           <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
         </div>
       ) : total === 0 && !hasFilters ? (
-        <EmptyState icon={ListChecks} title="No transactions yet" description="Every saved cash receipt gets a number like T-0001" />
+        <EmptyState icon={ListChecks} title="No transactions yet" description={`Every saved ${purchase ? 'purchase receipt' : 'cash receipt'} gets a number like ${RECEIPT_KIND[kind].prefix}0001`} />
       ) : (
         <DataTable
           columns={columns}
           data={transactions}
-          searchPlaceholder="Search by T-0001, customer or invoice #..."
+          searchPlaceholder={`Search by ${RECEIPT_KIND[kind].prefix}0001, ${purchase ? 'vendor' : 'customer'} or invoice #...`}
           emptyMessage="No transactions match the current filters."
           search={{ value: searchInput, onChange: setSearchInput }}
           hideClearFilters

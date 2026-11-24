@@ -1,3 +1,4 @@
+import { DIFFERENCE_LINE_DESCRIPTION } from './difference';
 import {
   BadRequestException,
   ConflictException,
@@ -35,7 +36,8 @@ export type SystemAccountKey =
   | 'COGS'
   | 'OPERATING_EXPENSES'
   | 'BANK_CHARGES'
-  | 'OTHER_EXPENSES';
+  | 'OTHER_EXPENSES'
+  | 'PURCHASE_DISCOUNT';
 
 interface DefaultAccountSpec {
   systemKey: SystemAccountKey;
@@ -82,6 +84,13 @@ const DEFAULT_ACCOUNTS: DefaultAccountSpec[] = [
     type: AccountType.EQUITY,
   },
   { systemKey: 'SALES_REVENUE', code: '4000', name: 'Sales Revenue', type: AccountType.REVENUE },
+  // What a vendor lets the business off at a cash payment (the Difference on a bulk purchase receipt).
+  {
+    systemKey: 'PURCHASE_DISCOUNT',
+    code: '4900',
+    name: 'Purchase Discount / Difference',
+    type: AccountType.REVENUE,
+  },
   { systemKey: 'COGS', code: '5000', name: 'Cost of Goods Sold', type: AccountType.EXPENSE },
   {
     systemKey: 'OPERATING_EXPENSES',
@@ -760,10 +769,17 @@ export class AccountingPostingService {
     amount: number,
     entryDate: Date | undefined,
     session: ClientSession,
+    party: PartyType = PartyType.CUSTOMER,
   ): Promise<void> {
-    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session);
-    const debitLine = entry.lines.find((l) => l.debit > 0 && !l.partyId);
-    const creditLine = entry.lines.find((l) => l.credit > 0 && l.partyType === PartyType.CUSTOMER);
+    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session, party);
+    // Customer receipt: Dr Cash / Cr Accounts Receivable. Vendor payment: Dr Accounts Payable / Cr Cash.
+    const vendor = party === PartyType.VENDOR;
+    const debitLine = entry.lines.find((l) =>
+      vendor ? l.debit > 0 && l.partyType === party : l.debit > 0 && !l.partyId,
+    );
+    const creditLine = entry.lines.find((l) =>
+      vendor ? l.credit > 0 && !l.partyId : l.credit > 0 && l.partyType === party,
+    );
     if (entry.lines.length !== 2 || !debitLine || !creditLine) {
       throw new ConflictException("This payment's ledger posting cannot be edited in place");
     }
@@ -776,22 +792,114 @@ export class AccountingPostingService {
     await entry.save({ session });
   }
 
+  /**
+   * In-place edit of a cash-receipt payment's entry when it carries (or should now carry) a difference: the cash and
+   * receivable/payable lines take the new amount, and the two "Difference" lines are rewritten, added or dropped to
+   * match `difference`. The same entry, number and date stay; only its lines and totals change.
+   */
+  async editReceiptPaymentEntryWithDifference(
+    tenantId: string,
+    paymentId: string,
+    change: { amount: number; difference: number; differenceAccountId?: string; entryDate?: Date },
+    session: ClientSession,
+    party: PartyType = PartyType.CUSTOMER,
+  ): Promise<void> {
+    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session, party);
+    const vendor = party === PartyType.VENDOR;
+    const baseLines = entry.lines.filter((l) => l.description !== DIFFERENCE_LINE_DESCRIPTION);
+    const oldDifferenceLines = entry.lines.filter((l) => l.description === DIFFERENCE_LINE_DESCRIPTION);
+    const debitLine = baseLines.find((l) =>
+      vendor ? l.debit > 0 && l.partyType === party : l.debit > 0 && !l.partyId,
+    );
+    const creditLine = baseLines.find((l) =>
+      vendor ? l.credit > 0 && !l.partyId : l.credit > 0 && l.partyType === party,
+    );
+    if (baseLines.length !== 2 || !debitLine || !creditLine) {
+      throw new ConflictException("This payment's ledger posting cannot be edited in place");
+    }
+    debitLine.debit = change.amount;
+    creditLine.credit = change.amount;
+
+    const partyLine = vendor ? debitLine : creditLine;
+    const differenceLines: PostLineInput[] = [];
+    if (change.difference > 0) {
+      const accounts = await this.ensureDefaultAccounts(tenantId, session);
+      if (vendor) {
+        // Dr Accounts Payable / Cr Purchase Discount.
+        differenceLines.push(
+          {
+            accountId: accounts.get('ACCOUNTS_PAYABLE')!.id,
+            debit: change.difference,
+            credit: 0,
+            partyType: PartyType.VENDOR,
+            partyId: partyLine.partyId,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          },
+          {
+            accountId: accounts.get('PURCHASE_DISCOUNT')!.id,
+            debit: 0,
+            credit: change.difference,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          },
+        );
+      } else {
+        // Dr Difference expense / Cr Accounts Receivable. The expense account of an existing difference stays.
+        const expenseAccountId =
+          oldDifferenceLines.find((l) => l.debit > 0)?.accountId ?? change.differenceAccountId;
+        if (!expenseAccountId) throw new ConflictException('The Difference account is not set up');
+        differenceLines.push(
+          {
+            accountId: expenseAccountId,
+            debit: change.difference,
+            credit: 0,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          },
+          {
+            accountId: accounts.get('ACCOUNTS_RECEIVABLE')!.id,
+            debit: 0,
+            credit: change.difference,
+            partyType: PartyType.CUSTOMER,
+            partyId: partyLine.partyId,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          },
+        );
+      }
+    }
+
+    const total = round2(change.amount + change.difference);
+    entry.lines = [...baseLines, ...differenceLines] as typeof entry.lines;
+    entry.totalDebit = total;
+    entry.totalCredit = total;
+    if (change.entryDate) entry.entryDate = change.entryDate;
+    entry.markModified('lines');
+    await entry.save({ session });
+  }
+
   /** Takes a cash-receipt payment's entry out of the ledger (soft delete); see `editReceiptPaymentEntry`. */
   async removeReceiptPaymentEntry(
     tenantId: string,
     paymentId: string,
     session: ClientSession,
+    party: PartyType = PartyType.CUSTOMER,
   ): Promise<void> {
-    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session);
+    const entry = await this.findLiveReceiptEntry(tenantId, paymentId, session, party);
     entry.deletedAt = new Date();
     await entry.save({ session });
   }
 
-  private async findLiveReceiptEntry(tenantId: string, paymentId: string, session: ClientSession) {
+  private async findLiveReceiptEntry(
+    tenantId: string,
+    paymentId: string,
+    session: ClientSession,
+    party: PartyType = PartyType.CUSTOMER,
+  ) {
     const entry = await this.journalEntryModel
       .findOne({
         tenantId: new Types.ObjectId(tenantId),
-        sourceType: JournalEntrySourceType.PAYMENT_RECEIVED,
+        sourceType:
+          party === PartyType.VENDOR
+            ? JournalEntrySourceType.PAYMENT_MADE
+            : JournalEntrySourceType.PAYMENT_RECEIVED,
         sourceId: paymentId,
         status: JournalEntryStatus.POSTED,
         deletedAt: null,

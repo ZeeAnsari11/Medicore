@@ -10,6 +10,8 @@ import {
   Alert,
   Badge,
   Button,
+  Checkbox,
+  ComboboxWithCreate,
   Input,
   Table,
   TableBody,
@@ -30,6 +32,8 @@ import {
   normalizeTransactionNumber,
   rowErrorsOf,
   useInvoiceLookup,
+  usePartyInvoices,
+  useOutstandingParties,
   useCashTransactionsPage,
   useLastCashTransaction,
   useLoadCashTransaction,
@@ -37,12 +41,32 @@ import {
   useUpdateCashTransaction,
   type CashReceiptResult,
   type CashTransaction,
+  RECEIPT_KIND,
   type LookupInvoice,
+  type ReceiptKind,
 } from '@/hooks/use-cash-receipts';
 
 const METHOD = PaymentMethod.CASH;
-/** The Transaction # box always starts with this, so only the digits need typing. */
-const TX_PREFIX = 'T-';
+
+/** Wording and permissions of the two kinds of sheet: customers' cash receipts and vendors' bulk purchase receipts. */
+const KIND_TEXT = {
+  sale: {
+    title: 'Cash Receipt',
+    party: 'Customer',
+    invoiceCol: 'S-Invoice',
+    settledCol: 'S-I-Received',
+    saved: 'receipt',
+    branchHint: 'Select a branch to enter receipts.',
+  },
+  purchase: {
+    title: 'Bulk Purchase Receipt',
+    party: 'Vendor',
+    invoiceCol: 'P-Invoice',
+    settledCol: 'P-I-Paid',
+    saved: 'payment',
+    branchHint: 'Select a branch to enter payments.',
+  },
+} as const;
 
 interface SheetRow {
   key: string;
@@ -61,7 +85,7 @@ interface SheetRow {
   amount: string;
   /** Written off so the invoice is settled; booked to the branch's Difference > Sales Difference. */
   difference: string;
-  /** The saved entry already wrote a difference off: it can only be removed, not edited. */
+  /** The invoice is fully paid, so this saved entry is final: it can be removed but no longer edited. */
   locked?: boolean;
   error?: string;
 }
@@ -91,9 +115,25 @@ const rowsOfTransaction = (tx: CashTransaction): SheetRow[] =>
     balance: r.balance,
     amount: String(r.amount),
     difference: r.difference ? String(r.difference) : '',
-    locked: (r.difference ?? 0) > 0,
+    locked: !!r.invoicePaid,
     error: r.paymentVoided ? VOIDED : undefined,
   }));
+
+/** A sheet row for an invoice from the lookup; amount and difference are typed by the user (blank until then). */
+const rowOfInvoice = (inv: LookupInvoice, amount = '', difference = ''): SheetRow => ({
+  key: crypto.randomUUID(),
+  invoiceId: inv.id,
+  invoiceNumber: inv.invoiceNumber,
+  customerId: inv.customerId,
+  customerName: inv.customerName,
+  customerBalance: inv.customerBalance,
+  saleDate: inv.saleDate,
+  voucherAmount: inv.netTotal,
+  received: inv.received,
+  balance: inv.balance,
+  amount,
+  difference,
+});
 
 const money = (n: number) => n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString('en-GB');
@@ -124,12 +164,16 @@ export default function CashReceiptPage() {
   const branchFilter = useBranchFilter();
 
   const { branchId, setBranchId } = branchFilter;
+  // Which sheet is open; it can only be switched while the sheet is empty.
+  const [kind, setKind] = useState<ReceiptKind>('sale');
+  const txPrefix = RECEIPT_KIND[kind].prefix;
+  const text = KIND_TEXT[kind];
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [batchId, setBatchId] = useState(() => crypto.randomUUID());
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [saved, setSaved] = useState<CashReceiptResult | null>(null);
   const [editing, setEditing] = useState<Editing | null>(null);
-  const [transactionInput, setTransactionInput] = useState(TX_PREFIX);
+  const [transactionInput, setTransactionInput] = useState<string>(RECEIPT_KIND.sale.prefix);
   const [txOpen, setTxOpen] = useState(false);
   const [txQuery, setTxQuery] = useState('');
   const [txHighlight, setTxHighlight] = useState(0);
@@ -140,6 +184,11 @@ export default function CashReceiptPage() {
   const [highlightInvoiceId, setHighlightInvoiceId] = useState<string | null>(null);
   const router = useRouter();
 
+  // How invoices are found: by typing a voucher number, or by picking the customer / vendor and ticking invoices.
+  const [findBy, setFindBy] = useState<'voucher' | 'party'>('voucher');
+  // The chosen customer / vendor only counts for the kind and branch it was picked under.
+  const [party, setParty] = useState({ scope: '', id: '' });
+  const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [voucherInput, setVoucherInput] = useState('');
   const [voucherQuery, setVoucherQuery] = useState('');
   const [open, setOpen] = useState(false);
@@ -156,16 +205,30 @@ export default function CashReceiptPage() {
   const rowInputs = useRef(new Map<string, HTMLInputElement | null>());
 
   const storageKey = `cash-receipt-sheet:${user?.tenantId ?? ''}`;
-  const save = useSaveCashReceipt();
-  const loadTransaction = useLoadCashTransaction();
-  const updateTransaction = useUpdateCashTransaction();
-  const { data: matches = [], isFetching } = useInvoiceLookup(voucherQuery, branchId);
-  const lastTransaction = useLastCashTransaction(branchId);
+  const save = useSaveCashReceipt(kind);
+  const loadTransaction = useLoadCashTransaction(kind);
+  const updateTransaction = useUpdateCashTransaction(kind);
+  const { data: matches = [], isFetching } = useInvoiceLookup(voucherQuery, branchId, kind);
+  const partyScope = `${kind}:${branchId ?? ''}`;
+  const partyId = party.scope === partyScope ? party.id : '';
+  const { data: partyInvoices = [], isFetching: partyFetching } = usePartyInvoices(partyId, branchId, kind);
+  const { data: parties = [] } = useOutstandingParties(branchId, kind, findBy === 'party');
+  const partyOptions = useMemo(
+    () =>
+      parties.map((p) => ({
+        value: p.id,
+        label: p.name,
+        hint: `${p.openInvoices} ${p.openInvoices === 1 ? 'invoice' : 'invoices'} · ${money(p.due)}`,
+      })),
+    [parties],
+  );
+  const lastTransaction = useLastCashTransaction(branchId, kind);
   const lastNumber = lastTransaction?.transactionNumber ?? null;
   // Saved transactions matching what is typed after "T-"; the latest few while nothing is typed yet.
   const { transactions: txMatches, isFetching: txFetching } = useCashTransactionsPage(
-    { branchId, q: txQuery === TX_PREFIX ? undefined : txQuery || undefined, page: 1, limit: 8 },
+    { branchId, q: txQuery === txPrefix ? undefined : txQuery || undefined, page: 1, limit: 8 },
     txOpen,
+    kind,
   );
 
   useEffect(() => {
@@ -192,7 +255,7 @@ export default function CashReceiptPage() {
 
   // My last created or edited transaction goes into the box, ready to Load. It never overwrites something typed or loaded.
   useEffect(() => {
-    if (lastNumber) setTransactionInput((current) => (current === TX_PREFIX && !editing ? lastNumber : current));
+    if (lastNumber) setTransactionInput((current) => (current === txPrefix && !editing ? lastNumber : current));
     // Only when the last number itself changes, so clearing the box by hand sticks.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastNumber]);
@@ -203,6 +266,10 @@ export default function CashReceiptPage() {
       const raw = window.sessionStorage.getItem(storageKey);
       if (raw) {
         const s = JSON.parse(raw);
+        if (s.kind === 'purchase') {
+          setKind('purchase');
+          setTransactionInput(RECEIPT_KIND.purchase.prefix);
+        }
         setRows((s.rows ?? []).map((r: SheetRow) => ({ ...r, difference: r.difference ?? '' })));
         if (s.batchId) setBatchId(s.batchId);
         if (isAdmin && s.branchId) setBranchId(s.branchId);
@@ -218,11 +285,11 @@ export default function CashReceiptPage() {
     try {
       // An edit session is never kept as a draft: it reloads from the saved transaction.
       if (rows.length === 0 || editing) window.sessionStorage.removeItem(storageKey);
-      else window.sessionStorage.setItem(storageKey, JSON.stringify({ rows, batchId, branchId }));
+      else window.sessionStorage.setItem(storageKey, JSON.stringify({ rows, batchId, branchId, kind }));
     } catch {
       // ignore
     }
-  }, [restored, rows, batchId, branchId, storageKey, editing]);
+  }, [restored, rows, batchId, branchId, storageKey, editing, kind]);
 
   // Only an unsaved new sheet is worth a warning; an edit session just reloads from the saved transaction.
   useEffect(() => {
@@ -309,26 +376,36 @@ export default function CashReceiptPage() {
       setFormError(err);
       return;
     }
-    const key = crypto.randomUUID();
-    setRows((prev) => [
-      ...prev,
-      {
-        key,
-        invoiceId: selected.id,
-        invoiceNumber: selected.invoiceNumber,
-        customerId: selected.customerId,
-        customerName: selected.customerName,
-        customerBalance: selected.customerBalance,
-        saleDate: selected.saleDate,
-        voucherAmount: selected.netTotal,
-        received: selected.received,
-        balance: selected.balance,
-        amount: amountInput,
-        difference: differenceInput,
-      },
-    ]);
+    const row = rowOfInvoice(selected, amountInput, differenceInput);
+    setRows((prev) => [...prev, row]);
+    const key = row.key;
     setSelectedKey(key);
     resetForm();
+  };
+
+  const inSheet = (invoiceId: string) => rows.some((r) => r.invoiceId === invoiceId);
+  const tickable = partyInvoices.filter((inv) => inv.payable && !inSheet(inv.id));
+  const tickedNow = tickable.filter((inv) => ticked.has(inv.id));
+  const allTicked: boolean | 'indeterminate' =
+    tickable.length > 0 && tickedNow.length === tickable.length ? true : tickedNow.length > 0 ? 'indeterminate' : false;
+
+  const toggleTick = (id: string, on: boolean) =>
+    setTicked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const toggleAllTicks = (on: boolean) => setTicked(on ? new Set(tickable.map((inv) => inv.id)) : new Set());
+
+  // The ticked invoices become sheet rows with the amount left blank for the user to type.
+  const addTicked = () => {
+    if (tickedNow.length === 0) return;
+    const added = tickedNow.map((inv) => rowOfInvoice(inv));
+    setRows((prev) => [...prev, ...added]);
+    setTicked(new Set());
+    setFormError(null);
+    focusRow(added[0].key);
   };
 
   const removeRow = useCallback((key: string) => {
@@ -373,7 +450,7 @@ export default function CashReceiptPage() {
   const handleLoad = async (raw = transactionInput): Promise<boolean> => {
     setTxOpen(false);
     setLoadError(null);
-    const number = normalizeTransactionNumber(raw);
+    const number = normalizeTransactionNumber(raw, kind);
     if (!number) {
       toast.error('Enter a transaction number like T-0001');
       return false;
@@ -393,7 +470,11 @@ export default function CashReceiptPage() {
   // A link from the transactions list (`?transaction=T-0001`) opens that transaction straight away.
   const handleLoadRef = useRef(handleLoad);
   handleLoadRef.current = handleLoad;
-  const openFromUrl = useCallback(
+  const kindRef = useRef(kind);
+  kindRef.current = kind;
+  // A link to a PT- transaction opens the purchase sheet first; the load runs once that sheet is showing.
+  const [pendingLink, setPendingLink] = useState<{ number: string; params: URLSearchParams; kind: ReceiptKind } | null>(null);
+  const loadFromLink = useCallback(
     async (number: string, params: URLSearchParams) => {
       setTransactionInput(number);
       const loaded = await handleLoadRef.current(number);
@@ -402,17 +483,34 @@ export default function CashReceiptPage() {
         if (params.get('readonly') === '1') setReadOnly(true);
         setHighlightInvoiceId(params.get('invoice'));
       }
+    },
+    [],
+  );
+  const openFromUrl = useCallback(
+    async (number: string, params: URLSearchParams) => {
+      const wanted: ReceiptKind = /^pt-?/i.test(number.trim()) ? 'purchase' : 'sale';
       // Clear the link so opening the same transaction again from the list loads it again.
       router.replace('/sales/cash-receipt');
+      if (wanted !== kindRef.current) {
+        setKind(wanted);
+        setPendingLink({ number, params, kind: wanted });
+        return;
+      }
+      await loadFromLink(number, params);
     },
-    [router],
+    [router, loadFromLink],
   );
+  useEffect(() => {
+    if (!pendingLink || pendingLink.kind !== kind) return;
+    setPendingLink(null);
+    void loadFromLink(pendingLink.number, pendingLink.params);
+  }, [pendingLink, kind, loadFromLink]);
 
   const exitEditing = () => {
     setReadOnly(false);
     setHighlightInvoiceId(null);
     setEditing(null);
-    setTransactionInput(lastNumber ?? TX_PREFIX);
+    setTransactionInput(lastNumber ?? txPrefix);
     setLoadError(null);
     setRows([]);
     setSelectedKey(null);
@@ -437,7 +535,8 @@ export default function CashReceiptPage() {
             entryId: r.entryId,
             invoiceId: r.invoiceId,
             amount: Number(r.amount),
-            ...(num(r.difference) > 0 && !r.entryId ? { difference: num(r.difference) } : {}),
+            // Always sent: an entry's difference is edited in place, and 0 takes it off.
+            difference: num(r.difference),
           })),
         },
       });
@@ -589,12 +688,34 @@ export default function CashReceiptPage() {
   };
 
   const printPath = (suffix = '') =>
-    `/sales/cash-receipts/${saved!.id}/pdf?branchId=${branchId ?? ''}${suffix}`;
+    `${RECEIPT_KIND[kind].root}/${saved!.id}/pdf?branchId=${branchId ?? ''}${suffix}`;
 
   return (
-    <PageAccessGuard requires="cash_receipt:read">
+    <PageAccessGuard requires={['cash_receipt:read', 'cash_payment:read']}>
       <TopbarContent>
-        <h1 className="text-lg font-semibold tracking-tight">Cash Receipt</h1>
+        <h1 className="text-lg font-semibold tracking-tight">{text.title}</h1>
+        <div className="ml-4 inline-flex rounded-md border p-0.5" role="group" aria-label="Receipt type">
+          {(['sale', 'purchase'] as const).map((k) => (
+            <Button
+              key={k}
+              type="button"
+              size="sm"
+              variant={kind === k ? 'default' : 'ghost'}
+              aria-pressed={kind === k}
+              disabled={rows.length > 0 || !!editing || !has(`${RECEIPT_KIND[k].permission}:read`)}
+              onClick={() => {
+                setKind(k);
+                setTransactionInput(RECEIPT_KIND[k].prefix);
+                setSaved(null);
+                setNotice(null);
+                setLoadError(null);
+                resetForm();
+              }}
+            >
+              {k === 'sale' ? 'Sales' : 'Purchase'}
+            </Button>
+          ))}
+        </div>
         <div className="ml-4">
           <BranchFilter filter={branchFilter} allowAll={false} disabled={rows.length > 0} />
         </div>
@@ -603,7 +724,7 @@ export default function CashReceiptPage() {
       {isAdmin && !branchId && (
         <Alert className="mb-6">
           <AlertCircle className="h-4 w-4" />
-          <span>Select a branch to enter receipts.</span>
+          <span>{text.branchHint}</span>
         </Alert>
       )}
 
@@ -611,7 +732,7 @@ export default function CashReceiptPage() {
         <Alert className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <span>
             {saved.transactionNumber && <b>{saved.transactionNumber}: </b>}
-            {saved.count} receipt{saved.count === 1 ? '' : 's'} saved, total Rs. {money(saved.total)} (
+            {saved.count} {text.saved}{saved.count === 1 ? '' : 's'} saved, total Rs. {money(saved.total)} (
             {saved.voucherNumber})
           </span>
           <div className="flex flex-wrap items-center gap-2">
@@ -691,12 +812,12 @@ export default function CashReceiptPage() {
             <div className="flex gap-1">
               <Input
                 value={transactionInput}
-                placeholder="T-0001"
+                placeholder={`${txPrefix}0001`}
                 className={editing ? 'border-primary ring-1 ring-primary' : undefined}
                 onChange={(e) => {
                   // Keep the "T-" in front: typing just digits, or pasting "1", still reads as a T- number.
                   const v = e.target.value.toUpperCase();
-                  setTransactionInput(v.startsWith(TX_PREFIX) ? v : `${TX_PREFIX}${v.replace(/^T-?/, '')}`);
+                  setTransactionInput(v.startsWith(txPrefix) ? v : `${txPrefix}${v.replace(/^P?T-?/, '')}`);
                   setTxOpen(true);
                 }}
                 onFocus={(e) => {
@@ -711,7 +832,7 @@ export default function CashReceiptPage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={transactionInput.trim() === TX_PREFIX || loadTransaction.isPending}
+                disabled={transactionInput.trim() === txPrefix || loadTransaction.isPending}
                 onClick={() => void handleLoad()}
               >
                 Load
@@ -752,8 +873,52 @@ export default function CashReceiptPage() {
             )}
           </div>
           <div className="relative min-w-48 flex-1">
-            <label className="mb-1 block text-sm font-medium">Voucher #</label>
-            <Input
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <label className="text-sm font-medium">{findBy === 'voucher' ? 'Voucher #' : text.party}</label>
+              <div role="radiogroup" aria-label="Find invoices by" className="flex items-center gap-3 text-xs text-muted-foreground">
+                {(
+                  [
+                    ['voucher', 'Voucher #'],
+                    ['party', text.party],
+                  ] as const
+                ).map(([value, label]) => (
+                  <label key={value} className="flex cursor-pointer items-center gap-1">
+                    <input
+                      type="radio"
+                      name="cash-receipt-find-by"
+                      className="accent-primary"
+                      checked={findBy === value}
+                      disabled={readOnly || !!editing}
+                      onChange={() => {
+                        setFindBy(value);
+                        setSelected(null);
+                        setVoucherInput('');
+                        setParty({ scope: '', id: '' });
+                        setTicked(new Set());
+                        setFormError(null);
+                      }}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            {findBy === 'party' && (
+              <ComboboxWithCreate
+                options={partyOptions}
+                value={partyId || undefined}
+                onChange={(id) => {
+                  setParty({ scope: partyScope, id });
+                  setTicked(new Set());
+                  setFormError(null);
+                }}
+                placeholder={`Search ${text.party.toLowerCase()}`}
+                searchPlaceholder={`Search ${text.party.toLowerCase()}...`}
+                emptyMessage={`No ${text.party.toLowerCase()} found.`}
+                disabled={isAdmin && !branchId}
+              />
+            )}
+            {findBy === 'voucher' && <Input
               ref={voucherRef}
               autoFocus
               value={voucherInput}
@@ -768,8 +933,8 @@ export default function CashReceiptPage() {
               onFocus={() => setOpen(true)}
               onBlur={() => setTimeout(() => setOpen(false), 150)}
               onKeyDown={onVoucherKeyDown}
-            />
-            {open && voucherQuery && !selected && (
+            />}
+            {findBy === 'voucher' && open && voucherQuery && !selected && (
               <div ref={suggestionsRef} className="absolute z-20 mt-1 max-h-64 w-full overflow-auto rounded-md border bg-popover shadow-md">
                 {matches.length === 0 ? (
                   <div className="p-3 text-sm text-muted-foreground">
@@ -804,6 +969,8 @@ export default function CashReceiptPage() {
               </div>
             )}
           </div>
+          {findBy === 'voucher' && (
+            <>
           <div className="w-40">
             <label className="mb-1 block text-sm font-medium">Date</label>
             <Input value={selected ? fmtDate(selected.saleDate) : ''} readOnly tabIndex={-1} />
@@ -871,17 +1038,28 @@ export default function CashReceiptPage() {
               </Button>
             </div>
           </div>
+            </>
+          )}
         </div>
         {num(differenceInput) > 0 && (
           <div className="mb-3 grid gap-3 text-sm md:grid-cols-4">
-            <div>
-              <div className="text-muted-foreground">Exp Category</div>
-              <div className="font-semibold">Difference</div>
-            </div>
-            <div>
-              <div className="text-muted-foreground">Exp Sub Category</div>
-              <div className="font-semibold">Sales Difference</div>
-            </div>
+            {kind === 'sale' ? (
+              <>
+                <div>
+                  <div className="text-muted-foreground">Exp Category</div>
+                  <div className="font-semibold">Difference</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">Exp Sub Category</div>
+                  <div className="font-semibold">Sales Difference</div>
+                </div>
+              </>
+            ) : (
+              <div>
+                <div className="text-muted-foreground">Booked to</div>
+                <div className="font-semibold">Purchase Discount (income)</div>
+              </div>
+            )}
             <div className="md:col-span-2 self-end text-muted-foreground" data-testid="difference-note">
               {money(num(amountInput))} + {money(num(differenceInput))} difference = {money(num(amountInput) + num(differenceInput))}
               {selected && Math.abs(num(amountInput) + num(differenceInput) - selected.balance) < 0.005
@@ -892,11 +1070,12 @@ export default function CashReceiptPage() {
         )}
         {formError && <p className="mb-2 text-sm text-destructive">{formError}</p>}
 
+        {findBy === 'voucher' && (
         <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
           {[
             ['Account Balance', accountBalance],
-            ['S-Invoice Amount', selected?.netTotal ?? null],
-            ['S-I-Received Amount', selected?.received ?? null],
+            [`${text.invoiceCol} Amount`, selected?.netTotal ?? null],
+            [`${text.settledCol} Amount`, selected?.received ?? null],
             ['Balance', selected?.balance ?? null],
           ].map(([label, value]) => (
             <div key={label as string}>
@@ -905,6 +1084,73 @@ export default function CashReceiptPage() {
             </div>
           ))}
         </div>
+        )}
+
+        {findBy === 'party' && partyId && (
+          <div className="mt-4 rounded-md border">
+            <div className="flex items-center justify-between gap-3 border-b px-3 py-2 text-sm">
+              <label className="flex cursor-pointer items-center gap-2 font-medium">
+                <Checkbox
+                  checked={allTicked}
+                  disabled={tickable.length === 0}
+                  onCheckedChange={(v) => toggleAllTicks(v === true)}
+                  aria-label="Select all invoices"
+                />
+                {partyFetching
+                  ? 'Loading...'
+                  : `${partyInvoices.length} unpaid or partly paid ${partyInvoices.length === 1 ? 'invoice' : 'invoices'}`}
+              </label>
+              <Button type="button" size="sm" disabled={tickedNow.length === 0} onClick={addTicked}>
+                Add selected ({tickedNow.length})
+              </Button>
+            </div>
+            {partyInvoices.length === 0 ? (
+              <p className="p-3 text-sm text-muted-foreground">
+                {partyFetching ? 'Searching...' : 'No outstanding invoices for this party'}
+              </p>
+            ) : (
+              <div className="max-h-64 overflow-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-10" />
+                      <TableHead>{text.invoiceCol}#</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right">{text.invoiceCol} Amount</TableHead>
+                      <TableHead className="text-right">{text.settledCol} Amount</TableHead>
+                      <TableHead className="text-right">Remaining</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {partyInvoices.map((inv) => {
+                      const already = inSheet(inv.id);
+                      return (
+                        <TableRow key={inv.id} className={already ? 'text-muted-foreground' : undefined}>
+                          <TableCell>
+                            <Checkbox
+                              checked={already || ticked.has(inv.id)}
+                              disabled={already}
+                              onCheckedChange={(v) => toggleTick(inv.id, v === true)}
+                              aria-label={`Select ${inv.invoiceNumber}`}
+                            />
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {inv.invoiceNumber}
+                            {already && <span className="ml-2 text-xs">Already in sheet</span>}
+                          </TableCell>
+                          <TableCell>{fmtDate(inv.saleDate)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{money(inv.netTotal)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{money(inv.received)}</TableCell>
+                          <TableCell className="text-right font-semibold tabular-nums">{money(inv.balance)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="rounded-lg border" onKeyDown={onTableKeyDown}>
@@ -913,10 +1159,10 @@ export default function CashReceiptPage() {
             <TableRow>
               <TableHead>Ser #</TableHead>
               <TableHead>A/C Description</TableHead>
-              <TableHead className="text-right">Cust. Bal.</TableHead>
-              <TableHead>S-Invoice#</TableHead>
-              <TableHead className="text-right">S-Invoice Amount</TableHead>
-              <TableHead className="text-right">S-I-Received Amount</TableHead>
+              <TableHead className="text-right">{kind === 'sale' ? 'Cust. Bal.' : 'Vendor Bal.'}</TableHead>
+              <TableHead>{text.invoiceCol}#</TableHead>
+              <TableHead className="text-right">{text.invoiceCol} Amount</TableHead>
+              <TableHead className="text-right">{text.settledCol} Amount</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead className="text-right">Difference</TableHead>
               <TableHead className="text-right">Final Bal.</TableHead>
@@ -966,6 +1212,7 @@ export default function CashReceiptPage() {
                     aria-invalid={!!r.error}
                     onFocus={() => setSelectedKey(r.key)}
                     disabled={r.locked}
+                    title={r.locked ? 'Fully paid: remove this entry to change it' : undefined}
                     onChange={(e) => updateRow(r.key, { amount: e.target.value })}
                   />
                   )}
@@ -974,10 +1221,8 @@ export default function CashReceiptPage() {
                   )}
                 </TableCell>
                 <TableCell className="text-right">
-                  {readOnly || r.locked || r.entryId ? (
-                    <span className="tabular-nums" title={r.locked ? 'Sales Difference' : undefined}>
-                      {num(r.difference) > 0 ? money(num(r.difference)) : '-'}
-                    </span>
+                  {readOnly || r.locked ? (
+                    <span className="tabular-nums">{num(r.difference) > 0 ? money(num(r.difference)) : '-'}</span>
                   ) : (
                     <Input
                       type="number"
@@ -1023,7 +1268,7 @@ export default function CashReceiptPage() {
         <Button
           onClick={handleSave}
           disabled={
-            !has(editing ? 'cash_receipt:update' : 'cash_receipt:create') ||
+            !has(`${RECEIPT_KIND[kind].permission}:${editing ? 'update' : 'create'}`) ||
             rows.length === 0 ||
             save.isPending ||
             updateTransaction.isPending

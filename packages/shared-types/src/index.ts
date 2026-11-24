@@ -142,6 +142,7 @@ export type {
 } from './accounting';
 export type {
   LookupInvoice,
+  OutstandingParty,
   CashReceiptRowInput,
   CashReceiptRequest,
   CashReceiptRowError,
@@ -154,6 +155,19 @@ export type {
   PaginatedCashTransactions,
   LastCashTransactionResponse,
 } from './cash-receipt';
+export type {
+  LookupPurchase,
+  CashPaymentRowInput,
+  CashPaymentRequest,
+  CashPaymentResult,
+  CashPaymentTransactionRow,
+  CashPaymentTransaction,
+  UpdateCashPaymentTransactionRequest,
+  CashPaymentHistoryEntry,
+  CashPaymentTransactionSummary,
+  PaginatedCashPaymentTransactions,
+  LastCashPaymentTransactionResponse,
+} from './cash-payment';
 export type {
   SupplyReportQuery,
   SupplyReportFilters,

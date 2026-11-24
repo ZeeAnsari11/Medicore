@@ -8,6 +8,10 @@ export class CashReceiptChangeState {
   @Prop({ required: true })
   amount: number;
 
+  /** Written off with this entry; absent when there was none (and on history from before it was tracked). */
+  @Prop()
+  difference?: number;
+
   @Prop({ type: Date })
   date?: Date;
 }

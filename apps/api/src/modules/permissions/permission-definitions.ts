@@ -80,6 +80,7 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
   // it become invoices straight away instead of waiting on the Process Orders screen.
   { key: 'skip_process_order', label: 'Skip process order', group: 'Operations', actions: [VIEW] },
   { key: 'cash_receipt', label: 'Cash Receipt', group: 'Operations', actions: [VIEW, CREATE, EDIT] },
+  { key: 'cash_payment', label: 'Cash Payment (vendors)', group: 'Operations', actions: [VIEW, CREATE, EDIT] },
   { key: 'customers', label: 'Customers', group: 'Operations', actions: [VIEW, CREATE, EDIT, DELETE] },
   { key: 'reports', label: 'Reports', group: 'Insights', actions: [VIEW, EXPORT] },
   {

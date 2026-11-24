@@ -124,6 +124,8 @@ export interface PurchasePaymentRow {
   isInitial?: boolean;
   /** The initial amount that was settled from the vendor's advance, not cash. */
   isAdvance?: boolean;
+  /** Written off at a bulk purchase receipt (the vendor let the business off this part). */
+  isDifference?: boolean;
   /** A refund received from the vendor for a return (shown as money back, not a payment). */
   isRefund?: boolean;
 }

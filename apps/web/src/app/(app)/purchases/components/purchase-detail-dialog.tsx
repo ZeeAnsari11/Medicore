@@ -104,6 +104,8 @@ export function PurchaseDetailDialog({
     round2(netTotal - (purchase.amountPaid - (purchase.refundedTotal ?? 0))),
     0,
   );
+  // Written off at a bulk purchase receipt: counted in the paid total, but not money paid out.
+  const differenceTotal = round2(payments.filter((p) => p.isDifference).reduce((s, p) => s + p.amount, 0));
   const returnedQty = (batchId?: string) =>
     batchId
       ? returns.reduce(
@@ -230,7 +232,7 @@ export function PurchaseDetailDialog({
                         <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleString()}</TableCell>
                         <TableCell className="tabular-nums">{payment.isRefund ? '-' : ''}{payment.amount.toFixed(2)}</TableCell>
                         <TableCell className="text-sm">
-                          {payment.isRefund ? `Refund${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}` : payment.isAdvance ? 'Paid from advance' : payment.isInitial ? 'Paid at purchase' : payment.method ? METHOD_LABELS[payment.method] : '—'}
+                          {payment.isRefund ? `Refund${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}` : payment.isDifference ? 'Difference (Purchase Discount)' : payment.isAdvance ? 'Paid from advance' : payment.isInitial ? 'Paid at purchase' : payment.method ? METHOD_LABELS[payment.method] : '—'}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">{payment.reference ?? '—'}</TableCell>
                         <TableCell className="text-sm text-muted-foreground">{payment.recordedBy ?? '—'}</TableCell>
@@ -247,9 +249,21 @@ export function PurchaseDetailDialog({
           {!ret.active && purchase.status !== PurchaseStatus.CANCELLED && has('purchases:return') && (
             <div className="space-y-3 rounded-lg border p-4 bg-muted/30">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total paid</span>
-                <span>{purchase.amountPaid.toFixed(2)}</span>
+                <span className="text-muted-foreground">{differenceTotal > 0 ? 'Paid' : 'Total paid'}</span>
+                <span>{(purchase.amountPaid - differenceTotal).toFixed(2)}</span>
               </div>
+              {differenceTotal > 0 && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Difference (written off)</span>
+                    <span>{differenceTotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Total settled</span>
+                    <span>{purchase.amountPaid.toFixed(2)}</span>
+                  </div>
+                </>
+              )}
               <div className="flex justify-between text-sm font-medium">
                 <span>Outstanding</span>
                 <span>{outstanding.toFixed(2)}</span>

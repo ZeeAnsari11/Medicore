@@ -123,17 +123,16 @@ export class PaymentsService {
   ): Promise<PaymentDocument> {
     const allocations = dto.allocations ?? [];
     if (difference) {
+      const isCustomer = dto.partyType === PartyType.CUSTOMER;
       if (
-        dto.partyType !== PartyType.CUSTOMER ||
         allocations.length !== 1 ||
-        allocations[0].invoiceType !== InvoiceType.SALE
+        allocations[0].invoiceType !== (isCustomer ? InvoiceType.SALE : InvoiceType.PURCHASE)
       ) {
-        throw new BadRequestException(
-          'A difference can only be written off against one sale invoice',
-        );
+        throw new BadRequestException('A difference can only be written off against one invoice of its own kind');
       }
-      // Numbered before the payment is, so older unnumbered expenses keep the lower numbers.
-      await this.expensesService.ensureExpenseNumbers(tenantId);
+      // Numbered before the payment is, so older unnumbered expenses keep the lower numbers. Only a customer
+      // difference is an expense; a vendor's is income and has no Expenses-list record.
+      if (isCustomer) await this.expensesService.ensureExpenseNumbers(tenantId);
     }
     const allocatedTotal = round2(allocations.reduce((sum, a) => sum + a.amount, 0));
     if (allocatedTotal > dto.amount + 0.01) {
@@ -223,10 +222,26 @@ export class PaymentsService {
           });
         }
 
-        if (difference) {
+        if (difference && dto.partyType === PartyType.VENDOR) {
+          // Dr Accounts Payable / Cr Purchase Discount: what the vendor lets the business off, so the bill is settled.
+          lines.push({
+            accountId: accounts.get('ACCOUNTS_PAYABLE')!.id,
+            debit: difference.amount,
+            credit: 0,
+            partyType: PartyType.VENDOR,
+            partyId: dto.partyId,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          });
+          lines.push({
+            accountId: accounts.get('PURCHASE_DISCOUNT')!.id,
+            debit: 0,
+            credit: difference.amount,
+            description: DIFFERENCE_LINE_DESCRIPTION,
+          });
+        } else if (difference) {
           // Dr Difference expense / Cr Accounts Receivable: the customer's balance falls by the written-off amount.
           lines.push({
-            accountId: difference.accountId,
+            accountId: difference.accountId!,
             debit: difference.amount,
             credit: 0,
             description: DIFFERENCE_LINE_DESCRIPTION,
@@ -271,7 +286,7 @@ export class PaymentsService {
         }
 
         let differenceExpenseId: string | undefined;
-        if (difference) {
+        if (difference && dto.partyType === PartyType.CUSTOMER) {
           // The same journal entry, shown in the Expenses list as Difference > Sales Difference against the invoice.
           const [expense] = await this.expenseModel.create(
             [
@@ -279,7 +294,7 @@ export class PaymentsService {
                 tenantId: new Types.ObjectId(tenantId),
                 branchId: new Types.ObjectId(branchId),
                 expenseSeq: await this.sequenceService.next(tenantId, null, 'expense', session),
-                expenseAccountId: difference.accountId,
+                expenseAccountId: difference.accountId!,
                 categoryId: difference.categoryId,
                 subCategoryId: difference.subCategoryId,
                 amount: difference.amount,
@@ -561,37 +576,127 @@ export class PaymentsService {
   }
 
   /**
-   * In-place edit of a cash-receipt payment (a customer payment fully applied to one sale): new amount and/or date
-   * on the same Payment and the same ledger entry. Returns the previous amount. The invoice's paid total is
-   * adjusted separately with `adjustSalePaid`.
+   * In-place edit of a cash-receipt payment (a customer payment fully applied to one sale): new amount, date and/or
+   * difference on the same Payment, the same ledger entry and the same Expenses record. A difference can be changed,
+   * added or taken off. Returns what the payment had applied before (cash and difference). The invoice's paid total is
+   * adjusted separately with `adjustSalePaid`, by the change in amount plus difference.
+   *
+   * `difference` undefined keeps the stored one. `differenceMeta` (the receipt branch's Difference account and
+   * category) is only needed when a customer difference is added to a payment that had none.
    */
   async editReceiptPayment(
     tenantId: string,
     branchId: string,
     paymentId: string,
-    change: { amount: number; paymentDate?: Date },
+    change: {
+      amount: number;
+      paymentDate?: Date;
+      difference?: number;
+      differenceMeta?: Omit<PaymentDifference, 'amount'>;
+      userId?: string;
+    },
     session: ClientSession,
-  ): Promise<{ previousAmount: number; invoiceId: string }> {
-    const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session);
-    if ((payment.differenceAmount ?? 0) > 0) {
-      throw new ConflictException(
-        'This receipt wrote off a difference; remove the row and enter it again to change it',
-      );
-    }
+    party: PartyType = PartyType.CUSTOMER,
+  ): Promise<{ previousAmount: number; previousDifference: number; invoiceId: string }> {
+    const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session, party);
     const previousAmount = payment.amount;
+    const previousDifference = payment.differenceAmount ?? 0;
+    const difference = round2(change.difference ?? previousDifference);
+    const invoiceId = payment.allocations[0].invoiceId;
+
     payment.amount = change.amount;
     payment.allocations[0].amount = change.amount;
     payment.markModified('allocations');
     if (change.paymentDate) payment.paymentDate = change.paymentDate;
+    payment.differenceAmount = difference > 0 ? difference : undefined;
+
+    if (previousDifference === 0 && difference === 0) {
+      await payment.save({ session });
+      await this.postingService.editReceiptPaymentEntry(
+        tenantId,
+        paymentId,
+        change.amount,
+        change.paymentDate,
+        session,
+        party,
+      );
+      return { previousAmount, previousDifference, invoiceId };
+    }
+
+    if (party === PartyType.CUSTOMER) {
+      await this.syncDifferenceExpense(payment, difference, change, invoiceId, session);
+    }
     await payment.save({ session });
-    await this.postingService.editReceiptPaymentEntry(
+    await this.postingService.editReceiptPaymentEntryWithDifference(
       tenantId,
       paymentId,
-      change.amount,
-      change.paymentDate,
+      {
+        amount: change.amount,
+        difference,
+        differenceAccountId: change.differenceMeta?.accountId,
+        entryDate: change.paymentDate,
+      },
       session,
+      party,
     );
-    return { previousAmount, invoiceId: payment.allocations[0].invoiceId };
+    return { previousAmount, previousDifference, invoiceId };
+  }
+
+  /** Keeps the Expenses-list record of a customer's written-off difference in step with the payment (amount, date, added or cancelled). */
+  private async syncDifferenceExpense(
+    payment: PaymentDocument,
+    difference: number,
+    change: {
+      paymentDate?: Date;
+      differenceMeta?: Omit<PaymentDifference, 'amount'>;
+      userId?: string;
+    },
+    invoiceId: string,
+    session: ClientSession,
+  ) {
+    if (difference <= 0) {
+      await this.cancelDifferenceExpense(payment, session);
+      payment.differenceExpenseId = undefined;
+      return;
+    }
+    if (payment.differenceExpenseId) {
+      await runWithoutBranchScope(() =>
+        this.expenseModel.updateOne(
+          { _id: payment.differenceExpenseId },
+          { $set: { amount: difference, ...(change.paymentDate ? { expenseDate: change.paymentDate } : {}) } },
+          { session },
+        ),
+      );
+      return;
+    }
+    const meta = change.differenceMeta;
+    if (!meta?.accountId || !change.userId) {
+      throw new ConflictException('The Difference account is not set up');
+    }
+    const [expense] = await this.expenseModel.create(
+      [
+        {
+          tenantId: payment.tenantId,
+          branchId: payment.branchId,
+          expenseSeq: await this.sequenceService.next(String(payment.tenantId), null, 'expense', session),
+          expenseAccountId: meta.accountId,
+          categoryId: meta.categoryId,
+          subCategoryId: meta.subCategoryId,
+          amount: difference,
+          expenseDate: change.paymentDate ?? payment.paymentDate,
+          description: `Sales difference on invoice ${meta.invoiceNumber}`,
+          reference: payment.reference,
+          journalEntryId: payment.journalEntryId,
+          createdBy: new Types.ObjectId(change.userId),
+          sourceType: 'CASH_RECEIPT',
+          sourceId: payment.id,
+          invoiceId,
+          invoiceNumber: meta.invoiceNumber,
+        },
+      ],
+      { session },
+    );
+    payment.differenceExpenseId = expense._id;
   }
 
   /** Removes a cash-receipt payment and its ledger entry in place (soft delete). Returns what it had applied. */
@@ -600,11 +705,12 @@ export class PaymentsService {
     branchId: string,
     paymentId: string,
     session: ClientSession,
+    party: PartyType = PartyType.CUSTOMER,
   ): Promise<{ previousAmount: number; invoiceId: string }> {
-    const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session);
+    const payment = await this.liveReceiptPayment(tenantId, branchId, paymentId, session, party);
     payment.deletedAt = new Date();
     await payment.save({ session });
-    await this.postingService.removeReceiptPaymentEntry(tenantId, paymentId, session);
+    await this.postingService.removeReceiptPaymentEntry(tenantId, paymentId, session, party);
     await this.cancelDifferenceExpense(payment, session);
     // What the invoice had counted for this payment: the cash received plus any difference written off.
     return {
@@ -618,6 +724,7 @@ export class PaymentsService {
     branchId: string,
     paymentId: string,
     session: ClientSession,
+    party: PartyType = PartyType.CUSTOMER,
   ) {
     const payment = await this.paymentModel
       .findOne({
@@ -630,9 +737,9 @@ export class PaymentsService {
     if (!payment) throw new ConflictException('This payment was voided elsewhere');
     const [allocation] = payment.allocations;
     if (
-      payment.partyType !== PartyType.CUSTOMER ||
+      payment.partyType !== party ||
       payment.allocations.length !== 1 ||
-      allocation.invoiceType !== InvoiceType.SALE ||
+      allocation.invoiceType !== (party === PartyType.CUSTOMER ? InvoiceType.SALE : InvoiceType.PURCHASE) ||
       Math.abs(allocation.amount - payment.amount) > 0.01
     ) {
       throw new ConflictException(
@@ -680,6 +787,42 @@ export class PaymentsService {
     );
     await sale.save({ session });
     return { before, after: { amountPaid: sale.amountPaid, paymentStatus: sale.paymentStatus } };
+  }
+
+  /** `adjustSalePaid` for a purchase: moves its cached paid total by `delta` and re-derives its status. */
+  async adjustPurchasePaid(
+    tenantId: string,
+    branchId: string,
+    purchaseId: string,
+    delta: number,
+    session: ClientSession,
+  ): Promise<{
+    before: { amountPaid: number; paymentStatus: PaymentStatus };
+    after: { amountPaid: number; paymentStatus: PaymentStatus };
+  }> {
+    const purchase = await this.purchaseModel
+      .findOne({
+        _id: purchaseId,
+        tenantId: new Types.ObjectId(tenantId),
+        branchId: new Types.ObjectId(branchId),
+      })
+      .session(session);
+    if (!purchase) throw new NotFoundException(`Purchase ${purchaseId} not found`);
+    const before = { amountPaid: purchase.amountPaid, paymentStatus: purchase.paymentStatus };
+    const next = round2(purchase.amountPaid + delta);
+    if (delta < 0 && next - (purchase.refundedTotal ?? 0) < -0.01) {
+      throw new ConflictException(
+        `Cannot lower the payments on purchase ${purchase.purchaseNumber}: it would drop below the refunds already received`,
+      );
+    }
+    purchase.amountPaid = next;
+    purchase.editVersion = (purchase.editVersion ?? 0) + 1; // write-conflicts with a concurrent purchase edit
+    purchase.paymentStatus = resolvePaymentStatus(
+      purchase.amountPaid - (purchase.refundedTotal ?? 0),
+      purchase.grandTotal - (purchase.returnedTotal ?? 0),
+    );
+    await purchase.save({ session });
+    return { before, after: { amountPaid: purchase.amountPaid, paymentStatus: purchase.paymentStatus } };
   }
 
   /**
