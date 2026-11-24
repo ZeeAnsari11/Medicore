@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { Sidebar } from './sidebar';
@@ -15,6 +15,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const { hasAnyModule } = usePermissions();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     if (!isLoading) {
@@ -37,10 +38,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TopbarSlotProvider>
       <div className="flex h-screen overflow-hidden bg-background">
-        <Sidebar />
+        <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(false)} />
         <div className="flex min-w-0 flex-1 flex-col">
           {user.impersonatedBy && <ImpersonationBanner username={user.username} />}
-          <Topbar />
+          <Topbar sidebarOpen={sidebarOpen} onShowSidebar={() => setSidebarOpen(true)} />
           <main className="flex-1 overflow-y-auto p-6">
             {hasAnyModule ? (
               children

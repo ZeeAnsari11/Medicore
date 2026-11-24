@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { LogOut, User, Moon, Sun, Settings } from 'lucide-react';
+import { LogOut, User, Moon, Sun, Settings, PanelLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useDarkMode } from '@/hooks/use-dark-mode';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
@@ -9,6 +9,7 @@ import { BranchFilter } from '@/components/branch-filter';
 import { navSections } from './nav-config';
 import { TopbarActionsTarget, TopbarSlotTarget } from './topbar-slot';
 import {
+  cn,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -17,7 +18,12 @@ import {
   DropdownMenuTrigger,
 } from '@medicore/ui';
 
-export function Topbar() {
+interface TopbarProps {
+  sidebarOpen: boolean;
+  onShowSidebar: () => void;
+}
+
+export function Topbar({ sidebarOpen, onShowSidebar }: TopbarProps) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -46,6 +52,17 @@ export function Topbar() {
       <div className="px-8 h-16 flex items-center justify-between">
         {/* Left: page-provided title (TopbarContent) or the default route title */}
         <div className="flex min-w-0 flex-1 items-center pr-4">
+          {/* The hide button lives in the sidebar header; this one only appears once the sidebar is hidden. */}
+          {!sidebarOpen && (
+            <button
+              type="button"
+              onClick={onShowSidebar}
+              aria-label="Show sidebar"
+              className="mr-3 p-2 shrink-0 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+            >
+              <PanelLeft className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+            </button>
+          )}
           <TopbarSlotTarget className="peer flex min-w-0 items-center gap-3" />
           <h2 className="text-xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-slate-200 bg-clip-text text-transparent peer-[:not(:empty)]:hidden">
             {defaultTitle}
@@ -79,7 +96,8 @@ export function Topbar() {
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-md">
                   {initials}
                 </div>
-                <div className="hidden sm:block text-left">
+                {/* On the full-width document forms the bar is crowded; keep just the avatar below 2xl. */}
+                <div className={cn('hidden text-left', hideBranchFilter ? '2xl:block' : 'sm:block')}>
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
                     {user?.username}
                   </p>

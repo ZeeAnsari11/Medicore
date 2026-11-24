@@ -34,32 +34,6 @@ export const navSections: NavSection[] = [
     items: [{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, requires: { anyOf: ['dashboard:read'] } }],
   },
   {
-    title: 'Catalog',
-    items: [
-      { label: 'Manufacturers', href: '/manufacturers', icon: Factory, requires: { anyOf: ['manufacturers:read'] } },
-      { label: 'Vendors', href: '/vendors', icon: Truck, requires: { anyOf: ['vendors:read'] } },
-      { label: 'Products', href: '/products', icon: Pill, requires: { anyOf: ['products:read'] } },
-    ],
-  },
-  {
-    title: 'Operations',
-    items: [
-      { label: 'Purchases', href: '/purchases', icon: ShoppingCart, requires: { anyOf: ['purchases:read'] } },
-      { label: 'Inventory', href: '/inventory', icon: Boxes, requires: { anyOf: ['inventory:read'] } },
-      { label: 'Sales', href: '/sales', icon: Receipt, requires: { anyOf: ['sales:read'] } },
-      { label: 'Process Orders', href: '/sales/process-orders', icon: ClipboardCheck, requires: { anyOf: ['process_orders:read'] } },
-      { label: 'Cash Receipt', href: '/sales/cash-receipt', icon: HandCoins, requires: { anyOf: ['cash_receipt:read'] } },
-      { label: 'Cash Receipt Transactions', href: '/sales/cash-receipt-transactions', icon: ListChecks, requires: { anyOf: ['cash_receipt:read'] } },
-      { label: 'Customers', href: '/customers', icon: Users, requires: { anyOf: ['customers:read'] } },
-    ],
-  },
-  {
-    title: 'Insights',
-    items: [
-      { label: 'SSR', href: '/reports/ssr', icon: BarChart3, requires: { anyOf: ['ssr:read'] } },
-    ],
-  },
-  {
     title: 'Accounting',
     items: [
       { label: 'Overview', href: '/accounting', icon: Wallet, requires: { anyOf: ['acc_overview:read'] } },
@@ -74,6 +48,32 @@ export const navSections: NavSection[] = [
       { label: 'Trial Balance', href: '/accounting/trial-balance', icon: Scale, requires: { anyOf: ['acc_trial_balance:read'] } },
       { label: 'Profit & Loss', href: '/accounting/profit-loss', icon: LineChart, requires: { anyOf: ['acc_profit_loss:read'] } },
       { label: 'Balance Sheet', href: '/accounting/balance-sheet', icon: Scale, requires: { anyOf: ['acc_balance_sheet:read'] } },
+    ],
+  },
+  {
+    title: 'Catalog',
+    items: [
+      { label: 'Manufacturers', href: '/manufacturers', icon: Factory, requires: { anyOf: ['manufacturers:read'] } },
+      { label: 'Vendors', href: '/vendors', icon: Truck, requires: { anyOf: ['vendors:read'] } },
+      { label: 'Products', href: '/products', icon: Pill, requires: { anyOf: ['products:read'] } },
+    ],
+  },
+  {
+    title: 'Operations',
+    items: [
+      { label: 'Purchases', href: '/purchases', icon: ShoppingCart, requires: { anyOf: ['purchases:read'] } },
+      { label: 'Inventory', href: '/inventory', icon: Boxes, requires: { anyOf: ['inventory:read'] } },
+      { label: 'Sales', href: '/sales', icon: Receipt, requires: { anyOf: ['sales:read'] } },
+      { label: 'Process Orders', href: '/sales/process-orders', icon: ClipboardCheck, requires: { anyOf: ['process_orders:read'] } },
+      { label: 'Cash Receipt', href: '/sales/cash-receipt', icon: HandCoins, requires: { anyOf: ['cash_receipt:read', 'cash_payment:read'] } },
+      { label: 'Cash Receipt Transactions', href: '/sales/cash-receipt-transactions', icon: ListChecks, requires: { anyOf: ['cash_receipt:read', 'cash_payment:read'] } },
+      { label: 'Customers', href: '/customers', icon: Users, requires: { anyOf: ['customers:read'] } },
+    ],
+  },
+  {
+    title: 'Insights',
+    items: [
+      { label: 'SSR', href: '/reports/ssr', icon: BarChart3, requires: { anyOf: ['ssr:read'] } },
     ],
   },
   {
