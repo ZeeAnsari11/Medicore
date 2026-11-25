@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
   type ColumnDef,
+  FilterPanel,
 } from '@medicore/ui';
 import { usePurchase, usePurchasesPage } from '@/hooks/use-purchases';
 import { OpenFromUrl } from '@/components/open-from-url';
@@ -192,79 +193,81 @@ export default function PurchasesPage() {
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <ComboboxWithCreate
-          options={vendorOptions}
-          value={vendorId}
-          onChange={setVendorId}
-          placeholder="All vendors"
-          searchPlaceholder="Search vendors..."
-          emptyMessage="No vendors found."
-          className="w-52"
-        />
-        <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-          <SelectTrigger className="w-40" aria-label="Payment status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All payments</SelectItem>
-            {Object.values(PaymentStatus).map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={returnStatus} onValueChange={setReturnStatus}>
-          <SelectTrigger className="w-56" aria-label="Return status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All returns</SelectItem>
-            <SelectItem value="ANY">Any return (partial or full)</SelectItem>
-            <SelectItem value={ReturnStatus.PARTIAL}>Partially returned</SelectItem>
-            <SelectItem value={ReturnStatus.FULL}>Fully returned</SelectItem>
-          </SelectContent>
-        </Select>
-        <Select value={status} onValueChange={setStatus}>
-          <SelectTrigger className="w-40" aria-label="Status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All statuses</SelectItem>
-            {Object.values(PurchaseStatus).map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          From
-          <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          To
-          <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
-        </label>
-        <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-          Rows per page
-          <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
-            <SelectTrigger className="w-20" aria-label="Rows per page">
+        <FilterPanel activeCount={[vendorId !== ALL, paymentStatus !== ALL, returnStatus !== ALL, status !== ALL, !!dateFrom, !!dateTo].filter(Boolean).length}>
+          <ComboboxWithCreate
+            options={vendorOptions}
+            value={vendorId}
+            onChange={setVendorId}
+            placeholder="All vendors"
+            searchPlaceholder="Search vendors..."
+            emptyMessage="No vendors found."
+            className="w-52"
+          />
+          <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+            <SelectTrigger className="w-40" aria-label="Payment status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
+              <SelectItem value={ALL}>All payments</SelectItem>
+              {Object.values(PaymentStatus).map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </label>
-        <Button
-          disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
-          Clear filters
-        </Button>
+          <Select value={returnStatus} onValueChange={setReturnStatus}>
+            <SelectTrigger className="w-56" aria-label="Return status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All returns</SelectItem>
+              <SelectItem value="ANY">Any return (partial or full)</SelectItem>
+              <SelectItem value={ReturnStatus.PARTIAL}>Partially returned</SelectItem>
+              <SelectItem value={ReturnStatus.FULL}>Fully returned</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={status} onValueChange={setStatus}>
+            <SelectTrigger className="w-40" aria-label="Status">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All statuses</SelectItem>
+              {Object.values(PurchaseStatus).map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            From
+            <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            To
+            <Input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className="w-40" />
+          </label>
+          <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            Rows per page
+            <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+              <SelectTrigger className="w-20" aria-label="Rows per page">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <Button
+            disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        </FilterPanel>
       </div>
 
       {isLoading ? (

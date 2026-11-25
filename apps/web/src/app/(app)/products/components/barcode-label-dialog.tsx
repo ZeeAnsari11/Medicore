@@ -83,7 +83,7 @@ export function BarcodeLabelDialog({ open, onOpenChange, product }: BarcodeLabel
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Format</Label>
               <Select value={format} onValueChange={(v) => setFormat(v as BarcodeFormat)}>
@@ -109,7 +109,7 @@ export function BarcodeLabelDialog({ open, onOpenChange, product }: BarcodeLabel
 
         <div
           data-print-area="true"
-          className="grid grid-cols-3 gap-3 rounded-lg border p-4 print:grid-cols-4 print:gap-2 print:border-0 print:p-0"
+          className="grid grid-cols-1 sm:grid-cols-3 gap-3 rounded-lg border p-4 print:grid-cols-4 print:gap-2 print:border-0 print:p-0"
         >
           {Array.from({ length: quantity }).map((_, i) => (
             <div

@@ -75,8 +75,9 @@ export default function ProfitLossPage() {
       <PageHeader
         title="Profit & Loss"
         description="Revenue vs expenses, or gross profit by customer, vendor, manufacturer, order booker, city, territory or product, for a date range."
-        actions={
-          <div className="flex items-center gap-3">
+        activeFilterCount={startDate !== daysAgoISO(30) || endDate !== todayISO() ? 1 : 0}
+        filters={
+          <>
             <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" aria-label="From date" />
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" aria-label="To date" />
             <Button
@@ -90,11 +91,11 @@ export default function ProfitLossPage() {
             >
               Clear filters
             </Button>
-          </div>
+          </>
         }
       />
 
-      <div className="mb-6 flex flex-wrap gap-2">
+      <div className="mb-6 flex flex-wrap gap-2 max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:[&>*]:shrink-0">
         <Button
           size="sm"
           variant={groupBy === null && !marginView ? 'default' : 'outline'}

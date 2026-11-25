@@ -109,7 +109,7 @@ export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDia
             {errors.productId && <p className="text-xs text-destructive">{errors.productId.message}</p>}
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="batchNumber">Batch number</Label>
               <Input
@@ -131,7 +131,7 @@ export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDia
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="operation">Operation</Label>
               <Controller
@@ -163,7 +163,7 @@ export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDia
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="purchasePrice">Purchase price</Label>
               <Input id="purchasePrice" type="number" step="0.01" placeholder="Optional" {...register('purchasePrice')} />

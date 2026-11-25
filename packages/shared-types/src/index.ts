@@ -87,8 +87,6 @@ export type {
 } from './report';
 export type {
   Account,
-  CreateAccountRequest,
-  UpdateAccountRequest,
   JournalEntryLine,
   JournalEntry,
   CreateManualJournalEntryLineRequest,
@@ -128,8 +126,6 @@ export type {
   PartyBalanceRow,
   PartyBalancesResponse,
   GeneralLedgerResponse,
-  TrialBalanceRow,
-  TrialBalanceResponse,
   ProfitLossRow,
   ProfitLossResponse,
   ProfitGroupBy,

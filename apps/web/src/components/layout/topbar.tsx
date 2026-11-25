@@ -5,7 +5,7 @@ import { LogOut, User, Moon, Sun, Settings, PanelLeft } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { useDarkMode } from '@/hooks/use-dark-mode';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
-import { BranchFilter } from '@/components/branch-filter';
+import { BranchFilter, hidesBranchFilter } from '@/components/branch-filter';
 import { navSections } from './nav-config';
 import { TopbarActionsTarget, TopbarSlotTarget } from './topbar-slot';
 import {
@@ -42,16 +42,15 @@ export function Topbar({ sidebarOpen, onShowSidebar }: TopbarProps) {
       .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
       .sort((a, b) => b.href.length - a.href.length)[0]?.label ?? 'Medicore';
 
-  // Create/edit document screens have their own Branch field; the viewing filter has no role there.
-  const hideBranchFilter = /^\/(purchases|sales)\/(new|[^/]+\/edit)$/.test(pathname);
+  const hideBranchFilter = hidesBranchFilter(pathname);
 
   const initials = user?.username ? user.username.slice(0, 2).toUpperCase() : '??';
 
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-950/80 border-b border-slate-200/50 dark:border-slate-800/50">
-      <div className="px-8 h-16 flex items-center justify-between">
+      <div className="px-3 sm:px-8 min-h-16 py-2 sm:py-0 flex flex-wrap items-center justify-between gap-y-2">
         {/* Left: page-provided title (TopbarContent) or the default route title */}
-        <div className="flex min-w-0 flex-1 items-center pr-4">
+        <div className="flex min-w-[9rem] flex-1 items-center pr-2 sm:min-w-0 sm:pr-4">
           {/* The hide button lives in the sidebar header; this one only appears once the sidebar is hidden. */}
           {!sidebarOpen && (
             <button
@@ -70,11 +69,17 @@ export function Topbar({ sidebarOpen, onShowSidebar }: TopbarProps) {
         </div>
 
         {/* Right: Actions */}
-        <div className="flex shrink-0 items-center gap-2">
-          {!hideBranchFilter && <BranchFilter filter={branchFilter} viewing />}
+        <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-1 sm:gap-2">
+          {/* Below md the branch selector lives in the sidebar drawer. */}
+          {!hideBranchFilter && (
+            <div className="hidden md:block">
+              <BranchFilter filter={branchFilter} viewing />
+            </div>
+          )}
 
           {/* Page actions (PageHeader) */}
-          <TopbarActionsTarget className="mr-2 flex items-center gap-2" />
+          {/* Below sm, "+ Add" style actions collapse to just the plus so the bar stays on one row. */}
+          <TopbarActionsTarget className="mr-1 flex items-center gap-2 sm:mr-2 max-sm:[&_button:has(>svg.lucide-plus)]:text-[0px] max-sm:[&_svg.lucide-plus]:!mr-0" />
 
           {/* Dark Mode Toggle */}
           <button
@@ -92,7 +97,7 @@ export function Topbar({ sidebarOpen, onShowSidebar }: TopbarProps) {
           {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-3 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+              <button className="flex items-center gap-3 px-1.5 sm:px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-md">
                   {initials}
                 </div>

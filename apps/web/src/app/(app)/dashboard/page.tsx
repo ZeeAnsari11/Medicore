@@ -89,7 +89,7 @@ function FinanceKpis({ branchId }: { branchId: string | null }) {
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-semibold">Finance</h2>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((card) => (
           <Card key={card.title} className={cn('relative', card.href && 'transition-colors hover:bg-muted/40')}>
             <CardHeader className="pb-2">

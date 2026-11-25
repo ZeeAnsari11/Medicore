@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Input } from '@medicore/ui';
+import { Button, FilterPanel, Input } from '@medicore/ui';
 import { BranchFilter } from '@/components/branch-filter';
 import type { BranchFilterState } from '@/hooks/use-branch-filter';
 
@@ -65,32 +65,34 @@ export function LedgerFilters({ from, to, branchFilter, onChange }: LedgerFilter
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Period">
-        {PRESETS.map((p) => (
-          <Button
-            key={p.key}
-            size="sm"
-            variant={activePreset === p.key ? 'default' : 'outline'}
-            onClick={() => onChange(p.range())}
-          >
-            {p.label}
-          </Button>
-        ))}
-        {!activePreset && <span className="px-2 text-sm font-medium text-muted-foreground">Custom range</span>}
-      </div>
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        From
-        <Input type="date" value={from} max={to || undefined} onChange={(e) => onChange({ from: e.target.value })} className="w-40" />
-      </label>
-      <label className="flex items-center gap-2 text-sm text-muted-foreground">
-        To
-        <Input type="date" value={to} min={from || undefined} onChange={(e) => onChange({ to: e.target.value })} className="w-40" />
-      </label>
-      <BranchFilter filter={branchFilter} />
-      <Button
-        disabled={!(!isDefault)} variant="outline" size="sm" onClick={() => onChange(def)}>
-        Clear filters
-      </Button>
+      <FilterPanel activeCount={isDefault ? 0 : 1}>
+        <div className="col-span-2 flex flex-wrap items-center gap-1.5 md:col-span-1" role="group" aria-label="Period">
+          {PRESETS.map((p) => (
+            <Button
+              key={p.key}
+              size="sm"
+              variant={activePreset === p.key ? 'default' : 'outline'}
+              onClick={() => onChange(p.range())}
+            >
+              {p.label}
+            </Button>
+          ))}
+          {!activePreset && <span className="px-2 text-sm font-medium text-muted-foreground">Custom range</span>}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          From
+          <Input type="date" value={from} max={to || undefined} onChange={(e) => onChange({ from: e.target.value })} className="w-40" />
+        </label>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          To
+          <Input type="date" value={to} min={from || undefined} onChange={(e) => onChange({ to: e.target.value })} className="w-40" />
+        </label>
+        <BranchFilter filter={branchFilter} />
+        <Button
+          disabled={!(!isDefault)} variant="outline" size="sm" onClick={() => onChange(def)}>
+          Clear filters
+        </Button>
+      </FilterPanel>
     </div>
   );
 }

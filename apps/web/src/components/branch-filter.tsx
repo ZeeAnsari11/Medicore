@@ -5,6 +5,9 @@ import type { BranchFilterState } from '@/hooks/use-branch-filter';
 
 const ALL_BRANCHES = '__all__';
 
+/** Create/edit document screens have their own Branch field; the viewing filter has no role there. */
+export const hidesBranchFilter = (pathname: string) => /^\/(purchases|sales)\/(new|[^/]+\/edit)$/.test(pathname);
+
 /** Branch dropdown for admins, read-only label for branch users, nothing for a single-branch admin. */
 export function BranchFilter({
   filter,

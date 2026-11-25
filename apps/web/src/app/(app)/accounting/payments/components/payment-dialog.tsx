@@ -179,7 +179,7 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
         )}
 
         <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Party Type</Label>
               <Select value={partyType} onValueChange={(v) => handlePartyTypeChange(v as PartyType)}>
@@ -209,7 +209,7 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label>Amount</Label>
               <Input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -244,7 +244,7 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label>Date</Label>
               <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />

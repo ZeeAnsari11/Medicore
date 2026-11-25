@@ -6,8 +6,6 @@ import { JournalEntry, JournalEntryDocument, LEDGER_VISIBLE_STATUSES } from './s
 import { round2 } from './accounting-posting.service';
 import { AccountType, JournalEntryStatus } from '@medicore/shared-types';
 import type {
-  TrialBalanceResponse,
-  TrialBalanceRow,
   ProfitLossResponse,
   BalanceSheetResponse,
   AccountingOverviewResponse,
@@ -19,64 +17,6 @@ export class LedgerReportsService {
     @InjectModel(Account.name) private readonly accountModel: Model<AccountDocument>,
     @InjectModel(JournalEntry.name) private readonly journalEntryModel: Model<JournalEntryDocument>,
   ) {}
-
-  async getTrialBalance(
-    tenantId: string,
-    branchId: string | null,
-    asOfDate?: string,
-  ): Promise<TrialBalanceResponse> {
-    const match: Record<string, unknown> = {
-      tenantId: new Types.ObjectId(tenantId),
-      status: { $in: LEDGER_VISIBLE_STATUSES },
-      deletedAt: null,
-    };
-    if (branchId) match.branchId = new Types.ObjectId(branchId);
-    if (asOfDate) match.entryDate = { $lte: new Date(asOfDate) };
-
-    const totals = await this.journalEntryModel.aggregate<{
-      _id: string;
-      debit: number;
-      credit: number;
-    }>([
-      { $match: match },
-      { $unwind: '$lines' },
-      {
-        $group: {
-          _id: '$lines.accountId',
-          debit: { $sum: '$lines.debit' },
-          credit: { $sum: '$lines.credit' },
-        },
-      },
-    ]);
-
-    const accounts = await this.accountModel.find({ tenantId: new Types.ObjectId(tenantId) });
-    const accountById = new Map(accounts.map((a) => [a.id, a]));
-
-    const rows: TrialBalanceRow[] = [];
-    let totalDebit = 0;
-    let totalCredit = 0;
-    for (const t of totals) {
-      const account = accountById.get(t._id);
-      if (!account) continue;
-      const net = round2(t.debit - t.credit);
-      const debit = net >= 0 ? net : 0;
-      const credit = net < 0 ? -net : 0;
-      if (debit === 0 && credit === 0) continue;
-      rows.push({
-        accountId: account.id,
-        accountCode: account.code,
-        accountName: account.name,
-        type: account.type,
-        debit,
-        credit,
-      });
-      totalDebit += debit;
-      totalCredit += credit;
-    }
-    rows.sort((a, b) => a.accountCode.localeCompare(b.accountCode));
-
-    return { rows, totalDebit: round2(totalDebit), totalCredit: round2(totalCredit) };
-  }
 
   async getProfitLoss(
     tenantId: string,

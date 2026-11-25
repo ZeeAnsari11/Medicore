@@ -123,7 +123,7 @@ export function PlanDialog({ open, mode, plan, onOpenChange }: PlanDialogProps) 
             <Input id="description" placeholder="For growing pharmacies" {...register('description')} />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="price">Price</Label>
               <Input
@@ -150,7 +150,7 @@ export function PlanDialog({ open, mode, plan, onOpenChange }: PlanDialogProps) 
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label htmlFor="billingInterval">Billing interval</Label>
               <Select

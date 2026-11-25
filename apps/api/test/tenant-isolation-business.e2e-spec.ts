@@ -422,10 +422,7 @@ describe('tenant isolation: business modules (e2e)', () => {
       expect(ledgerA).not.toContain(b.purchaseId);
     });
 
-    it('general ledger and trial balance totals differ per tenant', async () => {
-      const tbA = await get(A, 'accounting/reports/trial-balance');
-      const tbB = await get(B, 'accounting/reports/trial-balance');
-      expect(JSON.stringify(tbA)).not.toEqual(JSON.stringify(tbB));
+    it('general ledger totals differ per tenant', async () => {
       const glA = await get(A, `accounting/general-ledger?accountId=${a.accountId}`);
       const glB = await get(B, `accounting/general-ledger?accountId=${b.accountId}`);
       expect(glA.totalDebit).not.toBe(glB.totalDebit);

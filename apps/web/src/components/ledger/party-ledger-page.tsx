@@ -15,6 +15,7 @@ import {
   ComboboxWithCreate,
   Input,
   Switch,
+  FilterPanel,
   Table,
   TableBody,
   TableCell,
@@ -209,38 +210,40 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
               placeholder={`Search ${config.plural}...`}
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="w-64"
+              className="w-full sm:w-64 max-md:flex-1"
             />
-            <label className="flex items-center gap-2 text-sm">
-              <Switch checked={hasBalance} onCheckedChange={(v) => url.set({ bal: v ? '1' : null, lpage: null })} />
-              Has balance only
-            </label>
-            <Button
-              disabled={!((searchInput || hasBalance))}
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSearchInput('');
-                url.set({ q: null, bal: null, lpage: null }, { replace: true });
-              }}
-            >
-              Clear filters
-            </Button>
-            <div className="ml-auto">
-              <LedgerExportButtons
-                permission={exportPermission}
-                path={`/accounting/${config.kind}/balances/export`}
-                query={{
-                  branchId: branchId || undefined,
-                  search: q || undefined,
-                  hasBalance: hasBalance ? 'true' : undefined,
-                  sortBy,
-                  sortDir,
+            <FilterPanel activeCount={hasBalance ? 1 : 0}>
+              <label className="flex items-center gap-2 text-sm">
+                <Switch checked={hasBalance} onCheckedChange={(v) => url.set({ bal: v ? '1' : null, lpage: null })} />
+                Has balance only
+              </label>
+              <Button
+                disabled={!((searchInput || hasBalance))}
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchInput('');
+                  url.set({ q: null, bal: null, lpage: null }, { replace: true });
                 }}
-                baseName={`all-${config.kind}-ledger`}
-                disabled={!balances}
-              />
-            </div>
+              >
+                Clear filters
+              </Button>
+              <div className="ml-auto">
+                <LedgerExportButtons
+                  permission={exportPermission}
+                  path={`/accounting/${config.kind}/balances/export`}
+                  query={{
+                    branchId: branchId || undefined,
+                    search: q || undefined,
+                    hasBalance: hasBalance ? 'true' : undefined,
+                    sortBy,
+                    sortDir,
+                  }}
+                  baseName={`all-${config.kind}-ledger`}
+                  disabled={!balances}
+                />
+              </div>
+            </FilterPanel>
           </div>
         )}
       </div>
@@ -252,7 +255,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
           <div className={listFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
             {balances.summary && (
               <div className="mb-4 space-y-3">
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   <SummaryCard title="Opening balance" value={balances.summary.openingBalance} />
                   <SummaryCard title={config.billedLabel} value={balances.summary.billed} />
                   <SummaryCard title={config.settledLabel} value={balances.summary.settled} />
@@ -348,7 +351,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
         spinner
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <SummaryCard title="Opening balance" value={s.openingBalance} />
             <SummaryCard title={config.billedLabel} value={s.billed} />
             <SummaryCard title={config.settledLabel} value={s.settled} />

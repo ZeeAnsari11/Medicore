@@ -46,3 +46,4 @@ coverage/
 scripts/pharmax-login.local
 dist-pharmax/
 scripts/pharmax-share.info
+.playwright-mcp/

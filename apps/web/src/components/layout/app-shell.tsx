@@ -15,7 +15,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
   const router = useRouter();
   const { hasAnyModule } = usePermissions();
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The sidebar is an overlay drawer on phones, so start it closed there. The shell only renders
+  // once the user has loaded on the client, so reading the viewport here cannot mismatch the server HTML.
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => typeof window === 'undefined' || !window.matchMedia('(max-width: 767px)').matches,
+  );
 
   useEffect(() => {
     if (!isLoading) {
@@ -38,11 +42,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <TopbarSlotProvider>
       <div className="flex h-screen overflow-hidden bg-background">
+        {sidebarOpen && (
+          <div
+            aria-hidden
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          />
+        )}
         <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(false)} />
         <div className="flex min-w-0 flex-1 flex-col">
           {user.impersonatedBy && <ImpersonationBanner username={user.username} />}
           <Topbar sidebarOpen={sidebarOpen} onShowSidebar={() => setSidebarOpen(true)} />
-          <main className="flex-1 overflow-y-auto p-6">
+          <main className="flex-1 overflow-y-auto p-3 sm:p-6">
             {hasAnyModule ? (
               children
             ) : (

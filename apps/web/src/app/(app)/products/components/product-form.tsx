@@ -227,7 +227,7 @@ export function ProductForm({ formId, product, showVendor, lockedBranchId, onSub
           <Input id="barcode" placeholder="Optional" {...register('barcode')} />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="unit">Unit</Label>
             <Input
@@ -244,7 +244,7 @@ export function ProductForm({ formId, product, showVendor, lockedBranchId, onSub
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {PRICE_FIELDS.map(({ name, label, hint }) => (
             <div key={name} className="space-y-1.5">
               <Label htmlFor={name}>
@@ -277,7 +277,7 @@ export function ProductForm({ formId, product, showVendor, lockedBranchId, onSub
           ))}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="minStockLevel">Min stock level</Label>
             <Input id="minStockLevel" type="number" placeholder="Optional" {...register('minStockLevel')} />

@@ -7,6 +7,8 @@ import { Pill, ChevronUp, PanelLeft } from 'lucide-react';
 import { cn, can } from '@medicore/ui';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermissions } from '@/hooks/use-permissions';
+import { useBranchFilter } from '@/hooks/use-branch-filter';
+import { BranchFilter, hidesBranchFilter } from '@/components/branch-filter';
 import { navSections } from './nav-config';
 
 /** Sections with no heading: the single Dashboard link sits on its own above the groups. */
@@ -16,6 +18,7 @@ export function Sidebar({ open = true, onToggle }: { open?: boolean; onToggle: (
   const pathname = usePathname();
   const { user } = useAuth();
   const { isAdmin, permissions } = usePermissions();
+  const branchFilter = useBranchFilter();
   const [collapsed, setCollapsed] = useState<string[]>([]);
 
   const toggle = (title: string) =>
@@ -30,8 +33,9 @@ export function Sidebar({ open = true, onToggle }: { open?: boolean; onToggle: (
     <aside
       inert={!open}
       className={cn(
-        'h-screen w-64 shrink-0 transition-[margin] duration-200 bg-slate-50 dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden',
-        !open && '-ml-64',
+        // Below md the sidebar is an off-canvas drawer over the page; from md up it sits in the flow.
+        'fixed inset-y-0 left-0 z-50 h-dvh w-64 max-w-[85vw] transition-transform duration-200 md:static md:z-auto md:h-screen md:max-w-none md:shrink-0 md:transition-[margin] bg-slate-50 dark:bg-slate-900 border-r border-slate-200/70 dark:border-slate-800 flex flex-col overflow-hidden',
+        !open && '-translate-x-full md:translate-x-0 md:-ml-64',
       )}
     >
       {/* Brand */}
@@ -49,6 +53,13 @@ export function Sidebar({ open = true, onToggle }: { open?: boolean; onToggle: (
           <PanelLeft className="w-5 h-5 text-slate-600 dark:text-slate-400" />
         </button>
       </div>
+
+      {/* The top bar drops its branch selector below md, so it sits here instead. */}
+      {!hidesBranchFilter(pathname) && (
+        <div className="px-4 pb-3 md:hidden [&_button]:!w-auto [&_button]:min-w-0 [&_button]:flex-1">
+          <BranchFilter filter={branchFilter} viewing />
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
@@ -88,6 +99,9 @@ export function Sidebar({ open = true, onToggle }: { open?: boolean; onToggle: (
                         <Link
                           key={item.href}
                           href={item.href}
+                          onClick={() => {
+                            if (window.matchMedia('(max-width: 767px)').matches) onToggle();
+                          }}
                           className={cn(
                             'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
                             isActive

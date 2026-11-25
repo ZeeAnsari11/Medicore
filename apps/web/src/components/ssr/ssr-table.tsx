@@ -215,15 +215,25 @@ export function SsrTable({ report, search, onSearch, sort, onSort, onProductInvo
             </TableRow>
           </TableHeader>
           <TableBody>
-            {report.rows.map((r) => renderRow(r, 0, ''))}
-            <TableRow className="border-t-2 bg-muted/50 font-semibold">
-              <TableCell>{search.trim() ? 'Total (matching search)' : 'Grand total'}</TableCell>
-              {shown.map((c) => (
-                <TableCell key={c.key} className="text-right tabular-nums">
-                  {c.render(report.totals)}
+            {report.rows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={shown.length + 1} className="h-32 text-center text-sm text-muted-foreground">
+                  {search.trim() ? `No results for "${search.trim()}".` : 'No sales found for these filters.'}
                 </TableCell>
-              ))}
-            </TableRow>
+              </TableRow>
+            ) : (
+              <>
+                {report.rows.map((r) => renderRow(r, 0, ''))}
+                <TableRow className="border-t-2 bg-muted/50 font-semibold">
+                  <TableCell>{search.trim() ? 'Total (matching search)' : 'Grand total'}</TableCell>
+                  {shown.map((c) => (
+                    <TableCell key={c.key} className="text-right tabular-nums">
+                      {c.render(report.totals)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </>
+            )}
           </TableBody>
         </Table>
       </div>

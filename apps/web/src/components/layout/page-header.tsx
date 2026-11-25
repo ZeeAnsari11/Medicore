@@ -1,15 +1,21 @@
 'use client';
 
+import { FilterPanel } from '@medicore/ui';
 import { TopbarActionsContent, TopbarContent, useHasTopbarSlot } from './topbar-slot';
 
 export function PageHeader({
   title,
   description,
   actions,
+  filters,
+  activeFilterCount,
 }: {
   title: string;
   description?: string;
   actions?: React.ReactNode;
+  /** Filter controls for the page. In the top bar from md up; behind a Filters button in the page body on phones. */
+  filters?: React.ReactNode;
+  activeFilterCount?: number;
 }) {
   const inTopbar = useHasTopbarSlot();
 
@@ -25,7 +31,17 @@ export function PageHeader({
             )}
           </div>
         </TopbarContent>
-        {actions && <TopbarActionsContent>{actions}</TopbarActionsContent>}
+        {(actions || filters) && (
+          <TopbarActionsContent>
+            {filters && <div className="hidden items-center gap-3 md:flex">{filters}</div>}
+            {actions}
+          </TopbarActionsContent>
+        )}
+        {filters && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 md:hidden">
+            <FilterPanel activeCount={activeFilterCount}>{filters}</FilterPanel>
+          </div>
+        )}
       </>
     );
   }
@@ -36,7 +52,12 @@ export function PageHeader({
         <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {(actions || filters) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {filters}
+          {actions}
+        </div>
+      )}
     </div>
   );
 }

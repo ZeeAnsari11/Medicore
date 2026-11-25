@@ -69,7 +69,7 @@ export class ExpenseCategoriesService implements OnModuleInit {
    * Keeps the main categories in step with the expense accounts, lazily and idempotently (nothing to migrate):
    * - categories from before branches mattered move to the main branch;
    * - the built-in expense accounts (Operating Expenses, ...) are a category in every branch;
-   * - an expense account nobody has made a category for (added in the Chart of Accounts) is one in every branch.
+   * - an expense account nobody has made a category for is one in every branch.
    * A category a user makes belongs to the one branch they made it in.
    */
   async ensureMainCategories(tenantId: string): Promise<void> {
@@ -315,7 +315,7 @@ export class ExpenseCategoriesService implements OnModuleInit {
           branchName: branchName.get(String(c.branchId)),
           accountId: c.accountId,
           isSystem: !!account?.isSystemAccount || !!c.isDefault,
-          // A main category whose account was deactivated in the Chart of Accounts can't take new expenses either.
+          // A main category whose account was deactivated can't take new expenses either.
           isActive: c.isActive && !!account?.isActive,
           expenseCount: use.count,
           totalAmount: use.total,

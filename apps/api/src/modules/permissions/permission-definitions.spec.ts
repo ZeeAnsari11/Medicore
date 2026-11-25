@@ -32,7 +32,6 @@ describe('permission definitions', () => {
         'sales:void',
         'purchases:return',
         'purchases:record_payment',
-        'acc_trial_balance:read',
         'acc_general_ledger:export',
         'acc_payments:create',
         'acc_journal_entries:create',

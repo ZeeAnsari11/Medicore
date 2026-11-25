@@ -693,8 +693,8 @@ export default function CashReceiptPage() {
   return (
     <PageAccessGuard requires={['cash_receipt:read', 'cash_payment:read']}>
       <TopbarContent>
-        <h1 className="text-lg font-semibold tracking-tight">{text.title}</h1>
-        <div className="ml-4 inline-flex rounded-md border p-0.5" role="group" aria-label="Receipt type">
+        <h1 className="min-w-0 truncate text-lg font-semibold tracking-tight">{text.title}</h1>
+        <div className="ml-2 inline-flex shrink-0 rounded-md border p-0.5 sm:ml-4" role="group" aria-label="Receipt type">
           {(['sale', 'purchase'] as const).map((k) => (
             <Button
               key={k}
@@ -716,10 +716,15 @@ export default function CashReceiptPage() {
             </Button>
           ))}
         </div>
-        <div className="ml-4">
+        <div className="ml-4 hidden md:block">
           <BranchFilter filter={branchFilter} allowAll={false} disabled={rows.length > 0} />
         </div>
       </TopbarContent>
+
+      {/* Below md the top bar has no room for the branch selector. */}
+      <div className="mb-3 md:hidden">
+        <BranchFilter filter={branchFilter} allowAll={false} disabled={rows.length > 0} />
+      </div>
 
       {isAdmin && !branchId && (
         <Alert className="mb-6">

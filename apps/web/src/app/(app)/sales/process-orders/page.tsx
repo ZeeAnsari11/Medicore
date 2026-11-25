@@ -19,6 +19,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  FilterPanel,
 } from '@medicore/ui';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -63,19 +64,21 @@ function Content() {
       <PageHeader title="Process Orders" description="Confirm or reject the orders placed by each Order Booker." />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <Input
-          type="date"
-          aria-label="Order date"
-          className="w-44"
-          value={date}
-          max={karachiToday()}
-          onChange={(e) => url.set({ date: e.target.value || null, booker: null })}
-        />
-        <BranchFilter filter={branchFilter} />
-        <Button
-          disabled={!((url.get('date') || bookerId))} variant="outline" size="sm" onClick={() => url.set({ date: null, booker: null })}>
-          Clear filters
-        </Button>
+        <FilterPanel activeCount={url.get('date') || bookerId ? 1 : 0}>
+          <Input
+            type="date"
+            aria-label="Order date"
+            className="w-44"
+            value={date}
+            max={karachiToday()}
+            onChange={(e) => url.set({ date: e.target.value || null, booker: null })}
+          />
+          <BranchFilter filter={branchFilter} />
+          <Button
+            disabled={!((url.get('date') || bookerId))} variant="outline" size="sm" onClick={() => url.set({ date: null, booker: null })}>
+            Clear filters
+          </Button>
+        </FilterPanel>
       </div>
 
       {error ? (

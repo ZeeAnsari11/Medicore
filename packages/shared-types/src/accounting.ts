@@ -34,20 +34,6 @@ export interface Account extends TenantOwnedEntity {
   deletedAt: string | null;
 }
 
-export interface CreateAccountRequest {
-  code: string;
-  name: string;
-  type: AccountType;
-  parentAccountId?: string;
-  description?: string;
-}
-
-export interface UpdateAccountRequest {
-  name?: string;
-  description?: string;
-  isActive?: boolean;
-}
-
 /* ------------------------------------------------------------------ */
 /* Journal Entries                                                     */
 /* ------------------------------------------------------------------ */
@@ -552,21 +538,6 @@ export interface PartyBalancesResponse {
   };
   /** Ledger summary cards for all parties together, over all time (absent from older servers). */
   summary?: PartyLedgerSummary;
-}
-
-export interface TrialBalanceRow {
-  accountId: string;
-  accountCode: string;
-  accountName: string;
-  type: AccountType;
-  debit: number;
-  credit: number;
-}
-
-export interface TrialBalanceResponse {
-  rows: TrialBalanceRow[];
-  totalDebit: number;
-  totalCredit: number;
 }
 
 export interface ProfitLossRow {

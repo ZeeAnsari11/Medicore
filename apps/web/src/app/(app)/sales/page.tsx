@@ -19,6 +19,8 @@ import {
   SelectTrigger,
   SelectValue,
   type ColumnDef,
+  FilterPanel,
+  CollapsibleSection,
 } from '@medicore/ui';
 import { salesReportPath, useOrderBookers, useSale, useSalesPage } from '@/hooks/use-sales';
 import { useDocumentPdf } from '@/hooks/use-document-pdf';
@@ -115,6 +117,7 @@ export default function SalesPage() {
   const canSeeAll = has('sales:view_all');
   const { orderBookers } = useOrderBookers(selectedBranchId, canSeeAll);
   const hasFilters = customerId !== ALL || orderBookerId !== ALL || paymentStatus !== ALL || returnStatus !== ALL || !!startDate || !!endDate || !!search;
+  const activeFilterCount = [customerId !== ALL, orderBookerId !== ALL, paymentStatus !== ALL, returnStatus !== ALL, !!startDate, !!endDate].filter(Boolean).length;
   const clearFilters = () => {
     setCustomerId(ALL);
     setOrderBookerId(ALL);
@@ -220,99 +223,115 @@ export default function SalesPage() {
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <ComboboxWithCreate
-          options={customerOptions}
-          value={customerId}
-          onChange={setCustomerId}
-          placeholder="All customers"
-          searchPlaceholder="Search customers..."
-          emptyMessage="No customers found."
-          className={`w-52 ${active(customerId !== ALL)}`}
-        />
-        {canSeeAll && (
-          <Select value={orderBookerId} onValueChange={setOrderBookerId}>
-            <SelectTrigger className={`w-48 ${active(orderBookerId !== ALL)}`} aria-label="Order Booker">
+        <FilterPanel activeCount={activeFilterCount}>
+          <ComboboxWithCreate
+            options={customerOptions}
+            value={customerId}
+            onChange={setCustomerId}
+            placeholder="All customers"
+            searchPlaceholder="Search customers..."
+            emptyMessage="No customers found."
+            className={`w-52 ${active(customerId !== ALL)}`}
+          />
+          {canSeeAll && (
+            <Select value={orderBookerId} onValueChange={setOrderBookerId}>
+              <SelectTrigger className={`w-48 ${active(orderBookerId !== ALL)}`} aria-label="Order Booker">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>All Order Bookers</SelectItem>
+                {orderBookers.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    {o.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <Select value={paymentStatus} onValueChange={setPaymentStatus}>
+            <SelectTrigger className={`w-40 ${active(paymentStatus !== ALL)}`} aria-label="Payment status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value={ALL}>All Order Bookers</SelectItem>
-              {orderBookers.map((o) => (
-                <SelectItem key={o.id} value={o.id}>
-                  {o.name}
+              <SelectItem value={ALL}>All payments</SelectItem>
+              {Object.values(PaymentStatus).map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        )}
-        <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-          <SelectTrigger className={`w-40 ${active(paymentStatus !== ALL)}`} aria-label="Payment status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All payments</SelectItem>
-            {Object.values(PaymentStatus).map((s) => (
-              <SelectItem key={s} value={s}>
-                {s}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={returnStatus} onValueChange={setReturnStatus}>
-          <SelectTrigger className={`w-56 ${active(returnStatus !== ALL)}`} aria-label="Return status">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All returns</SelectItem>
-            <SelectItem value="ANY">Any return (partial or full)</SelectItem>
-            <SelectItem value={ReturnStatus.PARTIAL}>Partially returned</SelectItem>
-            <SelectItem value={ReturnStatus.FULL}>Fully returned</SelectItem>
-          </SelectContent>
-        </Select>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          From
-          <Input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={`w-40 ${active(!!startDate)}`} />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          To
-          <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className={`w-40 ${active(!!endDate)}`} />
-        </label>
-        <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-          Rows per page
-          <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
-            <SelectTrigger className="w-20" aria-label="Rows per page">
+          <Select value={returnStatus} onValueChange={setReturnStatus}>
+            <SelectTrigger className={`w-56 ${active(returnStatus !== ALL)}`} aria-label="Return status">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PAGE_SIZE_OPTIONS.map((n) => (
-                <SelectItem key={n} value={String(n)}>
-                  {n}
-                </SelectItem>
-              ))}
+              <SelectItem value={ALL}>All returns</SelectItem>
+              <SelectItem value="ANY">Any return (partial or full)</SelectItem>
+              <SelectItem value={ReturnStatus.PARTIAL}>Partially returned</SelectItem>
+              <SelectItem value={ReturnStatus.FULL}>Fully returned</SelectItem>
             </SelectContent>
           </Select>
-        </label>
-        <Button
-          disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
-          Clear filters
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={isOpening || total === 0}
-          onClick={() => void openPdf(salesReportPath({ ...filterParams, page: 1, limit: 1 }))}
-        >
-          <FileText className="mr-2 h-4 w-4" />
-          Report (PDF)
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setSupplyOpen(true)}>
-          <FileText className="mr-2 h-4 w-4" />
-          Supply reports
-        </Button>
-        <SupplyReportsDialog open={supplyOpen} onOpenChange={setSupplyOpen} branchId={selectedBranchId} canPickBranch={branchFilter.showDropdown} canPickBookers={canSeeAll} />
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            From
+            <Input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={`w-40 ${active(!!startDate)}`} />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            To
+            <Input type="date" value={endDate} min={startDate || undefined} onChange={(e) => setEndDate(e.target.value)} className={`w-40 ${active(!!endDate)}`} />
+          </label>
+          <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+            Rows per page
+            <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}>
+              <SelectTrigger className="w-20" aria-label="Rows per page">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <SelectItem key={n} value={String(n)}>
+                    {n}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+          <Button
+            disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={isOpening || total === 0}
+            onClick={() => void openPdf(salesReportPath({ ...filterParams, page: 1, limit: 1 }))}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Report (PDF)
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setSupplyOpen(true)}>
+            <FileText className="mr-2 h-4 w-4" />
+            Supply reports
+          </Button>
+          <SupplyReportsDialog open={supplyOpen} onOpenChange={setSupplyOpen} branchId={selectedBranchId} canPickBranch={branchFilter.showDropdown} canPickBookers={canSeeAll} />
+        </FilterPanel>
       </div>
 
       {summary && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <CollapsibleSection
+          className="mb-4 rounded-lg border p-2 sm:contents"
+          contentClassName="grid grid-cols-2 gap-2 sm:mb-4 sm:grid-cols-3 sm:gap-3 lg:grid-cols-6"
+          summary={
+            <>
+              <span className="font-medium">{summary.orders} orders</span>
+              <span className="text-muted-foreground">
+                {' · Net '}
+                {summary.net.toFixed(2)}
+                {' · Due '}
+                {summary.remaining.toFixed(2)}
+              </span>
+            </>
+          }
+        >
           {[
             ['Orders', String(summary.orders)],
             ['Gross Sale', summary.gross.toFixed(2)],
@@ -326,7 +345,7 @@ export default function SalesPage() {
               <p className="text-lg font-semibold">{value}</p>
             </div>
           ))}
-        </div>
+        </CollapsibleSection>
       )}
 
       {isLoading ? (

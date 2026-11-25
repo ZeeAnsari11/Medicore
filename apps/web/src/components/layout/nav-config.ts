@@ -13,7 +13,6 @@ import {
   Shield,
   Building2,
   Wallet,
-  BookOpen,
   CreditCard,
   RotateCcw,
   ClipboardList,
@@ -37,7 +36,6 @@ export const navSections: NavSection[] = [
     title: 'Accounting',
     items: [
       { label: 'Overview', href: '/accounting', icon: Wallet, requires: { anyOf: ['acc_overview:read'] } },
-      { label: 'Chart of Accounts', href: '/accounting/chart-of-accounts', icon: BookOpen, requires: { anyOf: ['acc_chart_of_accounts:read'] } },
       { label: 'Customer Ledger', href: '/accounting/customer-ledger', icon: Users, requires: { anyOf: ['acc_customer_ledger:read'] } },
       { label: 'Vendor Ledger', href: '/accounting/vendor-ledger', icon: Truck, requires: { anyOf: ['acc_vendor_ledger:read'] } },
       { label: 'Payments', href: '/accounting/payments', icon: CreditCard, requires: { anyOf: ['acc_payments:read'] } },
@@ -45,7 +43,6 @@ export const navSections: NavSection[] = [
       { label: 'Returns', href: '/accounting/returns', icon: RotateCcw, requires: { anyOf: ['acc_returns:read'] } },
       { label: 'General Ledger', href: '/accounting/general-ledger', icon: ClipboardList, requires: { anyOf: ['acc_general_ledger:read'] } },
       { label: 'Journal Entries', href: '/accounting/journal-entries', icon: FileText, requires: { anyOf: ['acc_journal_entries:read'] } },
-      { label: 'Trial Balance', href: '/accounting/trial-balance', icon: Scale, requires: { anyOf: ['acc_trial_balance:read'] } },
       { label: 'Profit & Loss', href: '/accounting/profit-loss', icon: LineChart, requires: { anyOf: ['acc_profit_loss:read'] } },
       { label: 'Balance Sheet', href: '/accounting/balance-sheet', icon: Scale, requires: { anyOf: ['acc_balance_sheet:read'] } },
     ],

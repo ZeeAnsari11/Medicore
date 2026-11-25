@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, Moon, Sun, Bell, Settings } from 'lucide-react';
+import { LogOut, Moon, Sun, Bell, Settings, Menu } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { useDarkMode } from '@/hooks/use-dark-mode';
@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@medicore/ui';
 
-export function PlatformTopbar() {
+export function PlatformTopbar({ onMenu }: { onMenu?: () => void }) {
   const { user, logout } = useAuth();
   const router = useRouter();
   const { isDark, toggleDarkMode } = useDarkMode();
@@ -27,10 +27,18 @@ export function PlatformTopbar() {
 
   return (
     <header className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-950/80 border-b border-slate-200/50 dark:border-slate-800/50">
-      <div className="px-8 h-16 flex items-center justify-between">
+      <div className="px-3 sm:px-8 h-16 flex items-center justify-between">
         {/* Left: Logo */}
-        <div className="flex-1">
-          <h1 className="text-xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-slate-200 bg-clip-text text-transparent">
+        <div className="flex min-w-0 flex-1 items-center">
+          <button
+            type="button"
+            onClick={onMenu}
+            aria-label="Open menu"
+            className="mr-2 shrink-0 rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800 md:hidden"
+          >
+            <Menu className="w-5 h-5 text-slate-600 dark:text-slate-400" />
+          </button>
+          <h1 className="truncate text-lg sm:text-xl font-bold bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 dark:from-white dark:via-slate-100 dark:to-slate-200 bg-clip-text text-transparent">
             Medicore Platform
           </h1>
         </div>
@@ -59,7 +67,7 @@ export function PlatformTopbar() {
           {/* User Menu */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-3 px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
+              <button className="flex items-center gap-3 px-1.5 sm:px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-xs font-bold shadow-md">
                   {initials}
                 </div>

@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Input,
+  FilterPanel,
 } from '@medicore/ui';
 import { useUrlState } from '@/hooks/use-url-state';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -148,44 +149,46 @@ function SsrContent() {
 
       <div className="mb-4 space-y-3">
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Period">
-            {PRESETS.map((p) => (
-              <Button
-                key={p.key}
-                size="sm"
-                variant={activePreset === p.key ? 'default' : 'outline'}
-                onClick={() => url.set({ ...p.range(), page: null })}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            From
-            <Input type="date" value={from} max={to} onChange={(e) => url.set({ from: e.target.value, to, page: null })} className="w-40" />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
-            To
-            <Input type="date" value={to} min={from} onChange={(e) => url.set({ from, to: e.target.value, page: null })} className="w-40" />
-          </label>
-          <BranchFilter filter={branchFilter} />
-          {has('sales:view_all') && (
-            <UserFilter
-              value={url.get('user') ? url.get('user').split(',') : []}
-              onChange={(v) => url.set({ user: v.join(','), page: null })}
-            />
-          )}
-          <Button
-            disabled={!((from !== def.from || to !== def.to || url.get('user') || searchInput))}
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSearchInput('');
-              url.set({ from: null, to: null, user: null, q: null, page: null });
-            }}
-          >
-            Clear filters
-          </Button>
+          <FilterPanel activeCount={[from !== def.from || to !== def.to, !!url.get('user')].filter(Boolean).length}>
+            <div className="col-span-2 flex flex-wrap items-center gap-1.5 md:col-span-1" role="group" aria-label="Period">
+              {PRESETS.map((p) => (
+                <Button
+                  key={p.key}
+                  size="sm"
+                  variant={activePreset === p.key ? 'default' : 'outline'}
+                  onClick={() => url.set({ ...p.range(), page: null })}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              From
+              <Input type="date" value={from} max={to} onChange={(e) => url.set({ from: e.target.value, to, page: null })} className="w-40" />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              To
+              <Input type="date" value={to} min={from} onChange={(e) => url.set({ from, to: e.target.value, page: null })} className="w-40" />
+            </label>
+            <BranchFilter filter={branchFilter} />
+            {has('sales:view_all') && (
+              <UserFilter
+                value={url.get('user') ? url.get('user').split(',') : []}
+                onChange={(v) => url.set({ user: v.join(','), page: null })}
+              />
+            )}
+            <Button
+              disabled={!((from !== def.from || to !== def.to || url.get('user') || searchInput))}
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setSearchInput('');
+                url.set({ from: null, to: null, user: null, q: null, page: null });
+              }}
+            >
+              Clear filters
+            </Button>
+          </FilterPanel>
         </div>
       </div>
 
@@ -199,7 +202,7 @@ function SsrContent() {
         spinner
       ) : report ? (
         <div className={`space-y-4 ${isFetching ? 'opacity-70' : ''}`}>
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="View">
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="View max-md:flex-nowrap max-md:overflow-x-auto max-md:pb-1 max-md:[&>*]:shrink-0">
             {VIEWS.map((v) => (
               <Button
                 key={v.key}
@@ -214,23 +217,18 @@ function SsrContent() {
             ))}
           </div>
 
-          {report.rows.length === 0 ? (
-            <div className="rounded-lg border p-10 text-center text-sm text-muted-foreground">
-              No sales found for these filters.
-            </div>
-          ) : (
-            <SsrTable
-              report={report}
-              search={searchInput}
-              onSearch={setSearchInput}
-              sort={sort}
-              onSort={(v) => url.set({ sort: v, page: null })}
-              onProductInvoices={(id, label) => setDrill({ id, label })}
-              onPage={(p) => url.set({ page: p === 1 ? null : String(p) })}
-              hidden={hiddenCols}
-              onHiddenChange={setHiddenCols}
-            />
-          )}
+          {/* Always rendered, even with no rows, so the search box stays to be edited or cleared. */}
+          <SsrTable
+            report={report}
+            search={searchInput}
+            onSearch={setSearchInput}
+            sort={sort}
+            onSort={(v) => url.set({ sort: v, page: null })}
+            onProductInvoices={(id, label) => setDrill({ id, label })}
+            onPage={(p) => url.set({ page: p === 1 ? null : String(p) })}
+            hidden={hiddenCols}
+            onHiddenChange={setHiddenCols}
+          />
 
           <p className="text-xs text-muted-foreground">
             {report.returnsAttribution === 'RETURN_DATE'

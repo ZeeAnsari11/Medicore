@@ -16,17 +16,6 @@ export class LedgerReportsController {
     return this.ledgerReportsService.getOverview(user.tenantId, scope);
   }
 
-  @RequirePermission('acc_trial_balance:read')
-  @Get('trial-balance')
-  async trialBalance(
-    @CurrentUser() user: AuthenticatedUser,
-    @Query('branchId') branchId?: string,
-    @Query('asOfDate') asOfDate?: string,
-  ) {
-    const scope = resolveBranchScope(user, branchId);
-    return this.ledgerReportsService.getTrialBalance(user.tenantId, scope, asOfDate);
-  }
-
   @RequirePermission('acc_profit_loss:read')
   @Get('profit-loss')
   async profitLoss(

@@ -16,6 +16,7 @@ import { cn } from '../lib/cn';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from './table';
 import { Input } from '../primitives/input';
 import { Button } from '../primitives/button';
+import { FilterPanel } from './filter-panel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../forms/select';
 
 /** Opt-in server-side paging: `data` is just the current page and `total` is the full row count. */
@@ -95,6 +96,8 @@ export function DataTable<TData, TValue>({
     initialState: { pagination: { pageSize } },
   });
 
+  // An empty panel would only show a pointless Filters button on phones.
+  const hasFilterControls = !!toolbar || !hideClearFilters || (!!pageSizeOptions && !pagination);
   const searchValue = search ? search.value : globalFilter;
   const setSearchValue = (value: string) => (search ? search.onChange(value) : table.setGlobalFilter(value));
 
@@ -105,41 +108,45 @@ export function DataTable<TData, TValue>({
           placeholder={searchPlaceholder}
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
-          className="max-w-sm"
+          className="max-w-sm max-md:min-w-0 max-md:flex-1"
         />
-        {toolbar}
-        {!hideClearFilters && (
-          <Button
-            disabled={searchValue === '' && !filtersActive}
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setSearchValue('');
-              onClearFilters?.();
-            }}
-          >
-            Clear filters
-          </Button>
-        )}
-        {pageSizeOptions && !pagination && (
-          <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
-            <span>Rows per page</span>
-            <Select
-              value={String(table.getState().pagination.pageSize)}
-              onValueChange={(value) => table.setPageSize(Number(value))}
-            >
-              <SelectTrigger className="h-9 w-20" aria-label="Rows per page">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {pageSizeOptions.map((n) => (
-                  <SelectItem key={n} value={String(n)}>
-                    {n}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {hasFilterControls && (
+          <FilterPanel activeCount={filtersActive ? 1 : 0}>
+            {toolbar}
+            {!hideClearFilters && (
+              <Button
+                disabled={searchValue === '' && !filtersActive}
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchValue('');
+                  onClearFilters?.();
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+            {pageSizeOptions && !pagination && (
+              <div className="ml-auto flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Rows per page</span>
+                <Select
+                  value={String(table.getState().pagination.pageSize)}
+                  onValueChange={(value) => table.setPageSize(Number(value))}
+                >
+                  <SelectTrigger className="h-9 w-20" aria-label="Rows per page">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pageSizeOptions.map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </FilterPanel>
         )}
       </div>
 

@@ -353,7 +353,7 @@ export default function ExpensesPage() {
 
       {isLoading ? (
         <div className="space-y-4" aria-busy="true" aria-label="Loading expenses">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {Array.from({ length: 4 }, (_, i) => (
               <Skeleton key={i} className="h-20" />
             ))}
@@ -379,7 +379,7 @@ export default function ExpensesPage() {
         />
       ) : (
         <div className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Stat
               icon={Wallet}
               label="Total spent"

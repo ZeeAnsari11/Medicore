@@ -60,10 +60,10 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
         <DialogPrimitive.Content
           ref={ref}
           className={cn(
-            'fixed left-[50%] top-[50%] z-50 w-full max-w-lg translate-x-[-50%] translate-y-[-50%] rounded-lg border border-border bg-background p-6 shadow-lg outline-none',
+            'fixed left-[50%] top-[50%] z-50 w-[calc(100%-1rem)] max-h-[calc(100dvh-1rem)] overflow-y-auto sm:w-full max-w-lg translate-x-[-50%] translate-y-[-50%] rounded-lg border border-border bg-background p-4 sm:p-6 shadow-lg outline-none',
             'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
             className,
-            expanded && 'h-screen max-h-screen w-screen max-w-none rounded-none',
+            expanded && 'h-dvh max-h-dvh w-screen max-w-none rounded-none',
             dragging && 'cursor-grabbing select-none',
           )}
           // Offsets left/top rather than transform, which the centering and open animation already use.
@@ -71,6 +71,8 @@ const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.C
           onPointerDown={(e) => {
             onPointerDown?.(e);
             if (e.defaultPrevented || expanded || e.button !== 0) return;
+            // Dialogs fill most of a phone screen, so there is nothing to drag.
+            if (window.matchMedia('(max-width: 639px)').matches) return;
             // React events bubble out of portals (e.g. an open Select list), which must not drag the dialog.
             if (!e.currentTarget.contains(e.target as Node)) return;
             const target = e.target as HTMLElement;
@@ -138,7 +140,15 @@ const DialogHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivEleme
 DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 mt-6', className)} {...props} />
+  <div
+    className={cn(
+      'mt-6 flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2',
+      // On phones the dialog scrolls, so keep the actions pinned to the bottom edge instead of after the last field.
+      'max-sm:sticky max-sm:-bottom-4 max-sm:z-10 max-sm:-mx-4 max-sm:-mb-4 max-sm:gap-2 max-sm:border-t max-sm:bg-background max-sm:px-4 max-sm:py-3',
+      className,
+    )}
+    {...props}
+  />
 );
 DialogFooter.displayName = 'DialogFooter';
 

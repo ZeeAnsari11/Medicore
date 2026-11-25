@@ -91,13 +91,6 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
   },
   { key: 'acc_overview', label: 'Accounting', group: ACC, actions: [VIEW] },
   {
-    key: 'acc_chart_of_accounts',
-    label: 'Chart of Accounts',
-    group: ACC,
-    parent: 'acc_overview',
-    actions: [VIEW, CREATE, EDIT, DELETE],
-  },
-  {
     key: 'acc_customer_ledger',
     label: 'Customer Ledger',
     group: ACC,
@@ -135,13 +128,6 @@ export const MODULE_DEFINITIONS: ModuleDef[] = [
     group: ACC,
     parent: 'acc_overview',
     actions: [VIEW, CREATE],
-  },
-  {
-    key: 'acc_trial_balance',
-    label: 'Trial Balance',
-    group: ACC,
-    parent: 'acc_overview',
-    actions: [VIEW, EXPORT],
   },
   {
     key: 'acc_profit_loss',
@@ -339,13 +325,10 @@ export function expandLegacyPermissions(keys: string[]): string[] {
     out.add('acc_returns:create');
   }
   if (has('accounting:update')) {
-    out.add('acc_chart_of_accounts:create');
-    out.add('acc_chart_of_accounts:update');
     out.add('acc_expense_categories:update');
   }
   if (has('accounting:post')) out.add('acc_journal_entries:create');
   if (has('accounting:delete')) {
-    out.add('acc_chart_of_accounts:delete');
     out.add('acc_expense_categories:delete');
   }
 

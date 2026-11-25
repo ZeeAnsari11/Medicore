@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
   toast,
+  CollapsibleSection,
 } from '@medicore/ui';
 import { TopbarContent } from '@/components/layout/topbar-slot';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -109,6 +110,7 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
   });
 
   const vendorId = watch('vendorId');
+  const purchaseDate = watch('purchaseDate');
   const paymentStatus = watch('paymentStatus');
 
   // Only products linked (and active) for the selected vendor can be received.
@@ -358,10 +360,10 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
     const labelClass = inHeader
       ? 'text-[10px] font-medium uppercase tracking-wide text-muted-foreground'
       : 'text-xs text-muted-foreground';
-    const controlClass = inHeader ? 'h-9 text-sm' : undefined;
+    const controlClass = inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm';
     return (
       <>
-        <div className={inHeader ? 'min-w-[9rem] space-y-0.5' : 'min-w-[16rem] flex-1 space-y-1'}>
+        <div className={inHeader ? 'min-w-[9rem] space-y-0.5' : 'col-span-2 min-w-0 space-y-1 sm:col-span-1 sm:flex-1 sm:min-w-[16rem]'}>
           <Label className={labelClass}>Vendor *</Label>
           <ComboboxWithCreate
             id={`purchase-vendor-${suffix}`}
@@ -461,11 +463,26 @@ export function PurchaseFormPage({ editPurchase }: { editPurchase?: Purchase }) 
         </Alert>
       )}
 
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 sm:space-y-6">
         {/* Below xl the top bar has no room for these, so they sit above the line items instead. */}
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3 xl:hidden">
+        <CollapsibleSection
+          className="rounded-lg border p-2 sm:p-3 xl:hidden"
+          contentClassName="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3"
+          forceOpen={!vendorId}
+          defaultOpen={!isEdit}
+          summary={
+            <>
+              <span className="font-medium">{vendors.find((v) => v.id === vendorId)?.company ?? 'Select vendor'}</span>
+              <span className="text-muted-foreground">
+                {' · '}
+                {purchaseDate}
+                {branchName ? ` · ${branchName}` : ''}
+              </span>
+            </>
+          }
+        >
           {renderPurchaseFields(false)}
-        </div>
+        </CollapsibleSection>
 
         <div className="space-y-3">
           <Label>Line items</Label>

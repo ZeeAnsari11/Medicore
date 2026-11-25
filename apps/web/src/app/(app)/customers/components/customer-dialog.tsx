@@ -183,7 +183,7 @@ export function CustomerDialog({ open, mode, customer, onOpenChange, onCreated }
             {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="code">Code</Label>
               <Input id="code" placeholder="Optional" {...register('code')} />

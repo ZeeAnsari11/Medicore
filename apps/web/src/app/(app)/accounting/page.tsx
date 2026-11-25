@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import {
-  BookOpen,
   ClipboardList,
   CreditCard,
   FileText,
@@ -21,7 +20,6 @@ import { usePermissions } from '@/hooks/use-permissions';
 import { useAccountingOverview } from '@/hooks/use-ledger-reports';
 
 const links = [
-  { title: 'Chart of Accounts', description: 'Manage the accounts your business books post to.', href: '/accounting/chart-of-accounts', icon: BookOpen },
   { title: 'Customer Ledger', description: 'Per-customer running balance: invoices, payments, advances.', href: '/accounting/customer-ledger', icon: Users },
   { title: 'Vendor Ledger', description: 'Per-vendor payable history and advances.', href: '/accounting/vendor-ledger', icon: Wallet },
   { title: 'Payments', description: 'Record and allocate customer/vendor payments.', href: '/accounting/payments', icon: CreditCard },
@@ -29,7 +27,6 @@ const links = [
   { title: 'Returns', description: 'Sale and purchase returns with cumulative quantity tracking.', href: '/accounting/returns', icon: RotateCcw },
   { title: 'General Ledger', description: 'Transaction history for any account.', href: '/accounting/general-ledger', icon: ClipboardList },
   { title: 'Journal Entries', description: 'Every posted entry, plus manual adjustments.', href: '/accounting/journal-entries', icon: FileText },
-  { title: 'Trial Balance', description: 'Debit/credit balance for every account.', href: '/accounting/trial-balance', icon: Scale },
   { title: 'Profit & Loss', description: 'Revenue vs expenses for a date range.', href: '/accounting/profit-loss', icon: LineChart },
   { title: 'Balance Sheet', description: 'Assets, liabilities, and equity as of a date.', href: '/accounting/balance-sheet', icon: Scale },
 ];
@@ -48,7 +45,7 @@ export default function AccountingPage() {
       <PageHeader title="Accounting" description="Double-entry ledger, payments, and financial statements." />
 
       {canOverview && (
-      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card className="relative transition-colors hover:bg-muted/40">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">

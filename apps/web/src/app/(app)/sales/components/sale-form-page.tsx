@@ -15,6 +15,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  CollapsibleSection,
 } from '@medicore/ui';
 import { TopbarContent } from '@/components/layout/topbar-slot';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -124,6 +125,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
   });
 
   const customerId = watch('customerId');
+  const paymentMethod = watch('paymentMethod');
   const paymentStatus = watch('paymentStatus');
 
   // Totals come from the committed lines only, never from the entry row's preview.
@@ -266,7 +268,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
       : 'text-xs text-muted-foreground';
     return (
       <>
-        <div className={inHeader ? 'space-y-0.5' : 'min-w-[16rem] flex-1 space-y-1'}>
+        <div className={inHeader ? 'space-y-0.5' : 'col-span-2 min-w-0 space-y-1 sm:col-span-1 sm:flex-1 sm:min-w-[16rem]'}>
           <Label className={labelClass}>Customer</Label>
           <Controller
             control={control}
@@ -280,7 +282,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
                 disabled={!branchId}
                 onCreateNew={() => setCustomerDialogOpen(true)}
                 createLabel={() => 'Create new customer'}
-                className={inHeader ? 'h-9 text-sm' : undefined}
+                className={inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm'}
               />
             )}
           />
@@ -298,7 +300,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
                   if (!isEdit) syncAmountToStatus(v as PaymentStatus);
                 }}
               >
-                <SelectTrigger className={inHeader ? 'h-9 text-sm' : undefined}>
+                <SelectTrigger className={inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm'}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -321,14 +323,14 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
               value={branchName ?? ''}
               disabled
               readOnly
-              className={inHeader ? 'h-9 text-sm' : undefined}
+              className={inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm'}
             />
           ) : (
             <Select value={branchId ?? ''} onValueChange={handleBranchChange}>
               <SelectTrigger
                 id={`saleBranch-${inHeader ? 'header' : 'body'}`}
                 aria-label="Branch"
-                className={inHeader ? 'h-9 text-sm' : undefined}
+                className={inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm'}
               >
                 <SelectValue placeholder="Select branch" />
               </SelectTrigger>
@@ -352,14 +354,14 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
               value={orderBookerName}
               disabled
               readOnly
-              className={inHeader ? 'h-9 text-sm' : undefined}
+              className={inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm'}
             />
           ) : (
             <Select value={orderBookerId} onValueChange={setPickedBooker}>
               <SelectTrigger
                 id={`saleOrderBooker-${inHeader ? 'header' : 'body'}`}
                 aria-label="Order Booker"
-                className={inHeader ? 'h-9 text-sm' : undefined}
+                className={inHeader ? 'h-9 text-sm' : 'max-sm:h-9 max-sm:text-sm'}
               >
                 <SelectValue placeholder={orderBookerName || 'Select Order Booker'} />
               </SelectTrigger>
@@ -416,12 +418,27 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
           }
           return onSubmit(values);
         })}
-        className="space-y-6"
+        className="space-y-4 sm:space-y-6"
       >
         {/* Below lg the top bar has no room for these, so they sit above the line items instead. */}
-        <div className="flex flex-wrap items-end gap-3 rounded-lg border p-3 lg:hidden">
+        <CollapsibleSection
+          className="rounded-lg border p-2 sm:p-3 lg:hidden"
+          contentClassName="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-end sm:gap-3"
+          forceOpen={!branchId}
+          summary={
+            <>
+              <span className="font-medium">{selectedCustomer?.name ?? 'Walk-in'}</span>
+              <span className="text-muted-foreground">
+                {' · '}
+                {paymentMethod}
+                {branchName ? ` · ${branchName}` : ''}
+                {orderBookerName ? ` · ${orderBookerName}` : ''}
+              </span>
+            </>
+          }
+        >
           {renderCustomerAndMethod(false)}
-        </div>
+        </CollapsibleSection>
 
         <div className="space-y-3">
           <Label>Line items</Label>

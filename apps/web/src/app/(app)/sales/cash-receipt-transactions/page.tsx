@@ -6,7 +6,7 @@ import { AlertCircle, ListChecks } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
-import { Alert, Badge, Button, DataTable, Input, type ColumnDef } from '@medicore/ui';
+import { Alert, Badge, Button, DataTable, FilterPanel, Input, type ColumnDef } from '@medicore/ui';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { usePermissions } from '@/hooks/use-permissions';
 import { RECEIPT_KIND, useCashTransactionsPage, type CashTransactionSummary, type ReceiptKind } from '@/hooks/use-cash-receipts';
@@ -123,32 +123,34 @@ export default function CashReceiptTransactionsPage() {
       )}
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          From
-          <Input
-            type="date"
-            value={startDate}
-            max={endDate || undefined}
-            onChange={(e) => setStartDate(e.target.value)}
-            className={`w-40 ${startDate ? ACTIVE : ''}`}
-          />
-        </label>
-        <label className="flex items-center gap-2 text-sm text-muted-foreground">
-          To
-          <Input
-            type="date"
-            value={endDate}
-            min={startDate || undefined}
-            onChange={(e) => setEndDate(e.target.value)}
-            className={`w-40 ${endDate ? ACTIVE : ''}`}
-          />
-        </label>
-        <Button disabled={!hasFilters} variant="outline" size="sm" onClick={clearFilters}>
-          Clear filters
-        </Button>
-        <Button className="ml-auto" size="sm" onClick={() => router.push('/sales/cash-receipt')}>
-          {purchase ? 'New Purchase Receipt' : 'New Cash Receipt'}
-        </Button>
+        <FilterPanel activeCount={[!!startDate, !!endDate].filter(Boolean).length}>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            From
+            <Input
+              type="date"
+              value={startDate}
+              max={endDate || undefined}
+              onChange={(e) => setStartDate(e.target.value)}
+              className={`w-40 ${startDate ? ACTIVE : ''}`}
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            To
+            <Input
+              type="date"
+              value={endDate}
+              min={startDate || undefined}
+              onChange={(e) => setEndDate(e.target.value)}
+              className={`w-40 ${endDate ? ACTIVE : ''}`}
+            />
+          </label>
+          <Button disabled={!hasFilters} variant="outline" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+          <Button className="ml-auto" size="sm" onClick={() => router.push('/sales/cash-receipt')}>
+            {purchase ? 'New Purchase Receipt' : 'New Cash Receipt'}
+          </Button>
+        </FilterPanel>
       </div>
 
       {isLoading ? (

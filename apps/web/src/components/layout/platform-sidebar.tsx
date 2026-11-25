@@ -6,11 +6,16 @@ import { usePathname } from 'next/navigation';
 import { cn } from '@medicore/ui';
 import { platformNavSections } from './platform-nav-config';
 
-export function PlatformSidebar() {
+export function PlatformSidebar({ open = true, onNavigate }: { open?: boolean; onNavigate?: () => void }) {
   const pathname = usePathname();
 
   return (
-    <aside className="sticky top-0 left-0 h-screen w-64 bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950 border-r border-slate-200/50 dark:border-slate-800/50 flex flex-col overflow-hidden">
+    <aside
+      className={cn(
+        'fixed inset-y-0 left-0 z-50 h-dvh w-64 max-w-[85vw] transition-transform duration-200 md:sticky md:top-0 md:z-auto md:h-screen md:max-w-none md:shrink-0 md:translate-x-0 bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-950 border-r border-slate-200/50 dark:border-slate-800/50 flex flex-col overflow-hidden',
+        !open && '-translate-x-full',
+      )}
+    >
       {/* Logo Section */}
       <div className="px-6 py-6 border-b border-slate-200/50 dark:border-slate-800/50">
         <div className="flex items-center gap-3">
@@ -39,6 +44,7 @@ export function PlatformSidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={onNavigate}
                     className={cn(
                       'flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group',
                       isActive

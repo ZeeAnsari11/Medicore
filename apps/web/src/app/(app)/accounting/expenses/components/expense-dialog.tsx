@@ -278,7 +278,7 @@ export function ExpenseDialog({ open, branchId, onOpenChange }: ExpenseDialogPro
               <SectionTitle>Payment</SectionTitle>
               <div className="space-y-1.5">
                 <Label>Method</Label>
-                <div className="grid grid-cols-3 gap-2" role="group" aria-label="Payment method">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2" role="group" aria-label="Payment method">
                   {METHODS.map((m) => (
                     <Button
                       key={m}

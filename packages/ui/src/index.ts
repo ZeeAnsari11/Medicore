@@ -15,6 +15,7 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 export { Input } from './primitives/input';
 export { Label } from './primitives/label';
 export { Alert, AlertTitle, AlertDescription } from './primitives/alert';
+export { CollapsibleSection, type CollapsibleSectionProps } from './primitives/collapsible-section';
 export { Badge, badgeVariants, type BadgeProps } from './primitives/badge';
 export { Skeleton } from './primitives/skeleton';
 export {
@@ -43,6 +44,7 @@ export {
   type DataTableServerPagination,
   type DataTableServerSearch,
 } from './table/data-table';
+export { FilterPanel, type FilterPanelProps } from './table/filter-panel';
 export { type ColumnDef } from '@tanstack/react-table';
 
 // Forms

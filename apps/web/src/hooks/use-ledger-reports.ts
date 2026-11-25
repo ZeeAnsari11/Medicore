@@ -1,7 +1,6 @@
 'use client';
 
 import type {
-  TrialBalanceResponse,
   ProfitLossResponse,
   ProfitBreakdownResponse,
   ProfitStatement,
@@ -25,20 +24,6 @@ export function useAccountingOverview(branchId: string | null, enabled = true) {
     staleTime: 30 * 1000,
   });
   return { overview: query.data, isLoading: query.isLoading, error: query.error };
-}
-
-export function useTrialBalance(branchId: string | null, asOfDate?: string) {
-  const query = useTenantQuery({
-    queryKey: [...KEY, 'trial-balance', branchId, asOfDate],
-    queryFn: () => {
-      const params = new URLSearchParams();
-      if (branchId) params.set('branchId', branchId);
-      if (asOfDate) params.set('asOfDate', asOfDate);
-      const q = params.toString();
-      return apiFetch<TrialBalanceResponse>(`/accounting/reports/trial-balance${q ? `?${q}` : ''}`);
-    },
-  });
-  return { trialBalance: query.data, isLoading: query.isLoading, error: query.error };
 }
 
 export function useProfitLoss(branchId: string | null, startDate?: string, endDate?: string) {

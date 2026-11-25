@@ -127,7 +127,7 @@ export default function ReturnsPage() {
         description="Return sold or purchased stock, with cumulative quantity tracking so the same stock can never be returned twice."
       />
 
-      <div className="mb-6 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="flex overflow-hidden rounded-md border">
           <button
             className={`px-4 py-2 text-sm ${mode === 'sale' ? 'bg-primary text-primary-foreground' : 'bg-background'}`}
@@ -146,7 +146,7 @@ export default function ReturnsPage() {
         <BranchFilter filter={{ ...branchFilter, setBranchId: handleBranchChange }} />
 
         <Select value={invoiceId} onValueChange={handleInvoiceChange}>
-          <SelectTrigger className="w-64">
+          <SelectTrigger className="w-full sm:w-64">
             <SelectValue placeholder={mode === 'sale' ? 'Select an invoice' : 'Select a purchase'} />
           </SelectTrigger>
           <SelectContent>

@@ -82,14 +82,15 @@ export default function BalanceSheetPage() {
       <PageHeader
         title="Balance Sheet"
         description="Assets, liabilities, and equity as of a date."
-        actions={
-          <div className="flex items-center gap-3">
+        activeFilterCount={asOfDate !== todayISO() ? 1 : 0}
+        filters={
+          <>
             <Input type="date" value={asOfDate} onChange={(e) => setAsOfDate(e.target.value)} className="w-40" aria-label="As of date" />
             <Button
               disabled={!(asOfDate !== todayISO())} variant="outline" size="sm" onClick={() => setAsOfDate(todayISO())}>
               Clear filters
             </Button>
-          </div>
+          </>
         }
       />
 

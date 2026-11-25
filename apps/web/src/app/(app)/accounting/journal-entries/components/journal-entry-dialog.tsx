@@ -128,7 +128,7 @@ export function JournalEntryDialog({ open, branchId, onOpenChange }: JournalEntr
 
         <div className="space-y-4">
           <BranchField field={branch.field} value={branch.value} onChange={branch.setValue} error={branch.error} />
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <Label>Entry Type</Label>
               <Select value={entryType} onValueChange={(v) => setEntryType(v as 'manual' | 'opening')}>

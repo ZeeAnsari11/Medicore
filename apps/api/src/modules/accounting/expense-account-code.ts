@@ -14,6 +14,6 @@ export function nextExpenseAccountCode(existingCodes: Iterable<string>): string 
     if (!taken.has(String(code))) return String(code);
   }
   throw new ConflictException(
-    'No free expense account codes left; create the account in the Chart of Accounts instead',
+    'No free expense account codes left',
   );
 }
