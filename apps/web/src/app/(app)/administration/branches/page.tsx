@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { Plus, AlertCircle } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -15,6 +17,7 @@ type DialogMode = 'create' | 'edit' | null;
 
 export default function BranchesPage() {
   const { branches, isLoading, error } = useBranches();
+  const shown = useShownRows(branches);
   const { has } = usePermissions();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedBranchId, setSelectedBranchId] = useState<string | null>(null);
@@ -39,6 +42,17 @@ export default function BranchesPage() {
   return (
     <PageAccessGuard requires="branches:read">
       <PageHeader
+        report={<ReportButton
+          title="Branches"
+          rows={shown.rows.map((b) => ({
+            Name: b.name,
+            Code: b.code,
+            Address: b.address ?? '',
+            Phone: b.phone ?? '',
+            Main: b.isMain ? 'Yes' : '',
+            Status: b.isActive ? 'Active' : 'Inactive',
+          }))}
+        />}
         title="Branches"
         description="Manage your organization's branches and warehouses"
         actions={
@@ -67,7 +81,7 @@ export default function BranchesPage() {
           description="Create your first branch to start tracking branch-level inventory"
         />
       ) : (
-        <BranchesTable branches={branches} onEdit={handleOpenEdit} />
+        <BranchesTable branches={branches} onEdit={handleOpenEdit} onFilteredRowsChange={shown.onFilteredRowsChange} />
       )}
 
       <BranchDialog

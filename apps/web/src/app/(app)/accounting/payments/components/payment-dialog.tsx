@@ -20,19 +20,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@medicore/ui';
+import { BranchField } from '@/components/branch-field';
+import { useBranchFieldValue } from '@/hooks/use-branch-field';
 import { useCustomers } from '@/hooks/use-customers';
 import { useVendors } from '@/hooks/use-vendors';
 import { useSales } from '@/hooks/use-sales';
 import { usePurchases } from '@/hooks/use-purchases';
 import { useAccounts } from '@/hooks/use-accounts';
+import { CustomerName } from '@/lib/party-label';
 import { usePayments } from '@/hooks/use-payments';
 import { ApiError } from '@/lib/api-client';
 import { PartyType, PaymentMethod, InvoiceType, AccountType } from '@medicore/shared-types';
 import type { CreatePaymentAllocationRequest } from '@medicore/shared-types';
 
 interface PaymentDialogProps {
+  /** CUSTOMER = a sale receipt, VENDOR = a payment to a vendor. */
+  partyType: PartyType;
   open: boolean;
-  branchId: string | null;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -42,43 +46,41 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
-export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogProps) {
-  const { customers } = useCustomers();
-  const { vendors } = useVendors();
+export function PaymentDialog({ partyType, open, onOpenChange }: PaymentDialogProps) {
+  // The dialog's own Branch field (main branch pre-selected, locked for branch users): only that branch's customers / vendors are listed.
+  const branch = useBranchFieldValue(open, { preselect: true });
+  const branchId = branch.value || null;
+  const { customers } = useCustomers(undefined, branchId);
+  const { vendors } = useVendors(undefined, branchId);
   const { accounts } = useAccounts();
   const { create, isCreating, createError } = usePayments(branchId);
 
-  const [partyType, setPartyType] = useState<PartyType>(PartyType.CUSTOMER);
+  const isReceipt = partyType === PartyType.CUSTOMER;
   const [partyId, setPartyId] = useState('');
   const [amount, setAmount] = useState('');
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
-  const [accountId, setAccountId] = useState('');
   const [paymentDate, setPaymentDate] = useState(todayISO());
-  const [reference, setReference] = useState('');
   const [notes, setNotes] = useState('');
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Record<string, number>>({});
 
   const resetForm = () => {
-    setPartyType(PartyType.CUSTOMER);
     setPartyId('');
     setAmount('');
     setMethod(PaymentMethod.CASH);
-    setAccountId('');
     setPaymentDate(todayISO());
-    setReference('');
     setNotes('');
+    setSelectedInvoiceIds({});
+  };
+
+  const handleBranchChange = (next: string) => {
+    branch.setValue(next);
+    setPartyId('');
     setSelectedInvoiceIds({});
   };
 
   const handleOpenChange = (next: boolean) => {
     if (!next) resetForm();
     onOpenChange(next);
-  };
-
-  const handlePartyTypeChange = (next: PartyType) => {
-    setPartyType(next);
-    setPartyId('');
-    setSelectedInvoiceIds({});
   };
 
   const paymentAccounts = useMemo(
@@ -110,6 +112,12 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
         outstanding: p.grandTotal - p.amountPaid,
       }));
   }, [partyId, partyType, sales, purchases]);
+
+  // No account to pick: cash goes to the Cash account, card and bank transfer to the Bank account.
+  const accountId = useMemo(() => {
+    const key = method === PaymentMethod.CASH ? 'CASH' : 'BANK';
+    return paymentAccounts.find((a) => a.systemKey === key)?.id ?? '';
+  }, [paymentAccounts, method]);
 
   const amountNum = Number(amount) || 0;
   const allocatedTotal = Object.values(selectedInvoiceIds).reduce((sum, v) => sum + v, 0);
@@ -145,7 +153,6 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
       method,
       accountId,
       paymentDate,
-      reference: reference || undefined,
       notes: notes || undefined,
       allocations: allocations.length > 0 ? allocations : undefined,
     });
@@ -168,7 +175,7 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Record a Payment</DialogTitle>
+          <DialogTitle>{isReceipt ? 'Record a Sale Receipt' : 'Record a Payment'}</DialogTitle>
         </DialogHeader>
 
         {createError && (
@@ -180,28 +187,17 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
 
         <div className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Party Type</Label>
-              <Select value={partyType} onValueChange={(v) => handlePartyTypeChange(v as PartyType)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PartyType.CUSTOMER}>Customer</SelectItem>
-                  <SelectItem value={PartyType.VENDOR}>Vendor</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <BranchField field={branch.field} value={branch.value} onChange={handleBranchChange} error={branch.error} id="paymentBranch" />
             <div className="space-y-1.5">
               <Label>{partyType === PartyType.CUSTOMER ? 'Customer' : 'Vendor'}</Label>
-              <Select value={partyId} onValueChange={setPartyId}>
+              <Select value={partyId} onValueChange={setPartyId} disabled={!branchId}>
                 <SelectTrigger>
-                  <SelectValue placeholder={`Select a ${partyType === PartyType.CUSTOMER ? 'customer' : 'vendor'}`} />
+                  <SelectValue placeholder={branchId ? `Select a ${partyType === PartyType.CUSTOMER ? 'customer' : 'vendor'}` : 'Select a branch first'} />
                 </SelectTrigger>
                 <SelectContent>
                   {(partyType === PartyType.CUSTOMER ? customers : vendors).map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {partyType === PartyType.CUSTOMER ? (p as { name: string }).name : (p as { company: string }).company}
+                      {partyType === PartyType.CUSTOMER ? <CustomerName name={(p as { name: string }).name} territory={(p as { territory?: string }).territory} /> : (p as { company: string }).company}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -209,7 +205,7 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Amount</Label>
               <Input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} />
@@ -227,31 +223,12 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label>Cash/Bank Account</Label>
-              <Select value={accountId} onValueChange={setAccountId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select account" />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentAccounts.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label>Date</Label>
               <Input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Reference</Label>
-              <Input placeholder="Optional" value={reference} onChange={(e) => setReference(e.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label>Description / notes</Label>
@@ -315,7 +292,7 @@ export function PaymentDialog({ open, branchId, onOpenChange }: PaymentDialogPro
             Cancel
           </Button>
           <Button type="button" disabled={!canSubmit || isCreating} onClick={handleSubmit}>
-            {isCreating ? 'Saving...' : 'Record Payment'}
+            {isCreating ? 'Saving...' : isReceipt ? 'Record Receipt' : 'Record Payment'}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -78,6 +78,7 @@ export function usePurchasesPage(params: PurchaseListParams) {
   return {
     purchases: query.data?.items ?? [],
     total: query.data?.total ?? 0,
+    summary: query.data?.summary,
     isLoading: query.isLoading,
     error: query.error,
   };

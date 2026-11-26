@@ -98,6 +98,7 @@ export function BarcodeLabelDialog({ open, onOpenChange, product }: BarcodeLabel
               <Label>Number of labels</Label>
               <Input
                 type="number"
+                integer
                 min={1}
                 max={100}
                 value={quantity}

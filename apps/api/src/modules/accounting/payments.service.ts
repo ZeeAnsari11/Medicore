@@ -315,8 +315,13 @@ export class PaymentsService {
         }
 
         const orderBooker = await this.saleOrderBooker(tenantId, allocations, session);
-        // One running number per tenant (not per branch), so every tenant starts at 1.
-        const paymentSeq = await this.sequenceService.next(tenantId, null, 'payment', session);
+        // One running number per tenant and party type (not per branch): receipts and vendor payments each start at 1.
+        const paymentSeq = await this.sequenceService.next(
+          tenantId,
+          null,
+          dto.partyType === PartyType.CUSTOMER ? 'payment_customer' : 'payment_vendor',
+          session,
+        );
         const [created] = await this.paymentModel.create(
           [
             {
@@ -1035,9 +1040,10 @@ export class PaymentsService {
       differenceAmount: obj.differenceAmount ?? undefined,
       receipt: links?.receipt,
       paymentNumber: paymentNumber(obj.paymentSeq),
-      // The cash-receipt transaction id only (never the CR- voucher number), else the typed reference.
+      // The cash-receipt transaction id only (never the CR- voucher number), else the typed reference. A vendor payment
+      // shows just its own number: the PT- transaction is only a link (`receipt`) to the sheet it was made on.
       displayReference:
-        links?.receipt?.transactionNumber ||
+        (obj.partyType === PartyType.CUSTOMER ? links?.receipt?.transactionNumber : undefined) ||
         (CR_VOUCHER.test(obj.reference ?? '') ? undefined : obj.reference || undefined),
       journalEntryId: obj.journalEntryId,
       createdBy: obj.createdBy.toString(),

@@ -334,7 +334,7 @@ export class SalesController {
   ) {
     const scope = resolveBranchScope(user, branchId);
     await this.assertVisible(user, scope, id);
-    const doc = await this.salesService.buildInvoicePdf(user.tenantId, scope, id);
+    const doc = await this.salesService.buildInvoicePdf(user.tenantId, scope, id, user.username);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="invoice.pdf"');
     doc.pipe(res);
@@ -419,7 +419,7 @@ export class SalesController {
   ) {
     const scope = resolveBranchScope(user, branchId);
     await this.assertVisible(user, scope, id);
-    const doc = await this.salesService.buildReturnPdf(user.tenantId, scope, id, returnId);
+    const doc = await this.salesService.buildReturnPdf(user.tenantId, scope, id, returnId, user.username);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="sale-return.pdf"');
     doc.pipe(res);

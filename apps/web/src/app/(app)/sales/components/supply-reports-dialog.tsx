@@ -1,5 +1,6 @@
 'use client';
 
+import { customerLabel } from '@/lib/party-label';
 import { useMemo, useState } from 'react';
 import { FileText } from 'lucide-react';
 import {
@@ -116,7 +117,7 @@ export function SupplyReportsDialog({ open, onOpenChange, branchId: pageBranchId
   const territoryLabel = (v: string) => (v === NO_TERRITORY_FILTER ? 'No territory' : v);
   const tickedCity = cityList.find((c) => cities.length === 1 && c.name.toLowerCase() === cities[0].toLowerCase());
   const bookerOptions = useMemo(() => orderBookers.map((b) => ({ value: b.id, label: b.name })), [orderBookers]);
-  const customerOptions = useMemo(() => customers.map((c) => ({ value: c.id, label: c.name })), [customers]);
+  const customerOptions = useMemo(() => customers.map((c) => ({ value: c.id, label: customerLabel(c) })), [customers]);
 
   const chooseBranch = (id: string) => {
     setPickedBranch(id);

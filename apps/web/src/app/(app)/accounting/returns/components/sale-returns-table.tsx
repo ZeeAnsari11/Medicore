@@ -44,7 +44,7 @@ const invoiceLink = (r: SaleReturn) =>
   );
 
 /** Recorded sale returns, laid out like the Payments list: id, date, party, amount, settlement, invoice. Row click or `?open=<id>` shows the lines. */
-export function SaleReturnsTable({ returns }: { returns: SaleReturn[] }) {
+export function SaleReturnsTable({ returns, onFilteredRowsChange }: { returns: SaleReturn[]; onFilteredRowsChange?: (rows: SaleReturn[]) => void }) {
   const [detail, setDetail] = useState<SaleReturn | null>(null);
 
   const columns = useMemo<ColumnDef<SaleReturn>[]>(
@@ -69,7 +69,7 @@ export function SaleReturnsTable({ returns }: { returns: SaleReturn[] }) {
 
   return (
     <>
-      <DataTable columns={columns} data={returns} searchPlaceholder="Search returns..." onRowClick={(row) => setDetail(row)} />
+      <DataTable columns={columns} data={returns} onFilteredRowsChange={onFilteredRowsChange} searchPlaceholder="Search returns..." onRowClick={(row) => setDetail(row)} />
       <Suspense fallback={null}>
         <OpenFromUrl onOpen={(id) => setDetail(returns.find((r) => r.id === id) ?? null)} />
       </Suspense>

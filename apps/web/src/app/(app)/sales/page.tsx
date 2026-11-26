@@ -1,8 +1,10 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
+import { customerOption } from '@/lib/party-label';
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, FileText, Plus, Receipt } from 'lucide-react';
+import { AlertCircle, Download, FileText, Plus, Receipt } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -12,6 +14,10 @@ import {
   Button,
   ComboboxWithCreate,
   DataTable,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
   Input,
   Select,
   SelectContent,
@@ -109,7 +115,7 @@ export default function SalesPage() {
   const { openPdf, isOpening } = useDocumentPdf();
 
   const customerOptions = useMemo(
-    () => [{ value: ALL, label: 'All customers' }, { value: WALK_IN_CUSTOMER_ID, label: 'Walk-in customers' }, ...customers.map((c) => ({ value: c.id, label: c.name }))],
+    () => [{ value: ALL, label: 'All customers' }, { value: WALK_IN_CUSTOMER_ID, label: 'Walk-in customers' }, ...customers.map(customerOption)],
     [customers],
   );
 
@@ -198,6 +204,32 @@ export default function SalesPage() {
   return (
     <PageAccessGuard requires="sales:read">
       <PageHeader
+        report={
+          <>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline">
+                  <Download className="mr-2 h-4 w-4" />
+                  Download Report
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  disabled={isOpening || total === 0}
+                  onClick={() => void openPdf(salesReportPath({ ...filterParams, page: 1, limit: 1 }))}
+                >
+                  <FileText className="mr-2 h-4 w-4" />
+                  Sales report (PDF)
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setSupplyOpen(true)}>
+                  <FileText className="mr-2 h-4 w-4" />
+                  Supply reports
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <SupplyReportsDialog open={supplyOpen} onOpenChange={setSupplyOpen} branchId={selectedBranchId} canPickBranch={branchFilter.showDropdown} canPickBookers={canSeeAll} />
+          </>
+        }
         title="Sales"
         description="Invoices sold to customers"
         actions={
@@ -274,7 +306,7 @@ export default function SalesPage() {
           </Select>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             From
-            <Input type="date" value={startDate} max={endDate || undefined} onChange={(e) => setStartDate(e.target.value)} className={`w-40 ${active(!!startDate)}`} />
+            <Input type="date" value={startDate} max={endDate || undefined} onChange={(e) => { setStartDate(e.target.value); setEndDate(toAfterFrom(e.target.value, endDate)); }} className={`w-40 ${active(!!startDate)}`} />
           </label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             To
@@ -299,20 +331,6 @@ export default function SalesPage() {
             disabled={!(hasFilters)} variant="outline" size="sm" onClick={clearFilters}>
             Clear filters
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={isOpening || total === 0}
-            onClick={() => void openPdf(salesReportPath({ ...filterParams, page: 1, limit: 1 }))}
-          >
-            <FileText className="mr-2 h-4 w-4" />
-            Report (PDF)
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => setSupplyOpen(true)}>
-            <FileText className="mr-2 h-4 w-4" />
-            Supply reports
-          </Button>
-          <SupplyReportsDialog open={supplyOpen} onOpenChange={setSupplyOpen} branchId={selectedBranchId} canPickBranch={branchFilter.showDropdown} canPickBookers={canSeeAll} />
         </FilterPanel>
       </div>
 

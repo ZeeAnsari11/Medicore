@@ -34,3 +34,11 @@ describe('update customer', () => {
     expect(await errorsOf(UpdateCustomerDto, { code: '' })).toEqual([]);
   });
 });
+
+describe('create customer clientOpId', () => {
+  it('is optional and must be a UUID when given', async () => {
+    expect(await errorsOf(CreateCustomerDto, valid)).toEqual([]);
+    expect(await errorsOf(CreateCustomerDto, { ...valid, clientOpId: '0190a0a0-0000-7000-8000-000000000001' })).toEqual([]);
+    expect(await errorsOf(CreateCustomerDto, { ...valid, clientOpId: 'not-a-uuid' })).toContain('clientOpId');
+  });
+});

@@ -152,6 +152,14 @@ export enum JournalEntrySourceType {
   PAYMENT_RECEIVED = 'PAYMENT_RECEIVED',
   PAYMENT_MADE = 'PAYMENT_MADE',
   EXPENSE = 'EXPENSE',
+  /** Money borrowed: Dr Cash/Bank, Cr Loans Payable. */
+  LOAN = 'LOAN',
+  /** Loan repayment: Dr Loans Payable (principal) + Interest Expense, Cr Cash/Bank. */
+  LOAN_REPAYMENT = 'LOAN_REPAYMENT',
+  /** Fixed asset bought or brought in: Dr Fixed Assets, Cr Cash/Bank (or Opening Balance Equity). */
+  ASSET_PURCHASE = 'ASSET_PURCHASE',
+  /** Asset sold or written off. */
+  ASSET_DISPOSAL = 'ASSET_DISPOSAL',
   MANUAL = 'MANUAL',
   OPENING_BALANCE = 'OPENING_BALANCE',
 }

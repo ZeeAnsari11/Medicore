@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { StatCards } from '@/components/layout/stat-cards';
+import { ReportButton } from '@/components/layout/report-button';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import {
@@ -63,7 +64,6 @@ function Section({ title, rows, total }: { title: string; rows: BalanceSheetRow[
 }
 
 export default function BalanceSheetPage() {
-  const router = useRouter();
 
   const branchFilter = useBranchFilter();
   const selectedBranchId = branchFilter.branchId;
@@ -74,12 +74,26 @@ export default function BalanceSheetPage() {
 
   return (
     <PageAccessGuard requires="acc_balance_sheet:read">
-      <button onClick={() => router.push('/accounting')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Accounting
-      </button>
 
       <PageHeader
+        report={<ReportButton
+          title={`Balance Sheet as of ${asOfDate}`}
+          disabled={!balanceSheet}
+          rows={
+            balanceSheet
+              ? [
+                  ...balanceSheet.assets.map((r) => ({ Section: 'Assets', Account: r.accountName, Amount: r.amount.toFixed(2) })),
+                  { Section: 'Assets', Account: 'Total assets', Amount: balanceSheet.totalAssets.toFixed(2) },
+                  ...balanceSheet.liabilities.map((r) => ({ Section: 'Liabilities', Account: r.accountName, Amount: r.amount.toFixed(2) })),
+                  { Section: 'Liabilities', Account: 'Total liabilities', Amount: balanceSheet.totalLiabilities.toFixed(2) },
+                  ...balanceSheet.equity.map((r) => ({ Section: 'Equity', Account: r.accountName, Amount: r.amount.toFixed(2) })),
+                  { Section: 'Equity', Account: 'Net income (included in equity)', Amount: balanceSheet.netIncome.toFixed(2) },
+                  { Section: 'Equity', Account: 'Total equity', Amount: balanceSheet.totalEquity.toFixed(2) },
+                ]
+              : []
+          }
+        />}
+        back={{ href: '/accounting', label: 'Back to Accounting' }}
         title="Balance Sheet"
         description="Assets, liabilities, and equity as of a date."
         activeFilterCount={asOfDate !== todayISO() ? 1 : 0}
@@ -121,12 +135,7 @@ export default function BalanceSheetPage() {
             </div>
           </div>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Net Income (included in Equity)</CardTitle>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold tabular-nums">{balanceSheet.netIncome.toFixed(2)}</CardContent>
-          </Card>
+          <StatCards className="mb-0" items={[{ title: 'Net Income (included in Equity)', value: balanceSheet.netIncome }]} />
         </div>
       )}
     </PageAccessGuard>

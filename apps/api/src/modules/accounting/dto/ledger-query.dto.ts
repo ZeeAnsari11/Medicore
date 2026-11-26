@@ -55,6 +55,16 @@ export class PartyBalancesQueryDto {
   @IsIn(['true', 'false'])
   hasBalance?: 'true' | 'false';
 
+  /** Inclusive start (yyyy-mm-dd or ISO): the period for invoiced / received / returns; earlier activity becomes the opening balance. */
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  /** Inclusive end; a bare yyyy-mm-dd covers the whole day. Balances are as of this date. */
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+
   @IsOptional()
   @IsIn(['name', 'balance'])
   sortBy?: 'name' | 'balance';

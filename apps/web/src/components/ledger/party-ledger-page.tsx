@@ -1,17 +1,12 @@
 'use client';
 
 import { Suspense, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowDown, ArrowLeft, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { AlertCircle, ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import {
   Alert,
   Button,
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
   ComboboxWithCreate,
   Input,
   Switch,
@@ -27,12 +22,16 @@ import { usePartyBalances, usePartyLedger, type PartyKind } from '@/hooks/use-le
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { useUrlState } from '@/hooks/use-url-state';
 import { defaultRange, LedgerFilters } from './ledger-filters';
+import { CustomerName } from '@/lib/party-label';
+import { DateRangeFilter, StatBox } from '@/components/layout/stat-cards';
 import { LedgerTable } from './ledger-table';
 import { LedgerExportButtons } from './ledger-export-buttons';
 
 export interface PartyOption {
   value: string;
   label: string;
+  /** Shown as a pin chip after the label (a customer's territory). */
+  place?: string;
 }
 
 export interface PartyLedgerConfig {
@@ -70,21 +69,10 @@ export function PartyLedgerPage({ config }: { config: PartyLedgerConfig }) {
 }
 
 function SummaryCard({ title, value, hint }: { title: string; value: number; hint?: string }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tabular-nums">{money(value)}</div>
-        {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
-      </CardContent>
-    </Card>
-  );
+  return <StatBox item={{ title, value, hint }} />;
 }
 
 function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
-  const router = useRouter();
   const exportPermission = config.kind === 'vendors' ? 'acc_vendor_ledger:export' : 'acc_customer_ledger:export';
   const url = useUrlState();
   const options = config.useOptions();
@@ -124,7 +112,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
   const hasBalance = url.get('bal') === '1';
   const { balances, isLoading: listLoading, isFetching: listFetching } = usePartyBalances(
     config.kind,
-    { branchId: branchId || undefined, search: q || undefined, hasBalance, sortBy, sortDir, page: listPage, limit: 25 },
+    { branchId: branchId || undefined, search: q || undefined, hasBalance, from: url.get('from') || undefined, to: url.get('to') || undefined, sortBy, sortDir, page: listPage, limit: 25 },
     view === 'list',
   );
 
@@ -140,30 +128,12 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
 
   const closing = ledger?.closingBalance ?? 0;
   const s = ledger?.summary;
-  const all = balances?.summary;
-  const allExtras = all
-    ? [
-        all.voids ? `${config.voidLabel} ${money(all.voids)}` : null,
-        all.advances ? `Advances ${money(all.advances)}` : null,
-        all.other ? `Adjustments ${money(all.other)}` : null,
-      ].filter(Boolean)
-    : [];
-  const extras = s
-    ? [
-        s.voids ? `${config.voidLabel} ${money(s.voids)}` : null,
-        s.advances ? `Advances ${money(s.advances)}` : null,
-        s.other ? `Adjustments ${money(s.other)}` : null,
-      ].filter(Boolean)
-    : [];
 
   return (
     <>
-      <button onClick={() => router.push('/accounting')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Accounting
-      </button>
 
       <PageHeader
+        back={{ href: '/accounting', label: 'Back to Accounting' }}
         title={`${config.singular} Ledger`}
         description={config.description}
         actions={
@@ -212,6 +182,12 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
               onChange={(e) => setSearchInput(e.target.value)}
               className="w-full sm:w-64 max-md:flex-1"
             />
+            <DateRangeFilter
+              from={url.get('from')}
+              to={url.get('to')}
+              onChange={(r) => url.set({ from: r.from || null, to: r.to || null, lpage: null })}
+              inline
+            />
             <FilterPanel activeCount={hasBalance ? 1 : 0}>
               <label className="flex items-center gap-2 text-sm">
                 <Switch checked={hasBalance} onCheckedChange={(v) => url.set({ bal: v ? '1' : null, lpage: null })} />
@@ -236,6 +212,8 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
                     branchId: branchId || undefined,
                     search: q || undefined,
                     hasBalance: hasBalance ? 'true' : undefined,
+                    from: url.get('from') || undefined,
+                    to: url.get('to') || undefined,
                     sortBy,
                     sortDir,
                   }}
@@ -255,7 +233,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
           <div className={listFetching ? 'opacity-70 transition-opacity' : 'transition-opacity'}>
             {balances.summary && (
               <div className="mb-4 space-y-3">
-                <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
                   <SummaryCard title="Opening balance" value={balances.summary.openingBalance} />
                   <SummaryCard title={config.billedLabel} value={balances.summary.billed} />
                   <SummaryCard title={config.settledLabel} value={balances.summary.settled} />
@@ -266,7 +244,6 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
                     hint={balances.summary.closingBalance >= 0 ? config.positiveHint : config.negativeHint}
                   />
                 </div>
-                {allExtras.length > 0 && <p className="text-sm text-muted-foreground">{allExtras.join(' · ')}</p>}
               </div>
             )}
             <div className="rounded-lg border">
@@ -304,7 +281,7 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
                         className="cursor-pointer"
                         onClick={() => url.set({ view: 'ledger', party: row.partyId, page: null })}
                       >
-                        <TableCell className="font-medium">{row.name}</TableCell>
+                        <TableCell><CustomerName name={row.name} territory={row.territory} /></TableCell>
                         <TableCell className="text-right tabular-nums">{money(row.billed ?? 0)}</TableCell>
                         <TableCell className="text-right tabular-nums">{money(row.settled ?? 0)}</TableCell>
                         <TableCell className="text-right tabular-nums">{money(row.returns ?? 0)}</TableCell>
@@ -351,14 +328,13 @@ function PartyLedgerContent({ config }: { config: PartyLedgerConfig }) {
         spinner
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 xl:grid-cols-5">
             <SummaryCard title="Opening balance" value={s.openingBalance} />
             <SummaryCard title={config.billedLabel} value={s.billed} />
             <SummaryCard title={config.settledLabel} value={s.settled} />
             <SummaryCard title="Total returns" value={s.returns} />
             <SummaryCard title="Closing balance" value={s.closingBalance} hint={closing >= 0 ? config.positiveHint : config.negativeHint} />
           </div>
-          {extras.length > 0 && <p className="text-sm text-muted-foreground">{extras.join(' · ')}</p>}
           <LedgerTable
             variant="party"
             partyKind={config.kind}

@@ -1,10 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
-  ArrowLeft,
   FileText,
   FolderTree,
   Lock,
@@ -129,7 +127,6 @@ function NewCategoryDialog({
 }
 
 export default function ExpenseCategoriesPage() {
-  const router = useRouter();
   const { has } = usePermissions();
   const branchId = useBranchFilter().branchId;
   const { categories, isLoading, error, create, update, remove, isRemoving } =
@@ -181,15 +178,9 @@ export default function ExpenseCategoriesPage() {
 
   return (
     <PageAccessGuard requires="acc_expenses:read">
-      <button
-        onClick={() => router.push('/accounting')}
-        className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Accounting
-      </button>
 
       <PageHeader
+        back={{ href: '/accounting', label: 'Back to Accounting' }}
         title="Expenses"
         description="Group spending into categories, then break each into sub-categories."
         actions={
@@ -280,7 +271,7 @@ export default function ExpenseCategoriesPage() {
 
           {selected && (
             <Card>
-              <CardContent className="space-y-6 p-6">
+              <CardContent className="space-y-6 p-6 sm:p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="flex items-center gap-2 text-lg font-semibold">

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Plus, Search, Star, Truck, Package } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import { EmptyState } from '@/components/layout/empty-state';
@@ -108,6 +109,21 @@ export default function VendorProductsPage() {
   return (
     <PageAccessGuard requires="vendors:read">
       <PageHeader
+        report={
+          <ReportButton
+            title={`Vendor Product Pricing${vendors.find((v) => v.id === selectedVendorId)?.company ? ` - ${vendors.find((v) => v.id === selectedVendorId)?.company}` : ''}`}
+            rows={vendorProducts.map((vp) => ({
+              Vendor: vp.vendor?.company ?? '',
+              Product: vp.product?.name ?? '',
+              SKU: vp.vendorSku ?? '',
+              Price: vp.purchasePrice.toFixed(2),
+              'Last paid': vp.lastPurchasePrice != null ? vp.lastPurchasePrice.toFixed(2) : '',
+              Preferred: vp.isPreferred ? 'Yes' : '',
+              Status: vp.isActive ? 'Active' : 'Inactive',
+            }))}
+          />
+        }
+        back={{ href: '/vendors', label: 'Back to Vendors' }}
         title="Vendor Product Pricing"
         description="Browse what each vendor sells, their full product details, and what they currently charge"
       />

@@ -156,6 +156,7 @@ export function AdjustmentDialog({ open, onOpenChange, branchId }: AdjustmentDia
               <Input
                 id="quantity"
                 type="number"
+                integer
                 aria-invalid={!!errors.quantity}
                 {...register('quantity', { required: 'Required', min: { value: 1, message: 'Must be at least 1' } })}
               />

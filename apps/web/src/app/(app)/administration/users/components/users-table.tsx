@@ -1,16 +1,18 @@
 'use client';
 
+import { useMemo } from 'react';
 import { MoreHorizontal } from 'lucide-react';
-import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, Switch, cn } from '@medicore/ui';
+import { Badge, DataTable, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, Switch, type ColumnDef } from '@medicore/ui';
 import { useUsers } from '@/hooks/use-users';
 import { usePermissions } from '@/hooks/use-permissions';
-import { toast } from '@medicore/ui';
 import type { User } from '@medicore/shared-types';
 import { UserStatus } from '@medicore/shared-types';
 
 interface UsersTableProps {
   users: User[];
   onEdit: (id: string) => void;
+  /** The rows left after the table's search, for a report. */
+  onFilteredRowsChange?: (rows: User[]) => void;
 }
 
 const statusVariants: Record<UserStatus, 'default' | 'secondary' | 'destructive' | 'outline' | 'success' | 'warning'> = {
@@ -19,86 +21,73 @@ const statusVariants: Record<UserStatus, 'default' | 'secondary' | 'destructive'
   DISABLED: 'destructive',
 };
 
-export function UsersTable({ users, onEdit }: UsersTableProps) {
+function RowActions({ children }: { children: React.ReactNode }) {
+  return (
+    <div onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="p-1 hover:bg-muted rounded" aria-label="Row actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">{children}</DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+export function UsersTable({ users, onEdit, onFilteredRowsChange }: UsersTableProps) {
   const { has } = usePermissions();
   const { setStatus } = useUsers();
+  const canEdit = has('users:update');
 
-  const handleToggleStatus = async (user: User) => {
-    try {
-      const newStatus = user.status === UserStatus.ACTIVE ? UserStatus.DISABLED : UserStatus.ACTIVE;
-      await setStatus(user.id, newStatus);
-    } catch (err) {
-      // Error is already handled by the hook
-    }
-  };
+  const columns = useMemo<ColumnDef<User>[]>(() => {
+    const toggle = async (user: User) => {
+      try {
+        await setStatus(user.id, user.status === UserStatus.ACTIVE ? UserStatus.DISABLED : UserStatus.ACTIVE);
+      } catch {
+        // Error is already handled by the hook
+      }
+    };
+    return [
+      { accessorKey: 'fullName', header: 'Name', cell: ({ row }) => <span className="font-medium">{row.original.fullName}</span> },
+      { accessorKey: 'username', header: 'Username' },
+      { id: 'phone', header: 'Phone', accessorFn: (u) => u.phone ?? '', cell: ({ getValue }) => <span className="text-sm text-muted-foreground">{(getValue() as string) || '—'}</span> },
+      { accessorKey: 'tenantRole', header: 'Tenant Role', cell: ({ row }) => <Badge variant="secondary">{row.original.tenantRole}</Badge> },
+      { id: 'role', header: 'Assigned Role', accessorFn: (u) => u.role?.name ?? '', cell: ({ getValue }) => (getValue() as string) || '—' },
+      { accessorKey: 'status', header: 'Status', cell: ({ row }) => <Badge variant={statusVariants[row.original.status]}>{row.original.status}</Badge> },
+      {
+        id: 'active',
+        header: 'Active',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div onClick={(e) => e.stopPropagation()}>
+            <Switch checked={row.original.status === 'ACTIVE'} onCheckedChange={() => toggle(row.original)} disabled={!has('users:deactivate')} />
+          </div>
+        ),
+      },
+      {
+        id: 'actions',
+        header: '',
+        enableSorting: false,
+        cell: ({ row }) => (
+          <RowActions>
+            <DropdownMenuItem onClick={() => onEdit(row.original.id)} disabled={!canEdit}>
+              Edit
+            </DropdownMenuItem>
+          </RowActions>
+        ),
+      },
+    ];
+  }, [canEdit, has, onEdit, setStatus]);
 
   return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Username</TableHead>
-            <TableHead>Phone</TableHead>
-            <TableHead>Tenant Role</TableHead>
-            <TableHead>Assigned Role</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead className="w-16">Active</TableHead>
-            <TableHead className="w-12"></TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => {
-            const canEdit = has('users:update');
-            return (
-              <TableRow
-                key={user.id}
-                onClick={() => canEdit && onEdit(user.id)}
-                className={cn(canEdit && 'cursor-pointer')}
-              >
-                <TableCell className="font-medium">{user.fullName}</TableCell>
-                <TableCell className="text-sm">{user.username}</TableCell>
-                <TableCell className="text-sm text-muted-foreground">{user.phone || '—'}</TableCell>
-                <TableCell>
-                  <Badge variant="secondary">{user.tenantRole}</Badge>
-                </TableCell>
-                <TableCell className="text-sm">
-                  {user.role?.name || '—'}
-                </TableCell>
-                <TableCell>
-                  <Badge variant={statusVariants[user.status]}>
-                    {user.status}
-                  </Badge>
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <Switch
-                    checked={user.status === 'ACTIVE'}
-                    onCheckedChange={() => handleToggleStatus(user)}
-                    disabled={!has('users:deactivate')}
-                  />
-                </TableCell>
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button className="p-1 hover:bg-muted rounded">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                      <DropdownMenuItem
-                        onClick={() => onEdit(user.id)}
-                        disabled={!has('users:update')}
-                      >
-                        Edit
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+    <DataTable
+      columns={columns}
+      data={users}
+      searchPlaceholder="Search users..."
+      onRowClick={(u) => canEdit && onEdit(u.id)}
+      onFilteredRowsChange={onFilteredRowsChange}
+    />
   );
 }

@@ -10,6 +10,7 @@ import {
   IsOptional,
   IsPositive,
   IsString,
+  IsUUID,
   Max,
   Min,
   ValidateNested,
@@ -117,4 +118,9 @@ export class CreateSaleDto {
   @ValidateNested({ each: true })
   @Type(() => CreateSaleItemDto)
   items: CreateSaleItemDto[];
+
+  /** Lets an offline client replay this request safely: the same value returns the sale already created. */
+  @IsUUID()
+  @IsOptional()
+  clientOpId?: string;
 }

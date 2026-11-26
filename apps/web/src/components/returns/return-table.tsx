@@ -24,7 +24,7 @@ export function ReturnTable({ ret }: { ret: ReturnMode }) {
   const hasBonus = ret.rows.some((r) => r.bonusOriginal > 0);
   return (
     <div className="rounded-lg border">
-      <Table>
+      <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">
@@ -75,9 +75,9 @@ export function ReturnTable({ ret }: { ret: ReturnMode }) {
                   ) : (
                     <Input
                       type="number"
+                      integer
                       min={0}
                       max={r.returnable}
-                      step="any"
                       disabled={!ret.ticked(r)}
                       value={ret.qtyInput(r)}
                       onChange={(e) => ret.setRowQty(r, e.target.value)}
@@ -91,9 +91,9 @@ export function ReturnTable({ ret }: { ret: ReturnMode }) {
                     ) : (
                       <Input
                         type="number"
+                        integer
                         min={0}
                         max={r.bonusReturnable}
-                        step="any"
                         aria-label={`Return bonus ${r.productName}`}
                         disabled={!ret.ticked(r)}
                         value={ret.bonusInput(r)}

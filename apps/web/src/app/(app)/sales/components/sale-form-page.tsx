@@ -1,5 +1,6 @@
 'use client';
 
+import { customerOption } from '@/lib/party-label';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Controller, useForm } from 'react-hook-form';
@@ -277,7 +278,7 @@ export function SaleFormPage({ editSale }: { editSale?: Sale }) {
               <ComboboxWithCreate
                 value={value}
                 onChange={onChange}
-                options={customers.map((c) => ({ value: c.id, label: c.name }))}
+                options={customers.map(customerOption)}
                 placeholder={branchId ? 'Walk-in (no customer)' : 'Select a branch first'}
                 disabled={!branchId}
                 onCreateNew={() => setCustomerDialogOpen(true)}

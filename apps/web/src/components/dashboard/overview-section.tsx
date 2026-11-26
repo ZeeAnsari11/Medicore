@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
-import { Card, CardContent, CardHeader, CardTitle, cn } from '@medicore/ui';
+import { Card, CardContent, CardHeader, CardTitle } from '@medicore/ui';
+import { StatCards } from '@/components/layout/stat-cards';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useDashboardSummary } from '@/hooks/use-dashboard-summary';
 
@@ -29,27 +29,10 @@ export function OverviewSection({ branchId }: { branchId: string | null }) {
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-semibold">Overview</h2>
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {cards.map((card) => (
-          <Card key={card.title} className={cn('relative', canOpen(card.href) && 'transition-colors hover:bg-muted/40')}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {canOpen(card.href) ? (
-                  <Link href={card.href} className="after:absolute after:inset-0">
-                    {card.title}
-                  </Link>
-                ) : (
-                  card.title
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-semibold tabular-nums">{card.value ?? 0}</div>
-              {card.sub && <div className="mt-1 text-xs text-muted-foreground">{card.sub}</div>}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+      <StatCards
+        className="mb-0"
+        items={cards.map((c) => ({ title: c.title, value: c.value ?? 0, count: true, hint: c.sub, href: canOpen(c.href) ? c.href : undefined }))}
+      />
 
       {data && data.branches.length > 0 && (
         <Card>

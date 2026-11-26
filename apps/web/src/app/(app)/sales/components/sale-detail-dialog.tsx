@@ -128,7 +128,11 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
       return () => clearTimeout(t);
     }
   }, [highlightPaymentId, payments]);
-  const [paymentAmount, setPaymentAmount] = useState<number>(outstanding);
+  // What the user typed, tied to the balance it was typed against: once a payment or return changes the outstanding,
+  // the box follows the new balance again instead of keeping a stale amount.
+  const [typedAmount, setTypedAmount] = useState<{ outstanding: number; value: number } | null>(null);
+  const paymentAmount = typedAmount?.outstanding === outstanding ? typedAmount.value : outstanding;
+  const setPaymentAmount = (value: number) => setTypedAmount({ outstanding, value });
   const [method, setMethod] = useState<PaymentMethod>(sale.paymentMethod ?? PaymentMethod.CASH);
   const [paymentDay, setPaymentDay] = useState<string>(todayIso());
   const [reference, setReference] = useState('');
@@ -143,7 +147,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
       paymentDate: paymentDateTime(paymentDay),
       reference: reference.trim() || undefined,
     });
-    setPaymentAmount(0);
+    setTypedAmount(null);
     setReference('');
     setPaymentDay(todayIso());
   };
@@ -245,7 +249,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
             <ReturnTable ret={ret} />
           ) : (
           <div className="rounded-lg border">
-            <Table>
+            <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
@@ -261,7 +265,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                 {sale.items.map((item, i) => (
                   <TableRow key={i}>
                     <TableCell className="font-medium">{item.productName}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {item.batchAllocations
                         .map((a) =>
                           item.batchAllocations.length > 1 ? `${a.batchNumber} (${a.quantity})` : a.batchNumber,
@@ -307,9 +311,10 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               <p className="text-sm text-muted-foreground">No payments yet</p>
             ) : (
               <div className="rounded-lg border">
-                <Table>
+                <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Payment ID</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Method</TableHead>
@@ -327,7 +332,16 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                             : undefined
                         }
                       >
-                        <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm">
+                          {payment.paymentNumber ? (
+                            <Link href={`/accounting/receipts?open=${payment.id}`} className="text-primary hover:underline">
+                              {payment.paymentNumber}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleDateString()}</TableCell>
                         <TableCell className="tabular-nums">{payment.isRefund ? '-' : ''}{payment.amount.toFixed(2)}</TableCell>
                         <TableCell className="text-sm">
                           {payment.isRefund
@@ -367,7 +381,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
           <ReturnsSection kind="sale" docId={sale.id} branchId={branchId} returns={returns} />
 
           {!ret.active && has('sales:return') && (
-            <div className="space-y-3 rounded-lg border p-4 bg-muted/30">
+            <div className="space-y-1.5 rounded-lg border p-3 bg-muted/30">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">{differenceTotal > 0 ? 'Received' : 'Total paid'}</span>
                 <span>{(sale.amountPaid - differenceTotal).toFixed(2)}</span>
@@ -391,17 +405,18 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               {outstanding <= 0.01 ? (
                 <p className="text-sm text-muted-foreground">This invoice is fully paid.</p>
               ) : readOnly ? null : (
-                <div className="space-y-1.5">
-                  <Label>Record a payment</Label>
+                <div className="space-y-1">
+                  <Label className="text-xs">Record a payment</Label>
                   <div className="flex gap-2">
                     <Input
+                      className="h-8"
                       type="number"
                       min="0"
                       step="0.01"
                       value={paymentAmount}
                       onChange={(e) => setPaymentAmount(Number(e.target.value))}
                     />
-                    <Button type="button" variant="outline" onClick={() => setPaymentAmount(outstanding)}>
+                    <Button type="button" variant="outline" size="sm" className="h-8" onClick={() => setPaymentAmount(outstanding)}>
                       Full amount
                     </Button>
                   </div>
@@ -409,10 +424,10 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                     <p className="text-xs text-destructive">Amount cannot exceed the outstanding {outstanding.toFixed(2)}.</p>
                   )}
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                    <div className="space-y-1.5">
-                      <Label>Payment method *</Label>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Payment method *</Label>
                       <Select value={method} onValueChange={(v) => setMethod(v as PaymentMethod)}>
-                        <SelectTrigger>
+                        <SelectTrigger className="h-8">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -422,13 +437,13 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-1.5">
-                      <Label>Date</Label>
-                      <Input type="date" max={todayIso()} value={paymentDay} onChange={(e) => setPaymentDay(e.target.value)} />
+                    <div className="space-y-1">
+                      <Label className="text-xs">Date</Label>
+                      <Input className="h-8" type="date" max={todayIso()} value={paymentDay} onChange={(e) => setPaymentDay(e.target.value)} />
                     </div>
-                    <div className="space-y-1.5">
-                      <Label>Reference # (optional)</Label>
-                      <Input value={reference} onChange={(e) => setReference(e.target.value)} />
+                    <div className="space-y-1">
+                      <Label className="text-xs">Reference # (optional)</Label>
+                      <Input className="h-8" value={reference} onChange={(e) => setReference(e.target.value)} />
                     </div>
                   </div>
                 </div>
@@ -472,7 +487,7 @@ export function SaleDetailDialog({ open, onOpenChange, sale: initialSale, branch
               </Button>
             )}
             <Button variant="outline" onClick={handleViewPdf} disabled={isOpening}>
-              {isOpening ? 'Preparing...' : 'View invoice PDF'}
+              {isOpening ? 'Preparing...' : 'Sale Invoice'}
             </Button>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
             {!readOnly && has('sales:record_payment') && outstanding > 0.01 && (

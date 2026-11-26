@@ -4,6 +4,7 @@ import * as React from 'react';
 import {
   type ColumnDef,
   type SortingState,
+  type VisibilityState,
   flexRender,
   getCoreRowModel,
   getFilteredRowModel,
@@ -16,6 +17,7 @@ import { cn } from '../lib/cn';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from './table';
 import { Input } from '../primitives/input';
 import { Button } from '../primitives/button';
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '../primitives/dropdown-menu';
 import { FilterPanel } from './filter-panel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../forms/select';
 
@@ -35,6 +37,9 @@ export interface DataTableServerSearch {
   onChange: (value: string) => void;
 }
 
+/** Rows-per-page choices every client-paged table offers unless it passes its own. */
+export const DEFAULT_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 250, 500];
+
 export interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
@@ -47,7 +52,7 @@ export interface DataTableProps<TData, TValue> {
   search?: DataTableServerSearch;
   /** Extra controls (e.g. another search box) shown next to the search input. */
   toolbar?: React.ReactNode;
-  /** Client-side paging only: shows a "Rows per page" selector with these choices. */
+  /** Client-side paging only: the "Rows per page" choices (default 10, 25, 50, 100, 250, 500). */
   pageSizeOptions?: number[];
   /** True while a filter outside the table (e.g. one in `toolbar`) is applied; enables the Clear filters button. */
   filtersActive?: boolean;
@@ -55,6 +60,11 @@ export interface DataTableProps<TData, TValue> {
   onClearFilters?: () => void;
   /** For pages that already render their own Clear filters button. */
   hideClearFilters?: boolean;
+  /**
+   * Called with the rows left after the table's own search (all pages, not just the visible one), so a report can match
+   * what the person searched for. Pass a stable function (e.g. from useShownRows).
+   */
+  onFilteredRowsChange?: (rows: TData[]) => void;
 }
 
 export function DataTable<TData, TValue>({
@@ -67,14 +77,18 @@ export function DataTable<TData, TValue>({
   pagination,
   search,
   toolbar,
-  pageSizeOptions,
+  pageSizeOptions: pageSizeChoices = DEFAULT_PAGE_SIZE_OPTIONS,
   filtersActive,
   onClearFilters,
   hideClearFilters,
+  onFilteredRowsChange,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = React.useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = React.useState('');
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
 
+  // A table's own starting size is always one of the choices.
+  const pageSizeOptions = pageSizeChoices.includes(pageSize) ? pageSizeChoices : [...pageSizeChoices, pageSize].sort((a, b) => a - b);
   const pageCount = pagination ? Math.max(1, Math.ceil(pagination.total / pagination.pageSize)) : undefined;
 
   const table = useReactTable({
@@ -83,9 +97,11 @@ export function DataTable<TData, TValue>({
     state: {
       sorting,
       globalFilter,
+      columnVisibility,
       ...(pagination && { pagination: { pageIndex: pagination.pageIndex, pageSize: pagination.pageSize } }),
     },
     onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -95,6 +111,14 @@ export function DataTable<TData, TValue>({
     ...(!search && { getFilteredRowModel: getFilteredRowModel() }),
     initialState: { pagination: { pageSize } },
   });
+
+  // Columns with a text heading can be switched off from the Columns menu; the actions column (no heading) stays.
+  const hideableColumns = table.getAllLeafColumns().filter((c) => typeof c.columnDef.header === 'string' && c.columnDef.header.trim() !== '');
+
+  const filteredRows = table.getFilteredRowModel().rows;
+  React.useEffect(() => {
+    onFilteredRowsChange?.(filteredRows.map((r) => r.original));
+  }, [filteredRows, onFilteredRowsChange]);
 
   // An empty panel would only show a pointless Filters button on phones.
   const hasFilterControls = !!toolbar || !hideClearFilters || (!!pageSizeOptions && !pagination);
@@ -147,6 +171,28 @@ export function DataTable<TData, TValue>({
               </div>
             )}
           </FilterPanel>
+        )}
+        {hideableColumns.length > 1 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="ml-auto">
+                Columns
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="max-h-80 overflow-auto">
+              {hideableColumns.map((c) => (
+                <DropdownMenuCheckboxItem
+                  key={c.id}
+                  checked={c.getIsVisible()}
+                  // Keep the menu open so several columns can be switched in one go.
+                  onSelect={(e) => e.preventDefault()}
+                  onCheckedChange={(v) => c.toggleVisibility(!!v)}
+                >
+                  {c.columnDef.header as string}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 

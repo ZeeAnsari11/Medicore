@@ -667,7 +667,7 @@ describe('cash receipt transactions (e2e)', () => {
       expect(saleRow.documentType).toBe('Sale invoice');
       expect(saleRow.reference.number).toBe(inv.invoiceNumber);
 
-      const pay = rows.find((r) => r.documentType === 'Payment');
+      const pay = rows.find((r) => r.documentType === 'Receipt');
       expect(pay.invoices).toEqual([expect.objectContaining({ type: 'SALE', number: inv.invoiceNumber, amount: 40 })]);
       expect(pay.receipt).toBeUndefined();
       expect(pay.description).toBe(`Against invoice ${inv.invoiceNumber}`);
@@ -692,7 +692,7 @@ describe('cash receipt transactions (e2e)', () => {
           { invoiceType: 'SALE', invoiceId: b.id, amount: 40 },
         ],
       });
-      const pay = (await ledger(w.customerId)).find((r) => r.documentType === 'Payment');
+      const pay = (await ledger(w.customerId)).find((r) => r.documentType === 'Receipt');
       expect(pay.invoices.map((i: any) => i.number).sort()).toEqual([a.invoiceNumber, b.invoiceNumber].sort());
       expect(pay.receipt).toBeUndefined();
       expect(pay.description).toBe(`Against invoice ${[a.invoiceNumber, b.invoiceNumber].join(', ')} · ref: CHQ-77`);
@@ -702,7 +702,7 @@ describe('cash receipt transactions (e2e)', () => {
       const w = await world();
       const inv = await w.invoice(10);
       const saved = await receipt([{ invoiceId: inv.id, amount: 30 }]);
-      const paymentId = (await ledger(w.customerId)).find((r) => r.documentType === 'Payment').reference.id;
+      const paymentId = (await ledger(w.customerId)).find((r) => r.documentType === 'Receipt').reference.id;
 
       const listed = rows(await get(`accounting/payments?branchId=${K}&partyType=CUSTOMER&partyId=${w.customerId}`));
       const p = listed.find((x: any) => x.id === paymentId);
@@ -759,7 +759,7 @@ describe('cash receipt transactions (e2e)', () => {
       // One ledger row for the whole receipt: cash plus difference, with the difference and its expense named.
       const ledgerRows = await ledger(w.customerId);
       expect(ledgerRows.find((r) => r.documentType === 'Difference')).toBeUndefined();
-      const pay = ledgerRows.find((r) => r.documentType === 'Payment');
+      const pay = ledgerRows.find((r) => r.documentType === 'Receipt');
       expect(pay.credit).toBe(150);
       expect(pay.runningBalance).toBe(0);
       expect(pay.invoices).toEqual([expect.objectContaining({ number: inv.invoiceNumber })]);
@@ -806,7 +806,7 @@ describe('cash receipt transactions (e2e)', () => {
       const inv = await w.invoice(10); // 150
       const saved = await receipt([{ invoiceId: inv.id, amount: 100, difference: 20 } as any]); // 30 still owed
       const entryId = saved.rows[0].entryId;
-      const paymentOf = async () => (await ledger(w.customerId)).find((r) => r.documentType === 'Payment');
+      const paymentOf = async () => (await ledger(w.customerId)).find((r) => r.documentType === 'Receipt');
       const first = await paymentOf();
       const [expense] = await expensesFor(inv.invoiceNumber);
       expect((await sale(inv.id)).paymentStatus).toBe('PARTIAL');
@@ -918,7 +918,7 @@ describe('cash receipt transactions (e2e)', () => {
       const w = await world();
       const inv = await w.invoice(10);
       await receipt([{ invoiceId: inv.id, amount: 140, difference: 10 } as any]);
-      const paymentId = (await ledger(w.customerId)).find((r) => r.documentType === 'Payment').reference.id;
+      const paymentId = (await ledger(w.customerId)).find((r) => r.documentType === 'Receipt').reference.id;
       await api().delete(`/api/accounting/payments/${paymentId}`).set(headers()).expect(204);
 
       const back = await sale(inv.id);

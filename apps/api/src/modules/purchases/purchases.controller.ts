@@ -98,9 +98,9 @@ export class PurchasesController {
     @Query('branchId') branchId?: string,
   ) {
     const scope = resolveBranchScope(user, branchId);
-    const doc = await this.purchasesService.buildPurchaseOrderPdf(user.tenantId, scope, id);
+    const doc = await this.purchasesService.buildPurchaseOrderPdf(user.tenantId, scope, id, user.username);
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="purchase-order.pdf"');
+    res.setHeader('Content-Disposition', 'inline; filename="purchase-invoice.pdf"');
     doc.pipe(res);
     doc.end();
   }
@@ -148,7 +148,7 @@ export class PurchasesController {
     @Query('branchId') branchId?: string,
   ) {
     const scope = resolveBranchScope(user, branchId);
-    const doc = await this.purchasesService.buildReturnPdf(user.tenantId, scope, id, returnId);
+    const doc = await this.purchasesService.buildReturnPdf(user.tenantId, scope, id, returnId, user.username);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', 'inline; filename="purchase-return.pdf"');
     doc.pipe(res);

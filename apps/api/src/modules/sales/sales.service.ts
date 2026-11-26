@@ -502,6 +502,9 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     orderBooker: OrderBooker,
     pending = false,
   ): Promise<SaleType> {
+    // A replay of an already-applied request (offline PWA) returns the sale that request created.
+    const replay = await this.findReplay(tenantId, dto.clientOpId);
+    if (replay) return replay;
     const session = await this.connection.startSession();
     try {
       let result: SaleDocument | null = null;
@@ -619,6 +622,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
               createdBy: new Types.ObjectId(userId),
               orderBookerId: new Types.ObjectId(orderBooker.id),
               orderBookerName: orderBooker.name,
+              clientOpId: dto.clientOpId,
             },
           ],
           { session },
@@ -655,9 +659,26 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
 
       const populated = await this.saleModel.findById(result!._id).populate('customerId', 'name address city territory');
       return this.toSaleResponse(populated!);
+    } catch (err) {
+      // Two concurrent copies of the same request: the one that lost the unique index returns the winner's sale.
+      const e = err as { code?: number; keyPattern?: Record<string, unknown> };
+      if (e.code === 11000 && dto.clientOpId && e.keyPattern && 'clientOpId' in e.keyPattern) {
+        const winner = await this.findReplay(tenantId, dto.clientOpId);
+        if (winner) return winner;
+      }
+      throw err;
     } finally {
       await session.endSession();
     }
+  }
+
+  /** The sale an earlier copy of this request created, if any. */
+  private async findReplay(tenantId: string, clientOpId?: string): Promise<SaleType | null> {
+    if (!clientOpId) return null;
+    const existing = await this.saleModel
+      .findOne({ tenantId: new Types.ObjectId(tenantId), clientOpId })
+      .populate('customerId', 'name address city territory');
+    return existing ? this.toSaleResponse(existing) : null;
   }
 
   /**
@@ -1352,6 +1373,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       const recordedBy = typeof obj.createdBy === 'object' ? obj.createdBy?.fullName : undefined;
       const row: SalePaymentRow = {
         id: obj._id.toString(),
+        paymentNumber: obj.paymentSeq ? String(obj.paymentSeq) : undefined,
         paymentDate: new Date(obj.paymentDate).toISOString(),
         amount: round2(applied),
         method: obj.method,
@@ -1458,11 +1480,11 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
   /** Code, address and city for the PDF header; null for walk-in sales. */
   private customerForPdf(tenantId: string, customerId?: string) {
     return customerId
-      ? this.customerModel.findOne({ _id: customerId, tenantId: new Types.ObjectId(tenantId) }).select('code address city')
+      ? this.customerModel.findOne({ _id: customerId, tenantId: new Types.ObjectId(tenantId) }).select('code customerSeq address city phone ntn')
       : null;
   }
 
-  async buildReturnPdf(tenantId: string, branchId: string | null, id: string, returnId: string) {
+  async buildReturnPdf(tenantId: string, branchId: string | null, id: string, returnId: string, preparedBy?: string) {
     const sale = await this.findOne(tenantId, branchId, id);
     const ret = await this.returnsService.getSaleReturn(tenantId, returnId);
     if (ret.saleId !== sale.id) throw new NotFoundException('Return not found');
@@ -1475,6 +1497,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     ]);
 
     return this.documentPdfService.build({
+      preparedBy,
       documentTypeLabel: 'SALE RETURN',
       documentNumber: response.returnNumber ?? response.id,
       date: new Date(response.returnDate),
@@ -1485,6 +1508,9 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       partyLabel: 'Customer',
       partyName: saleResponse.customerName ?? 'Walk-in customer',
       partyCode: customer?.code,
+      partyNumber: customer?.customerSeq,
+      partyPhone: customer?.phone,
+      partyNtn: customer?.ntn,
       partyAddress: customer?.address,
       partyCity: customer?.city,
       items: response.items.map((i) => ({
@@ -1507,7 +1533,7 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     });
   }
 
-  async buildInvoicePdf(tenantId: string, branchId: string | null, id: string) {
+  async buildInvoicePdf(tenantId: string, branchId: string | null, id: string, preparedBy?: string) {
     const sale = await this.findOne(tenantId, branchId, id);
     const response = this.toSaleResponse(sale);
     const [branch, tenant, payments, returns, customer] = await Promise.all([
@@ -1519,7 +1545,8 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
     ]);
 
     return this.documentPdfService.build({
-      documentTypeLabel: 'INVOICE',
+      preparedBy,
+      documentTypeLabel: 'SALE INVOICE',
       documentNumber: response.invoiceNumber,
       date: new Date(response.saleDate),
       companyName: tenant?.name ?? 'Medicore',
@@ -1529,6 +1556,9 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
       partyLabel: 'Bill to',
       partyName: response.customerName ?? 'Walk-in customer',
       partyCode: customer?.code,
+      partyNumber: customer?.customerSeq,
+      partyPhone: customer?.phone,
+      partyNtn: customer?.ntn,
       partyAddress: customer?.address,
       partyCity: customer?.city,
       orderBooker: response.orderBookerName || undefined,
@@ -1596,7 +1626,6 @@ export class SalesService extends BranchScopedRepository<SaleDocument> {
           amount: i.batchAllocations.reduce((s, a) => s + (a.total ?? 0), 0),
         })),
       })),
-      footerNote: `Payment method: ${response.paymentMethod}`,
     });
   }
 

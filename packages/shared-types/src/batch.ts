@@ -44,4 +44,8 @@ export interface InventoryRollup {
   nearestExpiryDate?: string;
   /** Units on hand in batches already past expiry. */
   expiredQuantity?: number;
+  /** Only when the request gave a `from` date: stock at the start of that day, units received and units sold since. */
+  openingQuantity?: number;
+  receivedQuantity?: number;
+  soldQuantity?: number;
 }

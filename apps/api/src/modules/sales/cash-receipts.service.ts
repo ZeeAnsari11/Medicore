@@ -133,7 +133,7 @@ export class CashReceiptsService {
     if (groups.length === 0) return [];
 
     const customers = await this.customerModel
-      .find({ _id: { $in: groups.map((g) => g._id) }, tenantId: new Types.ObjectId(tenantId) }, { name: 1, phone: 1 })
+      .find({ _id: { $in: groups.map((g) => g._id) }, tenantId: new Types.ObjectId(tenantId) }, { name: 1, phone: 1, territory: 1 })
       .lean();
     const byId = new Map(customers.map((c) => [String(c._id), c]));
     return groups
@@ -142,6 +142,7 @@ export class CashReceiptsService {
         id: g._id,
         name: byId.get(g._id)!.name,
         phone: byId.get(g._id)!.phone,
+        territory: byId.get(g._id)!.territory,
         openInvoices: g.openInvoices,
         due: round2(g.due),
       }))
@@ -197,6 +198,7 @@ export class CashReceiptsService {
       ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}),
     });
     const nameById = new Map(customers.map((c) => [c.id as string, c.name]));
+    const territoryById = new Map(customers.map((c) => [c.id as string, c.territory]));
     const balances = new Map<string, number>();
     await Promise.all(
       customerIds.map(async (id) =>
@@ -214,6 +216,7 @@ export class CashReceiptsService {
         saleDate: s.saleDate.toISOString(),
         customerId,
         customerName: nameById.get(customerId) ?? 'Customer',
+        customerTerritory: territoryById.get(customerId),
         grandTotal: s.grandTotal,
         netTotal,
         received: round2(netTotal - balance),

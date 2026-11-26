@@ -123,7 +123,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const filter = this.buildListFilter(tenantId, branchId, query);
-    const [items, total] = await Promise.all([
+    const [items, total, totals] = await Promise.all([
       this.purchaseModel
         .find(filter)
         .populate('vendorId', 'company')
@@ -131,8 +131,16 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
         .skip((page - 1) * limit)
         .limit(limit),
       this.purchaseModel.countDocuments(filter),
+      this.purchaseModel.aggregate<{ billed: number; paid: number }>([
+        { $match: filter },
+        { $group: { _id: null, billed: { $sum: '$grandTotal' }, paid: { $sum: '$amountPaid' } } },
+      ]),
     ]);
-    return { items, total, page, limit };
+    const billed = totals[0]?.billed ?? 0;
+    const paid = totals[0]?.paid ?? 0;
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    // Over every purchase matching the filters, not just this page.
+    return { items, total, page, limit, summary: { billed: r2(billed), paid: r2(paid), outstanding: r2(billed - paid) } };
   }
 
   private buildListFilter(tenantId: string, branchId: string | null, query: ListPurchasesQueryDto) {
@@ -1115,6 +1123,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       const recordedBy = typeof obj.createdBy === 'object' ? obj.createdBy?.fullName : undefined;
       const row: PurchasePaymentRow = {
         id: obj._id.toString(),
+        paymentNumber: obj.paymentSeq ? String(obj.paymentSeq) : undefined,
         paymentDate: new Date(obj.paymentDate).toISOString(),
         amount: round2(applied),
         method: obj.method,
@@ -1216,7 +1225,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     return this.returnsService.toPurchaseReturnResponse(ret);
   }
 
-  async buildReturnPdf(tenantId: string, branchId: string | null, id: string, returnId: string) {
+  async buildReturnPdf(tenantId: string, branchId: string | null, id: string, returnId: string, preparedBy?: string) {
     const purchase = await this.findOne(tenantId, branchId, id);
     const ret = await this.returnsService.getPurchaseReturn(tenantId, returnId);
     if (ret.purchaseId !== purchase.id) throw new NotFoundException('Return not found');
@@ -1228,6 +1237,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     ]);
 
     return this.documentPdfService.build({
+      preparedBy,
       documentTypeLabel: 'PURCHASE RETURN',
       documentNumber: response.returnNumber ?? response.id,
       date: new Date(response.returnDate),
@@ -1255,7 +1265,7 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     });
   }
 
-  async buildPurchaseOrderPdf(tenantId: string, branchId: string | null, id: string) {
+  async buildPurchaseOrderPdf(tenantId: string, branchId: string | null, id: string, preparedBy?: string) {
     const purchase = await this.findOne(tenantId, branchId, id);
     const response = this.toPurchaseResponse(purchase);
     const [branch, tenant, payments, returns, vendor] = await Promise.all([
@@ -1269,7 +1279,8 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
     const nameByProduct = new Map(response.items.map((i) => [i.productId, i.productName ?? i.productId]));
 
     return this.documentPdfService.build({
-      documentTypeLabel: 'PURCHASE ORDER',
+      preparedBy,
+      documentTypeLabel: 'PURCHASE INVOICE',
       documentNumber: response.purchaseNumber,
       date: new Date(response.purchaseDate),
       companyName: tenant?.name ?? 'Medicore',
@@ -1279,9 +1290,10 @@ export class PurchasesService extends BranchScopedRepository<PurchaseDocument> {
       partyLabel: 'Vendor',
       partyName: response.vendorName ?? 'Vendor',
       partyAddress: vendor?.address,
+      partyPhone: vendor?.contactPhone,
       items: response.items.map((item) => ({
         name: item.productName ?? item.productId,
-        detail: `Batch ${item.batchNumber} · exp ${new Date(item.expiryDate).toLocaleDateString()}`,
+        batchNumber: item.batchNumber,
         returnedQuantity: returns.reduce(
           (sum, r) =>
             sum + r.items.filter((i) => i.batchId === item.batchId).reduce((s, i) => s + i.quantity, 0),

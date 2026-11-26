@@ -1,8 +1,12 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Plus, Receipt } from 'lucide-react';
+import { StatCards } from '@/components/layout/stat-cards';
+import { ReportButton } from '@/components/layout/report-button';
+import { apiFetch } from '@/lib/api-client';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -80,7 +84,7 @@ export default function PurchasesPage() {
     setPageIndex(0);
   }, [selectedBranchId, vendorId, paymentStatus, returnStatus, status, dateFrom, dateTo, search, pageSize]);
 
-  const { purchases, total, isLoading, error } = usePurchasesPage({
+  const { purchases, total, summary, isLoading, error } = usePurchasesPage({
     branchId: selectedBranchId,
     vendorId: vendorId === ALL ? undefined : vendorId,
     paymentStatus: paymentStatus === ALL ? undefined : paymentStatus,
@@ -168,6 +172,52 @@ export default function PurchasesPage() {
   return (
     <PageAccessGuard requires="purchases:read">
       <PageHeader
+        report={<ReportButton
+          title="Purchases"
+          summary={
+            summary
+              ? [
+                  ['Purchases', total],
+                  ['Total purchased', summary.billed.toFixed(2)],
+                  ['Total paid', summary.paid.toFixed(2)],
+                  ['Outstanding', summary.outstanding.toFixed(2)],
+                ]
+              : undefined
+          }
+          subtitle={dateFrom || dateTo ? `${dateFrom || 'start'} to ${dateTo || 'today'}` : 'All dates'}
+          info={[
+            `Vendor: ${vendorId === ALL ? 'All' : (vendors.find((v) => v.id === vendorId)?.company ?? '')}`,
+            `Payment: ${paymentStatus === ALL ? 'All' : paymentStatus}`,
+            `Status: ${status === ALL ? 'All' : status}`,
+            ...(search ? [`Search: ${search}`] : []),
+          ]}
+          totalColumns={['Total', 'Paid', 'Balance']}
+          rows={[]}
+          getRows={async () => {
+            const q = new URLSearchParams();
+            if (selectedBranchId) q.set('branchId', selectedBranchId);
+            if (vendorId !== ALL) q.set('vendorId', vendorId);
+            if (paymentStatus !== ALL) q.set('paymentStatus', paymentStatus);
+            if (returnStatus !== ALL) q.set('returnStatus', returnStatus);
+            if (status !== ALL) q.set('status', status);
+            if (dateFrom) q.set('dateFrom', dateFrom);
+            if (dateTo) q.set('dateTo', dateTo);
+            if (search) q.set('search', search);
+            const all = await apiFetch<Purchase[]>(`/purchases?${q}`);
+            return all.map((p) => ({
+              'PO #': p.purchaseNumber,
+              Vendor: p.vendorName ?? '',
+              Branch: branches.find((b) => b.id === p.branchId)?.name ?? '',
+              Date: new Date(p.purchaseDate).toLocaleDateString('en-CA'),
+              Items: p.items.length,
+              Total: p.grandTotal.toFixed(2),
+              Paid: p.amountPaid.toFixed(2),
+              Balance: (p.grandTotal - p.amountPaid).toFixed(2),
+              Payment: p.paymentStatus,
+              Status: p.status,
+            }));
+          }}
+        />}
         title="Purchases"
         description="Stock received from vendors"
         actions={
@@ -242,7 +292,7 @@ export default function PurchasesPage() {
           </Select>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             From
-            <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => setDateFrom(e.target.value)} className="w-40" />
+            <Input type="date" value={dateFrom} max={dateTo || undefined} onChange={(e) => { setDateFrom(e.target.value); setDateTo(toAfterFrom(e.target.value, dateTo)); }} className="w-40" />
           </label>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             To
@@ -269,6 +319,18 @@ export default function PurchasesPage() {
           </Button>
         </FilterPanel>
       </div>
+
+      {summary && (
+        <StatCards
+          items={[
+            { title: 'Purchases', value: total, count: true },
+            { title: 'Total purchased', value: summary.billed },
+            { title: 'Total paid', value: summary.paid },
+            { title: 'Outstanding', value: summary.outstanding, hint: 'Owed to vendors' },
+          ]}
+          note={hasFilters ? 'Totals follow the filters above.' : undefined}
+        />
+      )}
 
       {isLoading ? (
         <div className="flex h-96 items-center justify-center">

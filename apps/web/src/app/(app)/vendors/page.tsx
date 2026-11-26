@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, AlertCircle, Truck, MoreHorizontal, Tags } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -29,6 +31,7 @@ type DialogMode = 'create' | 'edit' | null;
 export default function VendorsPage() {
   const router = useRouter();
   const { vendors, isLoading, error, setStatus } = useVendors();
+  const shown = useShownRows(vendors);
   const { has } = usePermissions();
   const { branches } = useBranches();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
@@ -121,6 +124,17 @@ export default function VendorsPage() {
   return (
     <PageAccessGuard requires="vendors:read">
       <PageHeader
+        report={<ReportButton
+          title="Vendors"
+          rows={shown.rows.map((v) => ({
+            Company: v.company,
+            Branch: branches.find((b) => b.id === v.branchId)?.name ?? '',
+            Type: v.distributorType ?? '',
+            Contact: [v.contactName, v.contactPhone].filter(Boolean).join(' · '),
+            Address: v.address ?? '',
+            Status: v.isActive ? 'Active' : 'Inactive',
+          }))}
+        />}
         title="Vendors"
         description="Distributors and suppliers you buy products from"
         actions={
@@ -152,6 +166,7 @@ export default function VendorsPage() {
         <EmptyState icon={Truck} title="No vendors yet" description="Add a vendor to start recording purchases" />
       ) : (
         <DataTable
+          onFilteredRowsChange={shown.onFilteredRowsChange}
           columns={columns}
           data={vendors}
           searchPlaceholder="Search vendors..."

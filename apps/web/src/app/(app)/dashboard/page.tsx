@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
+import { StatCards } from '@/components/layout/stat-cards';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
-import { Card, CardContent, CardHeader, CardTitle } from '@medicore/ui';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
 import { useAuth } from '@/hooks/use-auth';
 import { usePermissions } from '@/hooks/use-permissions';
@@ -89,24 +88,7 @@ function FinanceKpis({ branchId }: { branchId: string | null }) {
   return (
     <section className="space-y-4">
       <h2 className="text-lg font-semibold">Finance</h2>
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {cards.map((card) => (
-          <Card key={card.title} className={cn('relative', card.href && 'transition-colors hover:bg-muted/40')}>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                {card.href ? (
-                  <Link href={card.href} className="after:absolute after:inset-0">
-                    {card.title}
-                  </Link>
-                ) : (
-                  card.title
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-2xl font-semibold tabular-nums">{(card.value ?? 0).toFixed(2)}</CardContent>
-          </Card>
-        ))}
-      </div>
+      <StatCards className="mb-0" items={cards.map((c) => ({ title: c.title, value: c.value ?? 0, href: c.href }))} />
     </section>
   );
 }

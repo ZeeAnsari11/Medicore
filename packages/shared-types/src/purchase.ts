@@ -114,6 +114,8 @@ export interface UpdatePurchasePaymentRequest {
 export interface PurchasePaymentRow {
   id: string;
   paymentDate: string;
+  /** The payment's own running number (opens it on the Payments / Sale Receipts page); absent for rows with no Payment record. */
+  paymentNumber?: string;
   /** The part of the payment applied to this purchase. */
   amount: number;
   /** Absent for the amount paid when the purchase was created (no separate payment record). */
@@ -135,6 +137,8 @@ export interface PaginatedPurchases {
   total: number;
   page: number;
   limit: number;
+  /** Totals over all purchases matching the filters (absent from older servers). */
+  summary?: { billed: number; paid: number; outstanding: number };
 }
 
 /** Editable fields of an unpaid purchase; the purchase number never changes. */

@@ -12,6 +12,7 @@ import {
   Badge,
 } from '@medicore/ui';
 import type { PurchaseReturn, SaleReturn } from '@medicore/shared-types';
+import Link from 'next/link';
 import { useDocumentPdf } from '@/hooks/use-document-pdf';
 
 interface Props {
@@ -52,7 +53,7 @@ export function ReturnsSection({ kind, docId, branchId, returns }: Props) {
     <div className="space-y-2">
       <Label>Returns</Label>
       <div className="rounded-lg border">
-        <Table>
+        <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
           <TableHeader>
             <TableRow>
               <TableHead>Return #</TableHead>
@@ -67,7 +68,16 @@ export function ReturnsSection({ kind, docId, branchId, returns }: Props) {
             {returns.map((ret) => (
               <TableRow key={ret.id}>
                 <TableCell className="font-medium">
-                  {ret.returnNumber ?? '—'}
+                  {ret.returnNumber ? (
+                    <Link
+                      href={`/accounting/returns?${kind === 'purchase' ? 'mode=purchase&' : ''}open=${ret.id}`}
+                      className="text-primary hover:underline"
+                    >
+                      {ret.returnNumber}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
                   {ret.kind === 'CANCELLATION' && <Badge variant="outline" className="ml-2">Remainder</Badge>}
                 </TableCell>
                 <TableCell className="max-w-48 truncate text-sm" title={namesOf(ret).join(', ')}>{productsLabel(ret) || '—'}</TableCell>
@@ -75,7 +85,7 @@ export function ReturnsSection({ kind, docId, branchId, returns }: Props) {
                 <TableCell>{quantityOf(ret)}</TableCell>
                 <TableCell className="tabular-nums">{(ret.total ?? 0).toFixed(2)}</TableCell>
                 <TableCell className="text-right">
-                  <Button variant="outline" size="sm" disabled={isOpening} onClick={() => openSlip(ret.id)}>
+                  <Button variant="outline" size="sm" className="h-6 px-2 text-xs" disabled={isOpening} onClick={() => openSlip(ret.id)}>
                     Slip
                   </Button>
                 </TableCell>

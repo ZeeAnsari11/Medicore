@@ -1,5 +1,6 @@
 'use client';
 
+import { CustomerName } from '@/lib/party-label';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, Printer, Trash2 } from 'lucide-react';
@@ -218,6 +219,7 @@ export default function CashReceiptPage() {
       parties.map((p) => ({
         value: p.id,
         label: p.name,
+        place: kind === 'sale' ? p.territory?.trim() || undefined : undefined,
         hint: `${p.openInvoices} ${p.openInvoices === 1 ? 'invoice' : 'invoices'} · ${money(p.due)}`,
       })),
     [parties],
@@ -961,7 +963,7 @@ export default function CashReceiptPage() {
                     >
                       <span>
                         <span className="font-medium">{m.invoiceNumber}</span>
-                        <span className="ml-2 text-muted-foreground">{m.customerName}</span>
+                        <span className="ml-2 inline-flex align-middle text-muted-foreground">{kind === 'sale' ? <CustomerName name={m.customerName} territory={m.customerTerritory} /> : m.customerName}</span>
                       </span>
                       {m.payable ? (
                         <span className="tabular-nums">{money(m.balance)}</span>

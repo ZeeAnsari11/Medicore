@@ -7,6 +7,7 @@ import { TenantScopedRepository } from '../../common/database/tenant-scoped.repo
 import { CreateCustomerDto } from './dto/create-customer.dto';
 import { UpdateCustomerDto } from './dto/update-customer.dto';
 import { PartyBalanceService } from '../accounting/party-balance.service';
+import { SequenceService } from '../../common/sequence/sequence.service';
 import { LocationsService } from '../locations/locations.service';
 import type { Customer as CustomerType } from '@medicore/shared-types';
 
@@ -16,11 +17,17 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     private readonly partyBalanceService: PartyBalanceService,
     private readonly locations: LocationsService,
+    private readonly sequence: SequenceService,
   ) {
     super(customerModel);
   }
 
   async createCustomer(tenantId: string, dto: CreateCustomerDto) {
+    // A replay of an already-applied request (offline PWA) returns the existing customer.
+    if (dto.clientOpId) {
+      const existing = await this.customerModel.findOne({ clientOpId: dto.clientOpId });
+      if (existing) return existing;
+    }
     try {
       const customer = new this.customerModel({
         tenantId: new Types.ObjectId(tenantId),
@@ -33,8 +40,16 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
       await customer.validate();
       // The city and territory are saved as they are spelled in the branch's lists (added there when new).
       Object.assign(customer, await this.locations.ensure(tenantId, dto.branchId as string, dto.city, dto.territory));
+      // Numbered only once the customer is known to be valid, so a refused one leaves no gap.
+      customer.customerSeq = await this.sequence.next(tenantId, null, 'customer');
       return await customer.save();
     } catch (err) {
+      // Two concurrent copies of the same request: the loser returns the winner's customer.
+      const e = err as { code?: number; keyPattern?: Record<string, unknown> };
+      if (e.code === 11000 && dto.clientOpId && e.keyPattern && 'clientOpId' in e.keyPattern) {
+        const winner = await this.customerModel.findOne({ clientOpId: dto.clientOpId });
+        if (winner) return winner;
+      }
       throw this.duplicateCode(err);
     }
   }
@@ -123,6 +138,8 @@ export class CustomersService extends TenantScopedRepository<CustomerDocument> {
       phone: obj.phone,
       address: obj.address,
       code: obj.code,
+      ntn: obj.ntn,
+      customerNumber: obj.customerSeq,
       territory: obj.territory,
       city: obj.city,
       isDealer: obj.isDealer,

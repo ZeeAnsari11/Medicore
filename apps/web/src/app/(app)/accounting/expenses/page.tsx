@@ -1,10 +1,9 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   AlertCircle,
-  ArrowLeft,
   Calculator,
   Hash,
   Plus,
@@ -74,7 +73,7 @@ function Stat({
 }) {
   return (
     <Card>
-      <CardContent className="flex items-start gap-3 p-4">
+      <CardContent className="flex items-start gap-3 p-4 sm:p-4">
         <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Icon className="size-5" />
         </div>
@@ -91,7 +90,6 @@ function Stat({
 }
 
 export default function ExpensesPage() {
-  const router = useRouter();
   const { has } = usePermissions();
   const branchFilter = useBranchFilter();
   const branchId = branchFilter.branchId;
@@ -323,15 +321,9 @@ export default function ExpensesPage() {
 
   return (
     <PageAccessGuard requires="acc_expenses:read">
-      <button
-        onClick={() => router.push('/accounting')}
-        className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        Back to Accounting
-      </button>
 
       <PageHeader
+        back={{ href: '/accounting', label: 'Back to Accounting' }}
         title="Expenses"
         description="Everything you spend, by category and sub-category."
         actions={
@@ -428,7 +420,7 @@ export default function ExpensesPage() {
                 className="w-40"
                 value={from}
                 max={to || undefined}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={(e) => { setFrom(e.target.value); setTo(toAfterFrom(e.target.value, to)); }}
               />
               <span className="text-sm text-muted-foreground">to</span>
               <Input

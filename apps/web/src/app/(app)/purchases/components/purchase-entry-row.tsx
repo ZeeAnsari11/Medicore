@@ -245,6 +245,7 @@ export function PurchaseEntryRow({
           <Input
             id={IDS.quantity}
             type="number"
+            integer
             min={0}
             className="h-9 text-sm"
             aria-invalid={invalid('quantity')}

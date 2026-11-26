@@ -1,8 +1,9 @@
 'use client';
 
 import { Suspense, useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft, Plus } from 'lucide-react';
+import { AlertCircle, Plus } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import {
@@ -23,7 +24,6 @@ import { OpenFromUrl } from '@/components/open-from-url';
 
 
 export default function JournalEntriesPage() {
-  const router = useRouter();
   const { has } = usePermissions();
 
   const branchFilter = useBranchFilter();
@@ -32,6 +32,9 @@ export default function JournalEntriesPage() {
   const [detailEntry, setDetailEntry] = useState<JournalEntry | null>(null);
 
   const { entries, isLoading, error } = useJournalEntries(selectedBranchId);
+  // Only receipts entered on this screen; system entries (sales, payments, expenses...) live in their own pages and the ledgers.
+  const receipts = useMemo(() => entries.filter((e) => e.sourceType === 'MANUAL'), [entries]);
+  const shown = useShownRows(receipts);
 
   // Opened from a link elsewhere (?open=<id>), e.g. a ledger row.
   const [openId, setOpenId] = useState<string | null>(null);
@@ -71,19 +74,29 @@ export default function JournalEntriesPage() {
 
   return (
     <PageAccessGuard requires="acc_journal_entries:read">
-      <button onClick={() => router.push('/accounting')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Accounting
-      </button>
 
       <PageHeader
-        title="Journal Entries"
-        description="Every posted entry — sales, purchases, payments, expenses, returns, and manual adjustments."
+        report={<ReportButton
+          title="General Receipts"
+          totalColumns={['Debit', 'Credit']}
+          rows={shown.rows.map((e) => ({
+            'Entry #': e.entryNumber,
+            Date: new Date(e.entryDate).toLocaleDateString('en-CA'),
+            Source: e.sourceType.replace(/_/g, ' '),
+            Description: e.description,
+            Debit: e.totalDebit.toFixed(2),
+            Credit: e.totalCredit.toFixed(2),
+            Status: e.status,
+          }))}
+        />}
+        back={{ href: '/accounting', label: 'Back to Accounting' }}
+        title="General Receipts"
+        description="Record money received that is not a sale, plus every posted entry — sales, purchases, payments, expenses and returns."
         actions={
           <div className="flex items-center gap-3">
             <Button disabled={!has('acc_journal_entries:create')} onClick={() => setDialogOpen(true)}>
               <Plus className="mr-2 h-4 w-4" />
-              New Entry
+              New Receipt
             </Button>
           </div>
         }
@@ -102,8 +115,9 @@ export default function JournalEntriesPage() {
         </div>
       ) : (
         <DataTable
+          onFilteredRowsChange={shown.onFilteredRowsChange}
           columns={columns}
-          data={entries}
+          data={receipts}
           searchPlaceholder="Search entries..."
           onRowClick={(row) => setDetailEntry(row)}
         />

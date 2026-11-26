@@ -4,6 +4,7 @@ import { Customer, CustomerSchema } from './schemas/customer.schema';
 import { CustomersService } from './customers.service';
 import { CustomersController } from './customers.controller';
 import { AccountingModule } from '../accounting/accounting.module';
+import { SequenceModule } from '../../common/sequence/sequence.module';
 import { LocationsModule } from '../locations/locations.module';
 
 @Module({
@@ -11,6 +12,7 @@ import { LocationsModule } from '../locations/locations.module';
     MongooseModule.forFeature([{ name: Customer.name, schema: CustomerSchema }]),
     AccountingModule,
     LocationsModule,
+    SequenceModule,
   ],
   providers: [CustomersService],
   controllers: [CustomersController],

@@ -1,5 +1,6 @@
 'use client';
 
+import { StatCards } from '@/components/layout/stat-cards';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useMemo } from 'react';
 import { AlertCircle, Download } from 'lucide-react';
@@ -93,32 +94,15 @@ export function SalesReportSection({ branchId, startDate, endDate }: SalesReport
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Revenue</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.totalRevenue.toFixed(2)}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Transactions</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.totalTransactions}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Avg Order Value</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.averageOrderValue.toFixed(2)}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Tax Collected</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.totalTaxCollected.toFixed(2)}</CardContent>
-            </Card>
-          </div>
+          <StatCards
+            className="mb-0"
+            items={[
+              { title: 'Total Revenue', value: report.summary.totalRevenue },
+              { title: 'Total Transactions', value: report.summary.totalTransactions, count: true },
+              { title: 'Avg Order Value', value: report.summary.averageOrderValue },
+              { title: 'Tax Collected', value: report.summary.totalTaxCollected },
+            ]}
+          />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>

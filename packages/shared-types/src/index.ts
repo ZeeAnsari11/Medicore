@@ -135,6 +135,10 @@ export type {
   BalanceSheetRow,
   BalanceSheetResponse,
   AccountingOverviewResponse,
+  CashFlowResponse,
+  CashFlowRow,
+  CashFlowSection,
+  CashFlowSectionTotals,
 } from './accounting';
 export type {
   LookupInvoice,
@@ -180,4 +184,6 @@ export type {
   SupplySummaryCity,
   SupplySummaryReport,
 } from './supply-report';
+export type { FundsAccount, Loan, LoanRepayment, CreateLoanRequest, CreateLoanRepaymentRequest } from './loan';
+export type { AssetSource, FixedAsset, CreateFixedAssetRequest, DisposeFixedAssetRequest } from './fixed-asset';
 export { NO_CITY_FILTER, NO_TERRITORY_FILTER, territoriesOfCities } from './supply-report';

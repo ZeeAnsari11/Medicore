@@ -39,6 +39,7 @@ interface CustomerFormValues {
   phone?: string;
   address: string;
   code?: string;
+  ntn?: string;
   territory: string;
   city: string;
   isDealer: boolean;
@@ -67,6 +68,7 @@ export function CustomerDialog({ open, mode, customer, onOpenChange, onCreated }
       phone: customer?.phone ?? '',
       address: customer?.address ?? '',
       code: customer?.code ?? '',
+      ntn: customer?.ntn ?? '',
       territory: customer?.territory ?? '',
       city: customer?.city ?? '',
       isDealer: customer?.isDealer ?? false,
@@ -84,6 +86,7 @@ export function CustomerDialog({ open, mode, customer, onOpenChange, onCreated }
         phone: customer?.phone ?? '',
         address: customer?.address ?? '',
         code: customer?.code ?? '',
+      ntn: customer?.ntn ?? '',
         territory: customer?.territory ?? '',
         city: customer?.city ?? '',
         isDealer: customer?.isDealer ?? false,
@@ -183,10 +186,14 @@ export function CustomerDialog({ open, mode, customer, onOpenChange, onCreated }
             {errors.address && <p className="text-xs text-destructive">{errors.address.message}</p>}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="code">Code</Label>
               <Input id="code" placeholder="Optional" {...register('code')} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="ntn">NTN</Label>
+              <Input id="ntn" placeholder="Optional" {...register('ntn')} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="city">City</Label>

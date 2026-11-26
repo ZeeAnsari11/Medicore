@@ -1,8 +1,10 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AlertCircle, ListChecks } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -96,6 +98,18 @@ export default function CashReceiptTransactionsPage() {
   return (
     <PageAccessGuard requires={['cash_receipt:read', 'cash_payment:read']}>
       <PageHeader
+        report={<ReportButton
+          title={purchase ? 'Bulk Purchase Receipt Transactions' : 'Cash Receipt Transactions'}
+          subtitle={`Page ${pageIndex + 1}${hasFilters ? ' · filtered' : ''}`}
+          rows={transactions.map((t) => ({
+            [purchase ? 'CP Transaction #' : 'CR Transaction #']: t.transactionNumber,
+            Date: fmtDate(t.date),
+            [purchase ? 'Vendors' : 'Customers']: t.customers.join(', '),
+            Entries: t.count,
+            Total: t.total.toFixed(2),
+          }))}
+        />}
+        back={{ href: '/sales/cash-receipt', label: 'Back to Cash Receipt' }}
         title={purchase ? 'Bulk Purchase Receipt Transactions' : 'Cash Receipt Transactions'}
         description={purchase ? 'Saved vendor payments. Open one to view or edit it' : 'Saved cash receipts. Open one to view or edit it'}
       />
@@ -130,7 +144,7 @@ export default function CashReceiptTransactionsPage() {
               type="date"
               value={startDate}
               max={endDate || undefined}
-              onChange={(e) => setStartDate(e.target.value)}
+              onChange={(e) => { setStartDate(e.target.value); setEndDate(toAfterFrom(e.target.value, endDate)); }}
               className={`w-40 ${startDate ? ACTIVE : ''}`}
             />
           </label>

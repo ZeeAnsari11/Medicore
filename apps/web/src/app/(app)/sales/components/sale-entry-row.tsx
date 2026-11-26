@@ -252,7 +252,7 @@ export function SaleEntryRow({
           Editing line {editing.serial}. Press Enter on Tax % to update, Esc to cancel.
         </p>
       )}
-      <div className="grid grid-cols-6 items-start gap-2 @min-[960px]:grid-cols-[2.5rem_minmax(9rem,2fr)_minmax(8rem,1.4fr)_4.5rem_4.5rem_5.5rem_4.5rem_4.5rem_5.5rem_auto]">
+      <div className="grid grid-cols-6 items-start gap-2 @min-[960px]:grid-cols-[2.5rem_minmax(9rem,2fr)_minmax(9rem,1.6fr)_minmax(7rem,1.1fr)_4.5rem_4.5rem_5.5rem_4.5rem_4.5rem_5.5rem_auto]">
         <div className="col-span-1 space-y-1 @min-[960px]:col-span-1">
           <Label className="text-xs text-muted-foreground">Ser #</Label>
           <div className="flex h-9 items-center text-sm tabular-nums text-muted-foreground">
@@ -299,6 +299,47 @@ export function SaleEntryRow({
             disabled={available.length === 0}
           >
             <SelectTrigger id={IDS.batch} className="h-9 w-full text-sm">
+              <SelectValue placeholder="Auto (FEFO)">
+                <span className="block truncate">{available.find((b) => b.id === batchId)?.batchNumber}</span>
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent
+              onCloseAutoFocus={(e) => {
+                if (!focusQtyAfterBatch.current) return;
+                focusQtyAfterBatch.current = false;
+                e.preventDefault();
+                focusId(IDS.quantity);
+              }}
+            >
+              {available.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  <span className="flex w-full items-center justify-between gap-3">
+                    <span className="whitespace-nowrap">{b.batchNumber}</span>
+                    <span
+                      className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium tabular-nums text-primary"
+                      title="In stock"
+                    >
+                      {b.quantity}
+                    </span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="col-span-6 space-y-1 @min-[960px]:col-span-1">
+          <Label className="text-xs text-muted-foreground">Expiry</Label>
+          {/* Same selection as Batch #: picking an expiry picks that batch and vice versa. */}
+          <Select
+            value={batchId}
+            onValueChange={(batchId) => {
+              focusQtyAfterBatch.current = true;
+              set({ batchId });
+            }}
+            disabled={available.length === 0}
+          >
+            <SelectTrigger className="h-9 w-full text-sm">
               <SelectValue placeholder="Auto (FEFO)" />
             </SelectTrigger>
             <SelectContent
@@ -311,7 +352,7 @@ export function SaleEntryRow({
             >
               {available.map((b) => (
                 <SelectItem key={b.id} value={b.id}>
-                  {b.batchNumber} · exp {new Date(b.expiryDate).toLocaleDateString()} · {b.quantity}
+                  {new Date(b.expiryDate).toLocaleDateString('en-GB')}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -323,6 +364,7 @@ export function SaleEntryRow({
           <Input
             id={IDS.quantity}
             type="number"
+            integer
             min={0}
             className="h-9 text-sm"
             aria-invalid={invalid('quantity')}
@@ -340,6 +382,7 @@ export function SaleEntryRow({
           <Input
             id={IDS.bonusQuantity}
             type="number"
+            integer
             min={0}
             className="h-9 text-sm"
             aria-invalid={invalid('bonusQuantity')}

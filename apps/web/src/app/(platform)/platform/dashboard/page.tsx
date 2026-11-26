@@ -35,7 +35,7 @@ export default function PlatformDashboardPage() {
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((stat) => (
           <Card key={stat.label}>
-            <CardContent className="flex items-center justify-between p-5">
+            <CardContent className="flex items-center justify-between p-5 sm:p-5">
               <div>
                 <p className="text-sm text-muted-foreground">{stat.label}</p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight">

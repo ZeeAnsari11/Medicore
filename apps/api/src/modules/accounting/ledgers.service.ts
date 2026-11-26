@@ -20,7 +20,7 @@ import { Tenant, TenantDocument } from '../tenants/schemas/tenant.schema';
 import { round2 } from './accounting-posting.service';
 import { REVERSAL_DESCRIPTION } from './reversal-labels';
 import { PaymentLinksService, paymentNumber, type PaymentLinks } from './payment-links.service';
-import { JournalEntrySourceType, JournalEntryStatus } from '@medicore/shared-types';
+import { JournalEntrySourceType, JournalEntryStatus, PartyType } from '@medicore/shared-types';
 import type {
   GeneralLedgerResponse,
   LedgerPage,
@@ -112,6 +112,7 @@ function documentTypeLabel(
     case JournalEntrySourceType.PURCHASE_CANCELLATION:
       return 'Cancellation';
     case JournalEntrySourceType.PAYMENT_RECEIVED:
+      return 'Receipt';
     case JournalEntrySourceType.PAYMENT_MADE:
       return 'Payment';
     case JournalEntrySourceType.EXPENSE:
@@ -177,18 +178,22 @@ export class LedgersService {
     q: LedgerQueryDto,
     all = false,
   ): Promise<GeneralLedgerResponse> {
-    if (!q.accountId) throw new BadRequestException('accountId is required');
-    const account = await this.accountModel.findOne({
-      _id: q.accountId,
-      tenantId: new Types.ObjectId(tenantId),
-    });
-    if (!account) throw new NotFoundException('Account not found');
+    // No account picked: every account together, one row per posted line with its account name. Balances
+    // are then a plain debit-minus-credit total, which the web hides.
+    const account = q.accountId
+      ? await this.accountModel.findOne({ _id: q.accountId, tenantId: new Types.ObjectId(tenantId) })
+      : null;
+    if (q.accountId && !account) throw new NotFoundException('Account not found');
+    const everyAccount = account
+      ? []
+      : await this.accountModel.find({ tenantId: new Types.ObjectId(tenantId) }).select('code name').lean();
 
     const core = await this.runLedger({
       tenantId,
       branchId,
-      accountIds: [account.id],
-      direction: account.normalBalance === 'DEBIT' ? 'debit' : 'credit',
+      accountIds: account ? [account.id] : everyAccount.map((a) => String(a._id)),
+      accountNames: account ? undefined : new Map(everyAccount.map((a) => [String(a._id), `${a.code} · ${a.name}`])),
+      direction: !account || account.normalBalance === 'DEBIT' ? 'debit' : 'credit',
       kind: 'GL',
       q,
       all,
@@ -196,10 +201,10 @@ export class LedgersService {
     const { bySource: _bySource, ...page } = core;
     return {
       ...page,
-      accountId: account.id,
-      accountCode: account.code,
-      accountName: account.name,
-      normalBalance: account.normalBalance as 'DEBIT' | 'CREDIT',
+      accountId: account?.id ?? '',
+      accountCode: account?.code ?? '',
+      accountName: account?.name ?? 'All accounts',
+      normalBalance: (account?.normalBalance ?? 'DEBIT') as 'DEBIT' | 'CREDIT',
     };
   }
 
@@ -357,6 +362,7 @@ export class LedgersService {
     const { main, advance } = await this.partyAccounts(tenantId, kind);
     const isCustomer = kind === 'CUSTOMER';
     const accountIds = [main?.id, advance?.id].filter((id): id is string => !!id);
+    const { from, to } = this.boundsOf(q.from, q.to);
 
     const accountBalance = new Map<string, number>();
     const advanceBalance = new Map<string, number>();
@@ -375,8 +381,10 @@ export class LedgersService {
         'lines.accountId': { $in: accountIds },
       };
       if (branchId) match.branchId = new Types.ObjectId(branchId);
+      // Balances are as of the end date; invoiced / received / returns count only from the start date on.
+      if (to) match.entryDate = { $lte: to };
       const groups = await this.journalEntryModel.aggregate<{
-        _id: { accountId: string; partyId: string | null; sourceType: JournalEntrySourceType };
+        _id: { accountId: string; partyId: string | null; sourceType: JournalEntrySourceType; inRange: boolean };
         debit: number;
         credit: number;
       }>([
@@ -389,6 +397,7 @@ export class LedgersService {
               accountId: '$lines.accountId',
               partyId: { $ifNull: ['$lines.partyId', null] },
               sourceType: '$sourceType',
+              inRange: from ? { $gte: ['$entryDate', from] } : { $literal: true },
             },
             debit: { $sum: '$lines.debit' },
             credit: { $sum: '$lines.credit' },
@@ -418,7 +427,9 @@ export class LedgersService {
             const T = JournalEntrySourceType;
             const add = (map: Map<string, number>, amount: number) =>
               map.set(g._id.partyId!, (map.get(g._id.partyId!) ?? 0) + amount);
-            if (isCustomer) {
+            if (!g._id.inRange) {
+              // Before the start date: part of the balance only.
+            } else if (isCustomer) {
               if (g._id.sourceType === T.SALE) add(billedBy, g.debit);
               else if (g._id.sourceType === T.PAYMENT_RECEIVED) add(settledBy, g.credit);
               else if (g._id.sourceType === T.SALE_RETURN) add(returnsBy, g.credit);
@@ -440,7 +451,7 @@ export class LedgersService {
             deletedAt: null,
             ...(nameFilter && { name: nameFilter }),
           })
-          .select('name')
+          .select('name territory')
       : await this.vendorModel
           .find({
             tenantId: new Types.ObjectId(tenantId),
@@ -455,6 +466,7 @@ export class LedgersService {
       return {
         partyId: id,
         name: isCustomer ? (p as CustomerDocument).name : (p as VendorDocument).company,
+        territory: isCustomer ? (p as CustomerDocument).territory || undefined : undefined,
         accountBalance: acct,
         advanceBalance: adv,
         balance: round2(acct - adv),
@@ -489,7 +501,7 @@ export class LedgersService {
         unattributed: round2(accountTotal - partiesAccountTotal),
         advanceTotal: round2(advanceTotal),
       },
-      summary: await this.allPartiesSummary(tenantId, branchId, kind),
+      summary: await this.allPartiesSummary(tenantId, branchId, kind, from, to),
     };
   }
 
@@ -502,6 +514,8 @@ export class LedgersService {
     tenantId: string,
     branchId: string | null,
     kind: 'CUSTOMER' | 'VENDOR',
+    from?: Date,
+    to?: Date,
   ): Promise<PartyLedgerSummary> {
     const { main, advance } = await this.partyAccounts(tenantId, kind);
     const accountIds = [main?.id, advance?.id].filter((id): id is string => !!id);
@@ -525,20 +539,30 @@ export class LedgersService {
       'lines.accountId': { $in: accountIds },
     };
     if (branchId) match.branchId = new Types.ObjectId(branchId);
+    if (to) match.entryDate = { $lte: to };
 
-    const bySource = await this.journalEntryModel.aggregate<SourceTotal>([
+    const bySourceAll = await this.journalEntryModel.aggregate<SourceTotal & { _id: { before: boolean } }>([
       { $match: match },
       { $unwind: '$lines' },
       { $match: { 'lines.accountId': { $in: accountIds }, 'lines.partyId': { $nin: [null, ''] } } },
       {
         $group: {
-          _id: { sourceType: '$sourceType', accountId: '$lines.accountId' },
+          _id: {
+            sourceType: '$sourceType',
+            accountId: '$lines.accountId',
+            before: from ? { $lt: ['$entryDate', from] } : { $literal: false },
+          },
           debit: { $sum: '$lines.debit' },
           credit: { $sum: '$lines.credit' },
           count: { $sum: 1 },
         },
       },
     ]);
+    // Earlier activity is the opening balance; the rest is the period.
+    const bySource = bySourceAll.filter((b) => !b._id.before);
+    const openingDebit = bySourceAll.filter((b) => b._id.before).reduce((t, b) => t + b.debit, 0);
+    const openingCredit = bySourceAll.filter((b) => b._id.before).reduce((t, b) => t + b.credit, 0);
+    const opening = signed(isCustomer ? 'debit' : 'credit', openingDebit, openingCredit);
 
     const T = JournalEntrySourceType;
     const sum = (types: JournalEntrySourceType[], side: 'debit' | 'credit', advanceAccount: boolean) =>
@@ -561,12 +585,12 @@ export class LedgersService {
       .reduce((total, b) => total + (isCustomer ? b.credit - b.debit : b.debit - b.credit), 0);
     const totalDebit = bySource.reduce((total, b) => total + b.debit, 0);
     const totalCredit = bySource.reduce((total, b) => total + b.credit, 0);
-    const closing = signed(isCustomer ? 'debit' : 'credit', totalDebit, totalCredit);
-    // closing = opening (0, all time) + billed - settled - returns - voids - advances + other
-    const other = closing - (billed - settled - returns - voids - advances);
+    const closing = opening + signed(isCustomer ? 'debit' : 'credit', totalDebit, totalCredit);
+    // closing = opening + billed - settled - returns - voids - advances + other
+    const other = closing - (opening + billed - settled - returns - voids - advances);
 
     return {
-      openingBalance: 0,
+      openingBalance: round2(opening),
       billed: round2(billed),
       settled: round2(settled),
       returns: round2(returns),
@@ -575,6 +599,14 @@ export class LedgersService {
       other: round2(other),
       closingBalance: round2(closing),
     };
+  }
+
+  /** Query dates as Date bounds; a bare yyyy-mm-dd end covers the whole day. */
+  private boundsOf(fromStr?: string, toStr?: string): { from?: Date; to?: Date } {
+    const from = fromStr ? new Date(fromStr) : undefined;
+    const to = toStr ? new Date(toStr) : undefined;
+    if (to && toStr!.length <= 10) to.setUTCHours(23, 59, 59, 999);
+    return { from, to };
   }
 
   private async partyAccounts(tenantId: string, kind: 'CUSTOMER' | 'VENDOR') {
@@ -600,6 +632,8 @@ export class LedgersService {
     tenantId: string;
     branchId: string | null;
     accountIds: string[];
+    /** General ledger over every account: id -> "code · name", sent on each row. */
+    accountNames?: Map<string, string>;
     partyId?: string;
     advanceAccountId?: string;
     direction: Direction;
@@ -775,7 +809,7 @@ export class LedgersService {
             r.credit,
           );
       const links =
-        (documentType === 'Payment' || isDifference) && r.sourceId
+        (documentType === 'Payment' || documentType === 'Receipt' || isDifference) && r.sourceId
           ? paymentLinks.get(r.sourceId)
           : undefined;
       const ret = returnOfEntry.get(r.entryId);
@@ -807,6 +841,7 @@ export class LedgersService {
           debit: round2(r.debit),
           credit: round2(r.credit),
           runningBalance: round2(running),
+          ...(p.accountNames ? { accountName: p.accountNames.get(r.lineAccountId) } : {}),
         };
       }
       return {
@@ -835,6 +870,7 @@ export class LedgersService {
         debit: round2(r.debit),
         credit: round2(r.credit),
         runningBalance: round2(running),
+        ...(p.accountNames ? { accountName: p.accountNames.get(r.lineAccountId) } : {}),
       };
     });
 
@@ -842,7 +878,7 @@ export class LedgersService {
     const differenceRows = rows.filter((r) => r.documentType === 'Difference' && r.reference?.type === 'PAYMENT');
     if (differenceRows.length > 0) {
       for (const diff of differenceRows) {
-        const base = rows.find((r) => r !== diff && r.entryId === diff.entryId && r.documentType === 'Payment');
+        const base = rows.find((r) => r !== diff && r.entryId === diff.entryId && (r.documentType === 'Payment' || r.documentType === 'Receipt'));
         const note = `Difference ${money2(Math.max(diff.debit, diff.credit))}`;
         if (!base) {
           diff.description = `${diff.description} · ${note}`;
@@ -913,7 +949,7 @@ export class LedgersService {
       ids.payment.size
         ? this.paymentModel
             .find({ ...tenantFilter, _id: { $in: [...ids.payment] } })
-            .select('paymentSeq')
+            .select('paymentSeq partyType')
         : [],
       ids.expense.size
         ? this.expenseModel.find({ ...tenantFilter, _id: { $in: [...ids.expense] } }).select('_id')
@@ -931,6 +967,7 @@ export class LedgersService {
         return n ? [[s.id as string, n]] : [];
       }),
     );
+    const paymentParty = new Map<string, PartyType>(payments.map((s): [string, PartyType] => [s.id as string, s.partyType]));
     const expenseIds = new Set(expenses.map((e) => e.id as string));
 
     const out = new Map<string, LedgerReference>();
@@ -954,7 +991,12 @@ export class LedgersService {
         paymentNo.has(r.sourceId) &&
         [T.PAYMENT_RECEIVED, T.PAYMENT_MADE, T.PAYMENT_VOID].includes(r.sourceType)
       ) {
-        out.set(key, { type: 'PAYMENT', id: r.sourceId, number: paymentNo.get(r.sourceId)! });
+        out.set(key, {
+          type: 'PAYMENT',
+          id: r.sourceId,
+          number: paymentNo.get(r.sourceId)!,
+          partyType: paymentParty.get(r.sourceId),
+        });
       } else if (expenseIds.has(r.sourceId) && r.sourceType === T.EXPENSE) {
         out.set(key, {
           type: 'EXPENSE',

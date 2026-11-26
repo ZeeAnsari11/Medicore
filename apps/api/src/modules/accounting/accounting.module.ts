@@ -17,6 +17,9 @@ import { Product, ProductSchema } from '../products/schemas/product.schema';
 import { Branch, BranchSchema } from '../branches/schemas/branch.schema';
 import { Tenant, TenantSchema } from '../tenants/schemas/tenant.schema';
 import { CashReceipt, CashReceiptSchema } from '../sales/schemas/cash-receipt.schema';
+import { CashPayment, CashPaymentSchema } from '../purchases/cash-payments/cash-payment.schema';
+import { Loan, LoanSchema } from './schemas/loan.schema';
+import { FixedAsset, FixedAssetSchema } from './schemas/fixed-asset.schema';
 import { SequenceModule } from '../../common/sequence/sequence.module';
 import { AccountingPostingService } from './accounting-posting.service';
 import { AccountsService } from './accounts.service';
@@ -38,6 +41,10 @@ import { LedgerReportsController } from './ledger-reports.controller';
 import { LedgersService } from './ledgers.service';
 import { LedgerExportService } from './ledger-export.service';
 import { LedgersController } from './ledgers.controller';
+import { LoansService } from './loans.service';
+import { LoansController } from './loans.controller';
+import { FixedAssetsService } from './fixed-assets.service';
+import { FixedAssetsController } from './fixed-assets.controller';
 
 import { RolesModule } from '../roles/roles.module';
 
@@ -61,6 +68,9 @@ import { RolesModule } from '../roles/roles.module';
       { name: Branch.name, schema: BranchSchema },
       { name: Tenant.name, schema: TenantSchema },
       { name: CashReceipt.name, schema: CashReceiptSchema },
+      { name: CashPayment.name, schema: CashPaymentSchema },
+      { name: Loan.name, schema: LoanSchema },
+      { name: FixedAsset.name, schema: FixedAssetSchema },
     ]),
     SequenceModule,
     RolesModule,
@@ -78,6 +88,8 @@ import { RolesModule } from '../roles/roles.module';
     LedgerReportsService,
     LedgersService,
     LedgerExportService,
+    LoansService,
+    FixedAssetsService,
   ],
   controllers: [
     AccountsController,
@@ -90,6 +102,8 @@ import { RolesModule } from '../roles/roles.module';
     PurchaseReturnsController,
     LedgerReportsController,
     LedgersController,
+    LoansController,
+    FixedAssetsController,
   ],
   exports: [
     AccountingPostingService,

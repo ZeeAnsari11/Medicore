@@ -33,7 +33,7 @@ const purchaseLink = (r: PurchaseReturn) =>
   );
 
 /** Recorded purchase returns, laid out like the sale returns list: id, date, party, amount, settlement, purchase. Row click or `?open=<id>` shows the lines. */
-export function PurchaseReturnsTable({ returns }: { returns: PurchaseReturn[] }) {
+export function PurchaseReturnsTable({ returns, onFilteredRowsChange }: { returns: PurchaseReturn[]; onFilteredRowsChange?: (rows: PurchaseReturn[]) => void }) {
   const [detail, setDetail] = useState<PurchaseReturn | null>(null);
 
   const columns = useMemo<ColumnDef<PurchaseReturn>[]>(
@@ -58,7 +58,7 @@ export function PurchaseReturnsTable({ returns }: { returns: PurchaseReturn[] })
 
   return (
     <>
-      <DataTable columns={columns} data={returns} searchPlaceholder="Search returns..." onRowClick={(row) => setDetail(row)} />
+      <DataTable columns={columns} data={returns} onFilteredRowsChange={onFilteredRowsChange} searchPlaceholder="Search returns..." onRowClick={(row) => setDetail(row)} />
       <Suspense fallback={null}>
         <OpenFromUrl onOpen={(id) => setDetail(returns.find((r) => r.id === id) ?? null)} />
       </Suspense>

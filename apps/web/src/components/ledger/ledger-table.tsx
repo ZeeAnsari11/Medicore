@@ -33,7 +33,7 @@ export function documentHref(ref: LedgerReference): string {
     case 'PURCHASE':
       return `/purchases?open=${ref.id}`;
     case 'PAYMENT':
-      return `/accounting/payments?open=${ref.id}`;
+      return `${ref.partyType === 'CUSTOMER' ? '/accounting/receipts' : '/accounting/payments'}?open=${ref.id}`;
     case 'SALE_RETURN':
       return `/accounting/returns?open=${ref.id}`;
     case 'PURCHASE_RETURN':
@@ -56,7 +56,9 @@ interface LedgerTableProps {
 
 export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetching, onPageChange, onLimitChange }: LedgerTableProps) {
   const pageCount = Math.max(1, Math.ceil(ledger.total / ledger.limit));
-  const columnCount = variant === 'gl' ? 7 : 7;
+  const columnCount = 7;
+  // General ledger over every account: lines carry their account and a net balance would mean nothing.
+  const byAccount = variant === 'gl' && ledger.rows.some((r) => r.accountName);
 
   const entryLink = (row: LedgerRow) => (
     <Link href={`/accounting/journal-entries?open=${row.entryId}`} className="text-primary hover:underline">
@@ -115,7 +117,7 @@ export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetchi
     return parts.length ? <>{parts}{boldDifference(rest)}</> : boldDifference(row.description);
   };
 
-  /** The document column: the invoice, purchase or payment (PMT-) number, else the journal entry. */
+  /** The document column: the invoice, purchase, receipt or payment number, else the journal entry. */
   const documentCell = (row: LedgerRow) => (row.reference ? referenceLink(row) : entryLink(row));
 
   return (
@@ -140,11 +142,11 @@ export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetchi
               )}
               <TableHead className="text-right">Debit</TableHead>
               <TableHead className="text-right">Credit</TableHead>
-              <TableHead className="text-right">Balance</TableHead>
+              {byAccount ? <TableHead>Account</TableHead> : <TableHead className="text-right">Balance</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
-            {ledger.page === 1 && (
+            {ledger.page === 1 && !byAccount && (
               <TableRow className="bg-muted/40 font-medium">
                 <TableCell colSpan={columnCount - 1}>Opening balance</TableCell>
                 <TableCell className="text-right tabular-nums">{money(ledger.openingBalance)}</TableCell>
@@ -177,7 +179,11 @@ export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetchi
                   )}
                   <TableCell className="text-right tabular-nums">{row.debit ? money(row.debit) : ''}</TableCell>
                   <TableCell className="text-right tabular-nums">{row.credit ? money(row.credit) : ''}</TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{money(row.runningBalance)}</TableCell>
+                  {byAccount ? (
+                    <TableCell className="whitespace-nowrap">{row.accountName}</TableCell>
+                  ) : (
+                    <TableCell className="text-right font-medium tabular-nums">{money(row.runningBalance)}</TableCell>
+                  )}
                 </TableRow>
               ))
             )}
@@ -191,10 +197,12 @@ export function LedgerTable({ variant, partyKind, ledger, closingLabel, isFetchi
               <TableCell className="text-right font-medium tabular-nums">{money(ledger.totalCredit)}</TableCell>
               <TableCell />
             </TableRow>
-            <TableRow className="font-semibold">
-              <TableCell colSpan={columnCount - 1}>{closingLabel}</TableCell>
-              <TableCell className="text-right tabular-nums">{money(ledger.closingBalance)}</TableCell>
-            </TableRow>
+            {!byAccount && (
+              <TableRow className="font-semibold">
+                <TableCell colSpan={columnCount - 1}>{closingLabel}</TableCell>
+                <TableCell className="text-right tabular-nums">{money(ledger.closingBalance)}</TableCell>
+              </TableRow>
+            )}
           </TableFooter>
         </Table>
       </div>

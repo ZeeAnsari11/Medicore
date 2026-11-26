@@ -16,4 +16,6 @@ export interface AuthMeResponse extends AuthenticatedUser {
   permissions: string[];
   /** The signed-in user's display name (used to prefill the Order Booker on a new sale). */
   fullName?: string;
+  /** The business's name, printed at the top of reports. */
+  tenantName?: string;
 }

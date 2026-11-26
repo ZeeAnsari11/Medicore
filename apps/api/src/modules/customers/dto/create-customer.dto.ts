@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsMongoId, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
@@ -30,6 +30,12 @@ export class CreateCustomerDto {
   @MaxLength(40)
   code?: string;
 
+  /** National Tax Number, printed on the customer's invoices when set. */
+  @IsString()
+  @IsOptional()
+  @MaxLength(40)
+  ntn?: string;
+
   @Transform(trim)
   @IsString()
   @IsNotEmpty()
@@ -45,4 +51,9 @@ export class CreateCustomerDto {
   @IsBoolean()
   @IsOptional()
   isDealer?: boolean;
+
+  /** Lets an offline client replay this request safely: the same value returns the customer already created. */
+  @IsUUID()
+  @IsOptional()
+  clientOpId?: string;
 }

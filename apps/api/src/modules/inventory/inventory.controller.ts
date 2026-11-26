@@ -16,9 +16,13 @@ export class InventoryController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('branchId') branchId?: string,
     @Query('search') search?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
   ) {
     const scope = resolveBranchScope(user, branchId);
-    return this.batchesService.listRollup(user.tenantId, scope, search);
+    const day = /^\d{4}-\d{2}-\d{2}$/;
+    if ((from && !day.test(from)) || (to && !day.test(to))) throw new BadRequestException('Dates must be yyyy-mm-dd');
+    return this.batchesService.listRollup(user.tenantId, scope, search, { from, to });
   }
 
   @RequirePermission('inventory:read')

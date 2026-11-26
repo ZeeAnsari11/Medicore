@@ -6,10 +6,13 @@ import { cn } from '../lib/cn';
 import { Button } from '../primitives/button';
 import { Input } from '../primitives/input';
 import { Popover, PopoverTrigger, PopoverContent } from '../primitives/popover';
+import { PlaceChip } from '../primitives/place-chip';
 
 export interface ComboboxOption {
   value: string;
   label: string;
+  /** A place shown as a pin chip after the label (e.g. a customer's territory); searched together with the label. */
+  place?: string;
   /** Secondary text shown beside the label (e.g. a product's generic name); searchable when `hintSearchLabel` is on. */
   hint?: string;
 }
@@ -66,7 +69,7 @@ export function ComboboxWithCreate({
   const selected = options.find((option) => option.value === value);
   const needle = search.toLowerCase();
   const filtered = search
-    ? options.filter((option) => (byHint ? (option.hint ?? '') : option.label).toLowerCase().includes(needle))
+    ? options.filter((option) => (byHint ? (option.hint ?? '') : `${option.label} ${option.place ?? ''}`).toLowerCase().includes(needle))
     : options;
 
   // The optional "Create new" row is the last keyboard-reachable row.
@@ -106,12 +109,19 @@ export function ComboboxWithCreate({
           disabled={disabled}
           className={cn('w-full justify-between font-normal', !selected && 'text-muted-foreground', className)}
         >
-          {selected ? selected.label : placeholder}
+          {selected ? (
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="min-w-0 truncate">{selected.label}</span>
+              {selected.place && <PlaceChip className="max-w-[50%] shrink">{selected.place}</PlaceChip>}
+            </span>
+          ) : (
+            placeholder
+          )}
           <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[var(--radix-popover-trigger-width)] p-0"
+        className="w-[max(var(--radix-popover-trigger-width),28rem)] max-w-[calc(100vw-2rem)] p-0"
         align="start"
         onCloseAutoFocus={onCloseAutoFocus}
       >
@@ -177,11 +187,12 @@ export function ComboboxWithCreate({
               onClick={() => handleSelect(option.value)}
               onMouseMove={() => index !== activeIndex && setActiveIndex(index)}
               className={cn(
-                'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none data-[active=true]:bg-accent data-[active=true]:text-accent-foreground',
+                'flex w-full items-start gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-none data-[active=true]:bg-accent data-[active=true]:text-accent-foreground',
               )}
             >
-              <Check className={cn('size-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')} />
-              <span className="min-w-0 flex-1 truncate">{option.label}</span>
+              <Check className={cn('mt-0.5 size-4 shrink-0', option.value === value ? 'opacity-100' : 'opacity-0')} />
+              <span className={cn('min-w-0 flex-1 break-words', option.place ? 'font-medium' : 'truncate')}>{option.label}</span>
+              {option.place && <PlaceChip className="ml-2 max-w-[45%] shrink-0 self-start">{option.place}</PlaceChip>}
               {option.hint && <span className="ml-2 max-w-[45%] shrink-0 truncate text-xs text-muted-foreground">{option.hint}</span>}
             </button>
           ))}

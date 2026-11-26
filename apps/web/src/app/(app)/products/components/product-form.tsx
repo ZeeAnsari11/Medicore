@@ -280,7 +280,7 @@ export function ProductForm({ formId, product, showVendor, lockedBranchId, onSub
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="space-y-1.5">
             <Label htmlFor="minStockLevel">Min stock level</Label>
-            <Input id="minStockLevel" type="number" placeholder="Optional" {...register('minStockLevel')} />
+            <Input id="minStockLevel" type="number" integer placeholder="Optional" {...register('minStockLevel')} />
           </div>
         </div>
       </form>

@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { Plus, AlertCircle, Pill, MoreHorizontal, Barcode } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -42,6 +44,7 @@ export default function ProductsPage() {
     const q = genericSearch.trim().toLowerCase();
     return q ? products.filter((p) => p.genericName?.toLowerCase().includes(q)) : products;
   }, [products, genericSearch]);
+  const shown = useShownRows(visibleProducts);
 
   const selected = selectedId ? products.find((p) => p.id === selectedId) : undefined;
   const labelProduct = labelProductId ? (products.find((p) => p.id === labelProductId) ?? null) : null;
@@ -148,6 +151,22 @@ export default function ProductsPage() {
   return (
     <PageAccessGuard requires="products:read">
       <PageHeader
+        report={<ReportButton
+          title="Products"
+          rows={shown.rows.map((p) => ({
+            Name: p.name,
+            'Generic name': p.genericName ?? '',
+            Manufacturer: p.manufacturer?.name ?? '',
+            Category: p.category?.name ?? '',
+            Barcode: p.barcode ?? '',
+            Unit: p.unit,
+            TP: p.tp.toFixed(2),
+            CP: p.cp.toFixed(2),
+            RP: (p.rp ?? 0).toFixed(2),
+            'Min stock': p.minStockLevel ?? '',
+            Status: p.status,
+          }))}
+        />}
         title="Products"
         description="Your pharmaceutical product catalog"
         actions={
@@ -173,6 +192,7 @@ export default function ProductsPage() {
         <EmptyState icon={Pill} title="No products yet" description="Add your first product to the catalog" />
       ) : (
         <DataTable
+          onFilteredRowsChange={shown.onFilteredRowsChange}
           columns={columns}
           data={visibleProducts}
           searchPlaceholder="Search products..."

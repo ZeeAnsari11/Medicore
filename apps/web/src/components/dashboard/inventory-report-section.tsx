@@ -1,5 +1,6 @@
 'use client';
 
+import { StatCards } from '@/components/layout/stat-cards';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useMemo } from 'react';
 import { AlertCircle, Download } from 'lucide-react';
@@ -112,32 +113,15 @@ export function InventoryReportSection({ branchId, startDate, endDate }: Invento
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 gap-2 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Cost Value</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.totalCostValue.toFixed(2)}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Total Retail Value</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.totalRetailValue.toFixed(2)}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Low Stock Items</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.lowStockCount}</CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm font-medium text-muted-foreground">Out of Stock</CardTitle>
-              </CardHeader>
-              <CardContent className="text-2xl font-semibold tabular-nums">{report.summary.outOfStockCount}</CardContent>
-            </Card>
-          </div>
+          <StatCards
+            className="mb-0"
+            items={[
+              { title: 'Total Cost Value', value: report.summary.totalCostValue },
+              { title: 'Total Retail Value', value: report.summary.totalRetailValue },
+              { title: 'Low Stock Items', value: report.summary.lowStockCount, count: true },
+              { title: 'Out of Stock', value: report.summary.outOfStockCount, count: true },
+            ]}
+          />
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>

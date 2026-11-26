@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Pencil } from 'lucide-react';
 import {
@@ -88,7 +89,8 @@ export function PurchaseDetailDialog({
   const { has } = usePermissions();
   const { updatePayment, isUpdatingPayment } = usePurchases(branchId);
   const { openPdf, isOpening } = useDocumentPdf();
-  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  // What the user typed, tied to the balance it was typed against, so a payment or return elsewhere clears a stale amount.
+  const [typedAmount, setTypedAmount] = useState<{ outstanding: number; value: number } | null>(null);
   const [method, setMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
   const [paymentDay, setPaymentDay] = useState<string>(todayIso());
   const [reference, setReference] = useState('');
@@ -104,6 +106,8 @@ export function PurchaseDetailDialog({
     round2(netTotal - (purchase.amountPaid - (purchase.refundedTotal ?? 0))),
     0,
   );
+  const paymentAmount = typedAmount?.outstanding === outstanding ? typedAmount.value : 0;
+  const setPaymentAmount = (value: number) => setTypedAmount({ outstanding, value });
   // Written off at a bulk purchase receipt: counted in the paid total, but not money paid out.
   const differenceTotal = round2(payments.filter((p) => p.isDifference).reduce((s, p) => s + p.amount, 0));
   const returnedQty = (batchId?: string) =>
@@ -131,7 +135,7 @@ export function PurchaseDetailDialog({
       paymentDate: paymentDateTime(paymentDay),
       reference: reference.trim() || undefined,
     });
-    setPaymentAmount(0);
+    setTypedAmount(null);
     setReference('');
     setPaymentDay(todayIso());
   };
@@ -167,7 +171,7 @@ export function PurchaseDetailDialog({
             <ReturnTable ret={ret} />
           ) : (
           <div className="rounded-lg border">
-            <Table>
+            <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
               <TableHeader>
                 <TableRow>
                   <TableHead>Product</TableHead>
@@ -216,9 +220,10 @@ export function PurchaseDetailDialog({
               <p className="text-sm text-muted-foreground">No payments yet</p>
             ) : (
               <div className="rounded-lg border">
-                <Table>
+                <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
                   <TableHeader>
                     <TableRow>
+                      <TableHead>Payment ID</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Method</TableHead>
@@ -229,7 +234,16 @@ export function PurchaseDetailDialog({
                   <TableBody>
                     {payments.map((payment) => (
                       <TableRow key={payment.id}>
-                        <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleString()}</TableCell>
+                        <TableCell className="text-sm">
+                          {payment.paymentNumber ? (
+                            <Link href={`/accounting/payments?open=${payment.id}`} className="text-primary hover:underline">
+                              {payment.paymentNumber}
+                            </Link>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">{new Date(payment.paymentDate).toLocaleDateString()}</TableCell>
                         <TableCell className="tabular-nums">{payment.isRefund ? '-' : ''}{payment.amount.toFixed(2)}</TableCell>
                         <TableCell className="text-sm">
                           {payment.isRefund ? `Refund${payment.method ? ` · ${METHOD_LABELS[payment.method]}` : ''}` : payment.isDifference ? 'Difference (Purchase Discount)' : payment.isAdvance ? 'Paid from advance' : payment.isInitial ? 'Paid at purchase' : payment.method ? METHOD_LABELS[payment.method] : '—'}
@@ -352,7 +366,7 @@ export function PurchaseDetailDialog({
               </Button>
             )}
             <Button variant="outline" onClick={handleViewPdf} disabled={isOpening}>
-              {isOpening ? 'Preparing...' : 'View PO PDF'}
+              {isOpening ? 'Preparing...' : 'Purchase Invoice'}
             </Button>
             <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
             {purchase.status !== PurchaseStatus.CANCELLED && has('purchases:record_payment') && outstanding > 0.01 && (

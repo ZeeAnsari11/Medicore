@@ -1,7 +1,7 @@
 'use client';
 
-import { FileSpreadsheet, FileText, Printer } from 'lucide-react';
-import { Button } from '@medicore/ui';
+import { Download, FileSpreadsheet, FileText, Printer } from 'lucide-react';
+import { Button, DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@medicore/ui';
 import { useLedgerExport } from '@/hooks/use-ledgers';
 import { usePermissions } from '@/hooks/use-permissions';
 
@@ -26,21 +26,29 @@ export function LedgerExportButtons({ permission, path, query, baseName, stateme
   if (permission && !has(permission)) return null;
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Button variant="outline" size="sm" disabled={disabled} onClick={() => exportLedger(full, 'csv', `${baseName}.csv`)}>
-        <FileSpreadsheet className="mr-2 h-4 w-4" />
-        Excel / CSV
-      </Button>
-      <Button variant="outline" size="sm" disabled={disabled} onClick={() => exportLedger(full, 'pdf', `${baseName}.pdf`)}>
-        <Printer className="mr-2 h-4 w-4" />
-        Print / PDF
-      </Button>
-      {statement && (
-        <Button variant="outline" size="sm" disabled={disabled} onClick={() => exportLedger(full, 'statement', `${baseName}-statement.pdf`)}>
-          <FileText className="mr-2 h-4 w-4" />
-          Statement
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" disabled={disabled}>
+          <Download className="mr-2 h-4 w-4" />
+          Download Report
         </Button>
-      )}
-    </div>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={() => exportLedger(full, 'csv', `${baseName}.csv`)}>
+          <FileSpreadsheet className="mr-2 h-4 w-4" />
+          Excel / CSV
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => exportLedger(full, 'pdf', `${baseName}.pdf`)}>
+          <Printer className="mr-2 h-4 w-4" />
+          Print / PDF
+        </DropdownMenuItem>
+        {statement && (
+          <DropdownMenuItem onClick={() => exportLedger(full, 'statement', `${baseName}-statement.pdf`)}>
+            <FileText className="mr-2 h-4 w-4" />
+            Statement
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

@@ -10,6 +10,7 @@ import { Purchase, PurchaseDocument } from '../purchases/schemas/purchase.schema
 import { Customer, CustomerDocument } from '../customers/schemas/customer.schema';
 import { Vendor, VendorDocument } from '../vendors/schemas/vendor.schema';
 import { CashReceipt, CashReceiptDocument } from '../sales/schemas/cash-receipt.schema';
+import { CashPayment, CashPaymentDocument } from '../purchases/cash-payments/cash-payment.schema';
 
 /** What a payment was for, in words a person can read: the invoices it settled and the receipt it came from. */
 export interface PaymentLinks {
@@ -38,6 +39,7 @@ export class PaymentLinksService {
     @InjectModel(Customer.name) private readonly customerModel: Model<CustomerDocument>,
     @InjectModel(Vendor.name) private readonly vendorModel: Model<VendorDocument>,
     @InjectModel(CashReceipt.name) private readonly cashReceiptModel: Model<CashReceiptDocument>,
+    @InjectModel(CashPayment.name) private readonly cashPaymentModel: Model<CashPaymentDocument>,
   ) {}
 
   /** Loads the payments by id first (the ledger only has ids). */
@@ -70,13 +72,17 @@ export class PaymentLinksService {
       accountIds.add(p.accountId);
     }
 
-    const [sales, purchases, receipts, customers, vendors, accounts] = await Promise.all([
+    const paymentIds = payments.map((p) => p.id as string);
+    const [sales, purchases, receipts, cashPayments, customers, vendors, accounts] = await Promise.all([
       saleIds.size ? this.saleModel.find({ ...tenant, _id: { $in: [...saleIds] } }).select('invoiceNumber') : [],
       purchaseIds.size
         ? this.purchaseModel.find({ ...tenant, _id: { $in: [...purchaseIds] } }).select('purchaseNumber')
         : [],
       this.cashReceiptModel
-        .find({ ...tenant, 'rows.paymentId': { $in: payments.map((p) => p.id as string) } })
+        .find({ ...tenant, 'rows.paymentId': { $in: paymentIds } })
+        .select('voucherNumber transactionNumber rows.paymentId'),
+      this.cashPaymentModel
+        .find({ ...tenant, 'rows.paymentId': { $in: paymentIds } })
         .select('voucherNumber transactionNumber rows.paymentId'),
       withNames && customerIds.size
         ? this.customerModel.find({ ...tenant, _id: { $in: [...customerIds] } }).select('name')
@@ -88,7 +94,7 @@ export class PaymentLinksService {
     const saleNo = new Map(sales.map((s): [string, string] => [s.id as string, s.invoiceNumber ?? '']));
     const purchaseNo = new Map(purchases.map((s): [string, string] => [s.id as string, s.purchaseNumber]));
     const receiptOf = new Map<string, LedgerReceiptRef>();
-    for (const r of receipts) {
+    for (const r of [...receipts, ...cashPayments]) {
       for (const row of r.rows) {
         receiptOf.set(row.paymentId, { transactionNumber: r.transactionNumber, voucherNumber: r.voucherNumber });
       }

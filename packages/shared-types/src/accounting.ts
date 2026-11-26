@@ -421,6 +421,8 @@ export interface LedgerReference {
   type: 'SALE' | 'PURCHASE' | 'PAYMENT' | 'EXPENSE' | 'SALE_RETURN' | 'PURCHASE_RETURN';
   id: string;
   number: string;
+  /** PAYMENT: CUSTOMER = a sale receipt, VENDOR = a vendor payment (each type has its own 1, 2, 3 ... numbering). */
+  partyType?: PartyType;
 }
 
 /** An invoice (or purchase) a payment was applied to, with the amount applied. */
@@ -456,6 +458,8 @@ export interface LedgerRow {
   debit: number;
   credit: number;
   runningBalance: number;
+  /** General ledger over every account only: "code · name" of the account this line posted to. */
+  accountName?: string;
 }
 
 export interface LedgerPage {
@@ -510,6 +514,8 @@ export interface PartyLedgerResponse extends LedgerPage {
 export interface PartyBalanceRow {
   partyId: string;
   name: string;
+  /** Customer's territory, to tell same-named customers apart. */
+  territory?: string;
   /** Accounts Receivable (customer) / Accounts Payable (vendor) balance. */
   accountBalance: number;
   /** Unapplied advance held (customer) / prepayment with the vendor. */
@@ -646,9 +652,41 @@ export interface BalanceSheetResponse {
   isBalanced: boolean;
 }
 
+export type CashFlowSection = 'OPERATING' | 'INVESTING' | 'FINANCING';
+
+export interface CashFlowRow {
+  sourceType: string;
+  /** Human label, e.g. "Received from customers". */
+  label: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+}
+
+export interface CashFlowSectionTotals {
+  section: CashFlowSection;
+  label: string;
+  inflow: number;
+  outflow: number;
+  net: number;
+  rows: CashFlowRow[];
+}
+
+/** Cash and Bank movement for a date range, grouped by what caused it; closing = opening + net change. */
+export interface CashFlowResponse {
+  openingCash: number;
+  sections: CashFlowSectionTotals[];
+  totalInflow: number;
+  totalOutflow: number;
+  netChange: number;
+  closingCash: number;
+}
+
 export interface AccountingOverviewResponse {
   totalReceivable: number;
   totalPayable: number;
   cashAndBankBalance: number;
   netIncomeThisMonth: number;
+  /** Net income to date, or within startDate..endDate when the request gave them. */
+  netIncome?: number;
 }

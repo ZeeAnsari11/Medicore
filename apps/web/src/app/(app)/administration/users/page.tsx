@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { Plus, AlertCircle, Copy, Check } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -15,6 +17,7 @@ type DialogMode = 'create' | 'edit' | null;
 
 export default function UsersPage() {
   const { users, isLoading, error } = useUsers();
+  const shown = useShownRows(users);
   const { has } = usePermissions();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -57,6 +60,18 @@ export default function UsersPage() {
   return (
     <PageAccessGuard requires="users:read">
       <PageHeader
+        report={<ReportButton
+          title="Users"
+          rows={shown.rows.map((u) => ({
+            Name: u.fullName,
+            Username: u.username,
+            Phone: u.phone ?? '',
+            Role: u.role?.name ?? u.tenantRole,
+            Territory: u.territory,
+            City: u.city,
+            Status: u.status,
+          }))}
+        />}
         title="Users"
         description="Manage users and assign roles"
         actions={
@@ -85,7 +100,7 @@ export default function UsersPage() {
           description="Create your first user to get started"
         />
       ) : (
-        <UsersTable users={users} onEdit={handleOpenEdit} />
+        <UsersTable users={users} onEdit={handleOpenEdit} onFilteredRowsChange={shown.onFilteredRowsChange} />
       )}
 
       <UserDialog

@@ -27,6 +27,12 @@ export class UpdateCustomerDto {
   @MaxLength(40)
   code?: string;
 
+  /** National Tax Number; an empty string clears it. */
+  @IsString()
+  @IsOptional()
+  @MaxLength(40)
+  ntn?: string;
+
   @Transform(trim)
   @IsString()
   @IsNotEmpty()

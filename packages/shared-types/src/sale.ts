@@ -123,6 +123,8 @@ export interface UpdateSalePaymentRequest {
 export interface SalePaymentRow {
   id: string;
   paymentDate: string;
+  /** The payment's own running number (opens it on the Payments / Sale Receipts page); absent for rows with no Payment record. */
+  paymentNumber?: string;
   /** The part of the payment applied to this sale. */
   amount: number;
   /** Absent for the amount paid when the sale was created (no separate payment record). */

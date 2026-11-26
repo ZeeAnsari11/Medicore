@@ -1,8 +1,9 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft } from 'lucide-react';
+import { AlertCircle } from 'lucide-react';
+import { StatCards } from '@/components/layout/stat-cards';
 import { PageHeader } from '@/components/layout/page-header';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
 import {
@@ -44,7 +45,6 @@ function daysAgoISO(days: number) {
 }
 
 export default function ProfitLossPage() {
-  const router = useRouter();
 
   const branchFilter = useBranchFilter();
   const selectedBranchId = branchFilter.branchId;
@@ -67,18 +67,15 @@ export default function ProfitLossPage() {
 
   return (
     <PageAccessGuard requires="acc_profit_loss:read">
-      <button onClick={() => router.push('/accounting')} className="mb-4 flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Accounting
-      </button>
 
       <PageHeader
+        back={{ href: '/accounting', label: 'Back to Accounting' }}
         title="Profit & Loss"
         description="Revenue vs expenses, or gross profit by customer, vendor, manufacturer, order booker, city, territory or product, for a date range."
         activeFilterCount={startDate !== daysAgoISO(30) || endDate !== todayISO() ? 1 : 0}
         filters={
           <>
-            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="w-40" aria-label="From date" />
+            <Input type="date" value={startDate} onChange={(e) => { setStartDate(e.target.value); setEndDate(toAfterFrom(e.target.value, endDate)); }} className="w-40" aria-label="From date" />
             <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-40" aria-label="To date" />
             <Button
               disabled={!((startDate !== daysAgoISO(30) || endDate !== todayISO()))}
@@ -273,12 +270,7 @@ export default function ProfitLossPage() {
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-2">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Net Income</CardTitle>
-            </CardHeader>
-            <CardContent className="text-3xl font-semibold tabular-nums">{profitLoss.netIncome.toFixed(2)}</CardContent>
-          </Card>
+          <StatCards className="mb-0 lg:col-span-2" items={[{ title: 'Net Income', value: profitLoss.netIncome }]} />
         </div>
       )}
         </>

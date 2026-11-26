@@ -4,6 +4,7 @@ import { LoginDto } from './dto/login.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UsersService } from '../users/users.service';
+import { TenantsService } from '../tenants/tenants.service';
 import { PermissionResolverService } from '../roles/permission-resolver.service';
 import type { AuthenticatedUser } from '@medicore/shared-types';
 
@@ -13,6 +14,7 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly permissionResolver: PermissionResolverService,
     private readonly usersService: UsersService,
+    private readonly tenantsService: TenantsService,
   ) {}
 
   @Public()
@@ -26,9 +28,11 @@ export class AuthController {
   async me(@CurrentUser() user: AuthenticatedUser) {
     const resolved = await this.permissionResolver.resolve(user);
     const record = await this.usersService.findById(user.userId);
+    const tenant = await this.tenantsService.findById(user.tenantId);
     return {
       ...user,
       fullName: record?.fullName,
+      tenantName: tenant?.name,
       permissions: resolved.permissions,
     };
   }

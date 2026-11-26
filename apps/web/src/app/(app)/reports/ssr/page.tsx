@@ -1,5 +1,6 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
 import { Suspense, useEffect, useState } from 'react';
 import { Download } from 'lucide-react';
 import { PageHeader } from '@/components/layout/page-header';
@@ -134,7 +135,7 @@ function SsrContent() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" disabled={!report || rangeInvalid}>
-                  <Download className="mr-2 size-4" /> Export
+                  <Download className="mr-2 size-4" /> Download Report
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -164,7 +165,7 @@ function SsrContent() {
             </div>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               From
-              <Input type="date" value={from} max={to} onChange={(e) => url.set({ from: e.target.value, to, page: null })} className="w-40" />
+              <Input type="date" value={from} max={to} onChange={(e) => url.set({ from: e.target.value, to: toAfterFrom(e.target.value, to), page: null })} className="w-40" />
             </label>
             <label className="flex items-center gap-2 text-sm text-muted-foreground">
               To

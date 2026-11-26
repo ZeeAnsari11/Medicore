@@ -91,7 +91,7 @@ export class JournalEntry {
 
 export const JournalEntrySchema = SchemaFactory.createForClass(JournalEntry);
 
-// Per-branch numbering (JE-{code}-000001); pre-branch entries keep their JE-000001 numbers.
+// Entries are numbered 1, 2, 3, ... per business, so the number is unique within a tenant.
 JournalEntrySchema.index({ tenantId: 1, branchId: 1, entryNumber: 1 }, { unique: true });
 JournalEntrySchema.index({ tenantId: 1, branchId: 1, entryDate: -1 });
 JournalEntrySchema.index({ tenantId: 1, sourceType: 1, sourceId: 1 });

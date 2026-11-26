@@ -1,5 +1,6 @@
 'use client';
 
+import { toAfterFrom } from '@/lib/date-range';
 import { Button, FilterPanel, Input } from '@medicore/ui';
 import { BranchFilter } from '@/components/branch-filter';
 import type { BranchFilterState } from '@/hooks/use-branch-filter';
@@ -81,7 +82,7 @@ export function LedgerFilters({ from, to, branchFilter, onChange }: LedgerFilter
         </div>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           From
-          <Input type="date" value={from} max={to || undefined} onChange={(e) => onChange({ from: e.target.value })} className="w-40" />
+          <Input type="date" value={from} max={to || undefined} onChange={(e) => onChange({ from: e.target.value, to: toAfterFrom(e.target.value, to) })} className="w-40" />
         </label>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           To

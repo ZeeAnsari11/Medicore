@@ -143,6 +143,7 @@ export default function PlatformSettingsPage() {
               <Input
                 id="defaultTrialDays"
                 type="number"
+                integer
                 min="0"
                 aria-invalid={!!errors.defaultTrialDays}
                 {...register('defaultTrialDays', { required: 'Trial length is required' })}

@@ -77,7 +77,7 @@ export function PaymentDetailDialog({ payment, onOpenChange }: { payment: Paymen
                 <p className="text-sm text-muted-foreground">Not applied to an invoice: the whole amount is an advance.</p>
               ) : (
                 <div className="rounded-md border">
-                  <Table>
+                  <Table className="[&_th]:h-8 [&_th]:px-2 [&_td]:px-2 [&_td]:py-1 [&_td]:leading-tight">
                     <TableHeader>
                       <TableRow>
                         <TableHead>{isCustomer ? 'Invoice #' : 'Purchase #'}</TableHead>

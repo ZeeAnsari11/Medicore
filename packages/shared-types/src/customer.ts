@@ -11,6 +11,10 @@ export interface Customer extends TenantOwnedEntity {
   address?: string;
   /** Optional customer code (printed on the supply summary); unique per tenant when set. */
   code?: string;
+  /** Running customer ID per business: 1, 2, 3, ... */
+  customerNumber?: number;
+  /** National Tax Number (optional). */
+  ntn?: string;
   territory?: string;
   city?: string;
   isDealer: boolean;
@@ -40,6 +44,7 @@ export interface CreateCustomerRequest {
   /** Address, territory and city are required so customers can be filtered on the supply reports. */
   address: string;
   code?: string;
+  ntn?: string;
   territory: string;
   city: string;
   isDealer?: boolean;
@@ -50,6 +55,7 @@ export interface UpdateCustomerRequest {
   phone?: string;
   address?: string;
   code?: string;
+  ntn?: string;
   territory?: string;
   city?: string;
   isDealer?: boolean;

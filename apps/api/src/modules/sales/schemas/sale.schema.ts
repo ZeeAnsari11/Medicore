@@ -162,6 +162,13 @@ export class Sale {
   @Prop({ required: true, trim: true })
   orderBookerName: string;
 
+  /**
+   * Optional client-generated id of the request that created this sale (offline PWA). A replay of the same request
+   * returns this sale instead of creating (and numbering, and stocking out) a second one — like CashReceipt.batchId.
+   */
+  @Prop({ type: String })
+  clientOpId?: string;
+
   @Prop({ type: Date, default: null })
   deletedAt: Date | null;
 }
@@ -173,6 +180,7 @@ SaleSchema.index(
   { tenantId: 1, branchId: 1, invoiceNumber: 1 },
   { unique: true, partialFilterExpression: { invoiceNumber: { $type: 'string' } } },
 );
+SaleSchema.index({ tenantId: 1, clientOpId: 1 }, { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } });
 SaleSchema.index({ tenantId: 1, branchId: 1, status: 1, saleDate: -1 });
 SaleSchema.index({ tenantId: 1, customerId: 1, saleDate: -1 });
 SaleSchema.index({ tenantId: 1, orderBookerId: 1, saleDate: -1 });

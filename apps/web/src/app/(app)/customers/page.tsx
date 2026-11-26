@@ -2,6 +2,8 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import { AlertCircle, MoreHorizontal, Plus, Trash2, Users } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -58,6 +60,7 @@ export default function CustomersPage() {
       ),
     [customers, cities, territories],
   );
+  const shown = useShownRows(visible);
 
   const selected = selectedId ? customers.find((c) => c.id === selectedId) : undefined;
 
@@ -85,6 +88,7 @@ export default function CustomersPage() {
 
   const columns = useMemo<ColumnDef<Customer>[]>(
     () => [
+      { id: 'customerNumber', header: 'ID', accessorFn: (c) => c.customerNumber ?? 0, cell: ({ getValue }) => (getValue() as number) || '—' },
       { accessorKey: 'name', header: 'Name' },
       {
         id: 'contact',
@@ -146,6 +150,22 @@ export default function CustomersPage() {
   return (
     <PageAccessGuard requires="customers:read">
       <PageHeader
+        report={<ReportButton
+          title="Customers"
+          info={[`City: ${cities.length ? cities.join(', ') : 'All'}`, `Territory: ${territories.length ? territories.join(', ') : 'All'}`]}
+          totalColumns={['Outstanding']}
+          rows={shown.rows.map((c) => ({
+            Name: c.name,
+            ID: c.customerNumber ?? '',
+            Code: c.code ?? '',
+            Phone: c.phone ?? '',
+            Territory: c.territory ?? '',
+            City: c.city ?? '',
+            Address: c.address ?? '',
+            Type: c.isDealer ? 'Dealer' : 'Retail',
+            Outstanding: (c.outstandingBalance ?? 0).toFixed(2),
+          }))}
+        />}
         title="Customers"
         description="Customer records and outstanding balances"
         actions={
@@ -171,6 +191,7 @@ export default function CustomersPage() {
         <EmptyState icon={Users} title="No customers yet" description="Add a customer to start recording sales" />
       ) : (
         <DataTable
+          onFilteredRowsChange={shown.onFilteredRowsChange}
           columns={columns}
           data={visible}
           toolbar={

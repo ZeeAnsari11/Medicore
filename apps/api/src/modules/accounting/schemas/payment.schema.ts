@@ -78,7 +78,7 @@ export class Payment {
   @Prop({ trim: true })
   orderBookerName?: string;
 
-  /** Per-tenant running number (1, 2, 3, ...) shown as the payment id; absent on payments saved before numbering. */
+  /** Per-tenant, per-party-type running number (1, 2, 3, ...) shown as the receipt/payment id; absent on payments saved before numbering. */
   @Prop({ type: Number })
   paymentSeq?: number;
 
@@ -98,4 +98,4 @@ export const PaymentSchema = SchemaFactory.createForClass(Payment);
 PaymentSchema.index({ tenantId: 1, branchId: 1, paymentDate: -1 });
 PaymentSchema.index({ tenantId: 1, partyType: 1, partyId: 1, paymentDate: -1 });
 PaymentSchema.index({ tenantId: 1, 'allocations.invoiceId': 1 });
-PaymentSchema.index({ tenantId: 1, paymentSeq: 1 }, { unique: true, partialFilterExpression: { paymentSeq: { $type: 'number' } } });
+PaymentSchema.index({ tenantId: 1, partyType: 1, paymentSeq: 1 }, { unique: true, partialFilterExpression: { paymentSeq: { $type: 'number' } } });

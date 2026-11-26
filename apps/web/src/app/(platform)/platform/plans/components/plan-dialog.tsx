@@ -169,7 +169,7 @@ export function PlanDialog({ open, mode, plan, onOpenChange }: PlanDialogProps) 
 
             <div className="space-y-1.5">
               <Label htmlFor="maxUsers">Max users</Label>
-              <Input id="maxUsers" type="number" min="1" placeholder="Unlimited" {...register('maxUsers')} />
+              <Input id="maxUsers" type="number" integer min="1" placeholder="Unlimited" {...register('maxUsers')} />
             </div>
           </div>
         </form>

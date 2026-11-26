@@ -44,7 +44,7 @@ export class LedgersController {
     ]);
     this.send(res, q.format, `general-ledger-${safeName(ledger.accountName)}`, {
       kind: 'GL',
-      title: 'General Ledger',
+      title: 'Journal Ledger',
       ...ctx,
       subjectLabel: 'Account',
       subjectName: `${ledger.accountCode} ${ledger.accountName}`,

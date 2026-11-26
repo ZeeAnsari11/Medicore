@@ -61,7 +61,7 @@ function Content() {
 
   return (
     <div>
-      <PageHeader title="Process Orders" description="Confirm or reject the orders placed by each Order Booker." />
+      <PageHeader back={{ href: '/sales', label: 'Back to Sales' }} title="Process Orders" description="Confirm or reject the orders placed by each Order Booker." />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <FilterPanel activeCount={url.get('date') || bookerId ? 1 : 0}>

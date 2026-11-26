@@ -7,6 +7,8 @@ export interface LookupInvoice {
   saleDate: string;
   customerId: string;
   customerName: string;
+  /** The customer's territory, shown beside the name. */
+  customerTerritory?: string;
   grandTotal: number;
   netTotal: number;
   received: number;
@@ -20,6 +22,8 @@ export interface OutstandingParty {
   id: string;
   name: string;
   phone?: string;
+  /** The customer's territory, shown beside the name so similar names can be told apart. */
+  territory?: string;
   /** Invoices with a balance. */
   openInvoices: number;
   /** Total still owed across them. */

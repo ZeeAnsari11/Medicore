@@ -26,6 +26,9 @@ export interface PartyBalancesParams {
   branchId?: string;
   search?: string;
   hasBalance?: boolean;
+  /** Period for invoiced / received / returns; balances are as of `to`. Empty = all time. */
+  from?: string;
+  to?: string;
   sortBy: 'name' | 'balance';
   sortDir: 'asc' | 'desc';
   page: number;
@@ -41,10 +44,10 @@ function toQuery(params: Record<string, string | number | boolean | undefined>) 
 }
 
 export function useGeneralLedger(accountId: string | null, params: LedgerParams) {
+  // No account means every account together.
   const query = useTenantQuery({
     queryKey: [...KEY, 'gl', accountId, params],
-    queryFn: () => apiFetch<GeneralLedgerResponse>(`/accounting/general-ledger?${toQuery({ accountId: accountId!, ...params })}`),
-    enabled: !!accountId,
+    queryFn: () => apiFetch<GeneralLedgerResponse>(`/accounting/general-ledger?${toQuery({ accountId: accountId || undefined, ...params })}`),
     placeholderData: keepPreviousData,
   });
   return { ledger: query.data, isLoading: query.isLoading, isFetching: query.isFetching, error: query.error };

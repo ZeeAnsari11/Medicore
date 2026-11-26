@@ -8,6 +8,17 @@ import { Product, ProductDocument } from '../products/schemas/product.schema';
 import { BranchScopedRepository } from '../../common/database/branch-scoped.repository';
 import { CreateBatchAdjustmentDto } from './dto/create-batch-adjustment.dto';
 import { StockMovementType } from '@medicore/shared-types';
+import { karachiDayEnd, karachiDayStart } from '../reports/ssr/tz';
+
+/** Effect of a movement on sellable stock; WRITE_OFF never touched it, SET stores a level (not a delta). */
+const STOCK_SIGN: Partial<Record<StockMovementType, 1 | -1>> = {
+  [StockMovementType.PURCHASE_IN]: 1,
+  [StockMovementType.TRANSFER_IN]: 1,
+  [StockMovementType.ADJUSTMENT_ADD]: 1,
+  [StockMovementType.SALE_OUT]: -1,
+  [StockMovementType.TRANSFER_OUT]: -1,
+  [StockMovementType.ADJUSTMENT_SUBTRACT]: -1,
+};
 import type { Batch as BatchType, InventoryRollup } from '@medicore/shared-types';
 
 @Injectable()
@@ -27,6 +38,7 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
     tenantId: string,
     branchId: string | null,
     search?: string,
+    period?: { from?: string; to?: string },
   ): Promise<InventoryRollup[]> {
     const productFilter: Record<string, unknown> = { tenantId: new Types.ObjectId(tenantId) };
     if (search) {
@@ -68,10 +80,65 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
 
     const totalsByProduct = new Map(totals.map((t) => [t._id.toString(), t]));
 
+    // A past date: today's stock with the later movements undone. A manual "set stock" stores a level, not a
+    // change, so it cannot be undone and is ignored.
+    const asOf = period?.to ? karachiDayEnd(period.to) : undefined;
+    const periodStart = period?.from ? karachiDayStart(period.from) : undefined;
+    const historical = !!(asOf || periodStart);
+    const after = new Map<string, number>();
+    const sinceStart = new Map<string, number>();
+    const received = new Map<string, number>();
+    const sold = new Map<string, number>();
+    if (historical) {
+      const since = periodStart ?? asOf!;
+      const moves = await this.stockMovementModel.aggregate<{
+        _id: { p: Types.ObjectId; t: StockMovementType; late: boolean; inRange: boolean };
+        qty: number;
+      }>([
+        {
+          $match: {
+            tenantId: new Types.ObjectId(tenantId),
+            ...(branchId ? { branchId: new Types.ObjectId(branchId) } : {}),
+            deletedAt: null,
+            createdAt: { $gte: asOf && asOf < since ? asOf : since },
+          },
+        },
+        {
+          $group: {
+            _id: {
+              p: '$productId',
+              t: '$type',
+              late: asOf ? { $gt: ['$createdAt', asOf] } : { $literal: false },
+              inRange: {
+                $and: [
+                  periodStart ? { $gte: ['$createdAt', periodStart] } : { $literal: true },
+                  asOf ? { $lte: ['$createdAt', asOf] } : { $literal: true },
+                ],
+              },
+            },
+            qty: { $sum: '$quantity' },
+          },
+        },
+      ]);
+      for (const m of moves) {
+        const id = m._id.p.toString();
+        const sign = STOCK_SIGN[m._id.t] ?? 0;
+        if (m._id.late) after.set(id, (after.get(id) ?? 0) + sign * m.qty);
+        if (periodStart) sinceStart.set(id, (sinceStart.get(id) ?? 0) + sign * m.qty);
+        if (m._id.inRange) {
+          if (m._id.t === StockMovementType.PURCHASE_IN || m._id.t === StockMovementType.ADJUSTMENT_ADD)
+            received.set(id, (received.get(id) ?? 0) + m.qty);
+          if (m._id.t === StockMovementType.SALE_OUT) sold.set(id, (sold.get(id) ?? 0) + m.qty);
+        }
+      }
+    }
+
     return products.map((product): InventoryRollup => {
       const obj = product.toObject() as any;
       const totalsEntry = totalsByProduct.get(obj._id.toString());
-      const totalQuantity = totalsEntry?.totalQuantity ?? 0;
+      const id = obj._id.toString();
+      const now = totalsEntry?.totalQuantity ?? 0;
+      const totalQuantity = historical ? now - (after.get(id) ?? 0) : now;
       return {
         productId: obj._id.toString(),
         productName: obj.name,
@@ -80,8 +147,14 @@ export class BatchesService extends BranchScopedRepository<BatchDocument> {
         totalQuantity,
         minStockLevel: obj.minStockLevel,
         isLowStock: obj.minStockLevel !== undefined && totalQuantity <= obj.minStockLevel,
-        nearestExpiryDate: totalsEntry?.nearestExpiryDate?.toISOString(),
-        expiredQuantity: totalsEntry?.expiredQuantity ?? 0,
+        // Batch expiry is only known for today's stock.
+        nearestExpiryDate: historical ? undefined : totalsEntry?.nearestExpiryDate?.toISOString(),
+        expiredQuantity: historical ? undefined : (totalsEntry?.expiredQuantity ?? 0),
+        ...(periodStart && {
+          openingQuantity: now - (sinceStart.get(id) ?? 0),
+          receivedQuantity: received.get(id) ?? 0,
+          soldQuantity: sold.get(id) ?? 0,
+        }),
       };
     });
   }

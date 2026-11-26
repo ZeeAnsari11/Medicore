@@ -37,13 +37,20 @@ export type SystemAccountKey =
   | 'OPERATING_EXPENSES'
   | 'BANK_CHARGES'
   | 'OTHER_EXPENSES'
-  | 'PURCHASE_DISCOUNT';
+  | 'PURCHASE_DISCOUNT'
+  | 'LOANS_PAYABLE'
+  | 'INTEREST_EXPENSE'
+  | 'FIXED_ASSETS'
+  | 'DISPOSAL_GAIN_LOSS'
+  | 'OTHER_INCOME';
 
 interface DefaultAccountSpec {
   systemKey: SystemAccountKey;
   code: string;
   name: string;
   type: AccountType;
+  /** Only when it differs from the type's usual side (a contra account). */
+  normalBalance?: NormalBalance;
 }
 
 /**
@@ -100,6 +107,12 @@ const DEFAULT_ACCOUNTS: DefaultAccountSpec[] = [
   },
   { systemKey: 'BANK_CHARGES', code: '5200', name: 'Bank Charges', type: AccountType.EXPENSE },
   { systemKey: 'OTHER_EXPENSES', code: '5900', name: 'Other Expenses', type: AccountType.EXPENSE },
+  // Loans and fixed assets. Expense codes stay above 5900: 5300-5890 belong to the Expenses page's categories.
+  { systemKey: 'FIXED_ASSETS', code: '1500', name: 'Fixed Assets', type: AccountType.ASSET },
+  { systemKey: 'LOANS_PAYABLE', code: '2300', name: 'Loans Payable', type: AccountType.LIABILITY },
+  { systemKey: 'INTEREST_EXPENSE', code: '5910', name: 'Interest Expense', type: AccountType.EXPENSE },
+  { systemKey: 'OTHER_INCOME', code: '4800', name: 'Other Income', type: AccountType.REVENUE },
+  { systemKey: 'DISPOSAL_GAIN_LOSS', code: '5930', name: 'Loss / (Gain) on Asset Disposal', type: AccountType.EXPENSE },
 ];
 
 function normalBalanceFor(type: AccountType): NormalBalance {
@@ -212,7 +225,7 @@ export class AccountingPostingService {
           code: spec.code,
           name: spec.name,
           type: spec.type,
-          normalBalance: normalBalanceFor(spec.type),
+          normalBalance: spec.normalBalance ?? normalBalanceFor(spec.type),
           systemKey: spec.systemKey,
           isSystemAccount: true,
           isActive: true,
@@ -223,6 +236,26 @@ export class AccountingPostingService {
     }
 
     return byKey;
+  }
+
+  /**
+   * Several system accounts in one go. Resolve them together like this, never with Promise.all over
+   * resolveSystemAccount on one session: each call seeds the missing defaults, and concurrent calls race
+   * to create the same accounts (duplicate code).
+   */
+  async resolveSystemAccounts<K extends SystemAccountKey>(
+    tenantId: string,
+    keys: readonly K[],
+    session: ClientSession,
+  ): Promise<Record<K, AccountDocument>> {
+    const accounts = await this.ensureDefaultAccounts(tenantId, session);
+    const out = {} as Record<K, AccountDocument>;
+    for (const key of keys) {
+      const account = accounts.get(key);
+      if (!account) throw new BadRequestException(`System account ${key} could not be resolved`);
+      out[key] = account;
+    }
+    return out;
   }
 
   async resolveSystemAccount(
@@ -248,20 +281,18 @@ export class AccountingPostingService {
       );
     }
 
-    // Every entry belongs to a branch and is numbered per branch: JE-{branch code}-000001. The branch
-    // always comes from the document being posted; the top-bar branch is never used.
+    // Every entry belongs to a branch (taken from the document being posted; the top-bar branch is never
+    // used) but is numbered 1, 2, 3, ... across the whole business.
     const branchId = params.branchId;
     if (!branchId) throw new BadRequestException({ statusCode: 400, message: ['branchId should not be empty'], error: 'Bad Request' });
     const branch = await this.journalEntryModel.db
       .model('Branch')
-      .findOne({ _id: branchId, tenantId: new Types.ObjectId(params.tenantId) })
-      .select('code')
+      .exists({ _id: branchId, tenantId: new Types.ObjectId(params.tenantId) })
       .session(params.session ?? null)
-      .lean<{ code: string }>()
       .exec();
     if (!branch) throw new NotFoundException('Branch not found');
-    const seq = await this.sequenceService.next(params.tenantId, branchId, 'journal', params.session);
-    const entryNumber = `JE-${branch.code}-${String(seq).padStart(6, '0')}`;
+    const seq = await this.sequenceService.next(params.tenantId, null, 'journal', params.session);
+    const entryNumber = String(seq);
 
     const [created] = await this.journalEntryModel.create(
       [

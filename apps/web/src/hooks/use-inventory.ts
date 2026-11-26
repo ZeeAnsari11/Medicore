@@ -9,8 +9,10 @@ import { useTenantQuery, useTenantQueryClient } from '@/lib/tenant-query';
 export const INVENTORY_QUERY_KEY = ['inventory'];
 export const INVENTORY_BATCHES_QUERY_KEY = ['inventory', 'batches'];
 
-async function fetchRollup(branchId: string | null, search?: string): Promise<InventoryRollup[]> {
+async function fetchRollup(branchId: string | null, search?: string, from?: string, to?: string): Promise<InventoryRollup[]> {
   const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
   if (branchId) params.set('branchId', branchId);
   if (search) params.set('search', search);
   const query = params.toString();
@@ -28,12 +30,13 @@ async function createAdjustment(dto: CreateBatchAdjustmentRequest): Promise<Batc
   return apiFetch<Batch>('/inventory/adjustments', { method: 'POST', body: dto });
 }
 
-export function useInventory(branchId: string | null, search?: string) {
+/** Stock rollup; with `from` / `to` (yyyy-mm-dd) it is the stock at the end of `to`, plus the movement since `from`. */
+export function useInventory(branchId: string | null, search?: string, from?: string, to?: string) {
   const queryClient = useTenantQueryClient();
 
   const rollupQuery = useTenantQuery({
-    queryKey: [...INVENTORY_QUERY_KEY, branchId, search],
-    queryFn: () => fetchRollup(branchId, search),
+    queryKey: [...INVENTORY_QUERY_KEY, branchId, search, from, to],
+    queryFn: () => fetchRollup(branchId, search, from, to),
     staleTime: 60 * 1000,
   });
 

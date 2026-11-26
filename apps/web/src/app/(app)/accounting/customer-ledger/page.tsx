@@ -1,12 +1,13 @@
 'use client';
 
+import { customerOption } from '@/lib/party-label';
 import { useMemo } from 'react';
 import { useCustomers } from '@/hooks/use-customers';
 import { PartyLedgerPage, type PartyLedgerConfig } from '@/components/ledger/party-ledger-page';
 
 function useCustomerOptions() {
   const { customers } = useCustomers();
-  return useMemo(() => customers.map((c) => ({ value: c.id, label: c.name })), [customers]);
+  return useMemo(() => customers.map(customerOption), [customers]);
 }
 
 const config: PartyLedgerConfig = {

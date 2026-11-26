@@ -7,23 +7,45 @@ import type {
   ProfitGroupBy,
   BalanceSheetResponse,
   AccountingOverviewResponse,
+  CashFlowResponse,
 } from '@medicore/shared-types';
+import { keepPreviousData } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
 import { useTenantQuery } from '@/lib/tenant-query';
 
 const KEY = ['accounting', 'reports'];
 
-export function useAccountingOverview(branchId: string | null, enabled = true) {
+export function useAccountingOverview(branchId: string | null, enabled = true, startDate?: string, endDate?: string) {
   const query = useTenantQuery({
     enabled,
-    queryKey: [...KEY, 'overview', branchId],
+    queryKey: [...KEY, 'overview', branchId, startDate, endDate],
     queryFn: () => {
-      const params = branchId ? `?branchId=${branchId}` : '';
+      const q = new URLSearchParams();
+      if (branchId) q.set('branchId', branchId);
+      if (startDate) q.set('startDate', startDate);
+      if (endDate) q.set('endDate', endDate);
+      const params = q.size ? `?${q}` : '';
       return apiFetch<AccountingOverviewResponse>(`/accounting/reports/overview${params}`);
     },
     staleTime: 30 * 1000,
   });
   return { overview: query.data, isLoading: query.isLoading, error: query.error };
+}
+
+export function useCashFlow(branchId: string | null, startDate?: string, endDate?: string) {
+  const query = useTenantQuery({
+    queryKey: [...KEY, 'cash-flow', branchId, startDate, endDate],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (branchId) params.set('branchId', branchId);
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
+      const q = params.toString();
+      return apiFetch<CashFlowResponse>(`/accounting/reports/cash-flow${q ? `?${q}` : ''}`);
+    },
+    placeholderData: keepPreviousData,
+  });
+  return { cashFlow: query.data, isLoading: query.isLoading, error: query.error };
 }
 
 export function useProfitLoss(branchId: string | null, startDate?: string, endDate?: string) {

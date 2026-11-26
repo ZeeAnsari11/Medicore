@@ -34,6 +34,14 @@ export class Customer {
   @Prop({ trim: true })
   code?: string;
 
+  /** National Tax Number (optional). */
+  @Prop({ trim: true })
+  ntn?: string;
+
+  /** Running customer number per business: 1, 2, 3, ... (shown as the customer ID). */
+  @Prop()
+  customerSeq?: number;
+
   @Prop({ trim: true })
   territory?: string;
 
@@ -52,10 +60,19 @@ export class Customer {
 
   @Prop({ type: Date, default: null })
   deletedAt: Date | null;
+
+  /**
+   * Optional client-generated id of the request that created this customer (offline PWA). A replay of the same
+   * request returns this customer instead of creating a second one — same idea as CashReceipt.batchId.
+   */
+  @Prop({ type: String })
+  clientOpId?: string;
 }
 
 export const CustomerSchema = SchemaFactory.createForClass(Customer);
 
+CustomerSchema.index({ tenantId: 1, clientOpId: 1 }, { unique: true, partialFilterExpression: { clientOpId: { $type: 'string' } } });
 CustomerSchema.index({ tenantId: 1, branchId: 1, phone: 1 });
 CustomerSchema.index({ tenantId: 1, branchId: 1, territory: 1 });
+CustomerSchema.index({ tenantId: 1, customerSeq: 1 }, { unique: true, partialFilterExpression: { customerSeq: { $type: 'number' } } });
 CustomerSchema.index({ tenantId: 1, code: 1 }, { unique: true, partialFilterExpression: { code: { $type: 'string' } } });

@@ -13,6 +13,7 @@ export { LinkContext, useLinkContext, type LinkComponent, LinkProvider } from '.
 export { Button, buttonVariants, type ButtonProps } from './primitives/button';
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './primitives/card';
 export { Input } from './primitives/input';
+export { PlaceChip } from './primitives/place-chip';
 export { Label } from './primitives/label';
 export { Alert, AlertTitle, AlertDescription } from './primitives/alert';
 export { CollapsibleSection, type CollapsibleSectionProps } from './primitives/collapsible-section';

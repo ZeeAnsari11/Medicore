@@ -11,9 +11,14 @@ export class LedgerReportsController {
 
   @RequirePermission('acc_overview:read')
   @Get('overview')
-  async overview(@CurrentUser() user: AuthenticatedUser, @Query('branchId') branchId?: string) {
+  async overview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
     const scope = resolveBranchScope(user, branchId);
-    return this.ledgerReportsService.getOverview(user.tenantId, scope);
+    return this.ledgerReportsService.getOverview(user.tenantId, scope, startDate, endDate);
   }
 
   @RequirePermission('acc_profit_loss:read')
@@ -26,6 +31,18 @@ export class LedgerReportsController {
   ) {
     const scope = resolveBranchScope(user, branchId);
     return this.ledgerReportsService.getProfitLoss(user.tenantId, scope, startDate, endDate);
+  }
+
+  @RequirePermission('acc_cash_flow:read')
+  @Get('cash-flow')
+  async cashFlow(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const scope = resolveBranchScope(user, branchId);
+    return this.ledgerReportsService.getCashFlow(user.tenantId, scope, startDate, endDate);
   }
 
   @RequirePermission('acc_balance_sheet:read')

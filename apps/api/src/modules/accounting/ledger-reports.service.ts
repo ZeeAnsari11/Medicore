@@ -9,7 +9,9 @@ import type {
   ProfitLossResponse,
   BalanceSheetResponse,
   AccountingOverviewResponse,
+  CashFlowResponse,
 } from '@medicore/shared-types';
+import { buildCashFlow } from './cash-flow';
 
 @Injectable()
 export class LedgerReportsService {
@@ -166,10 +168,70 @@ export class LedgerReportsService {
     };
   }
 
+  /**
+   * Cash and Bank movement in a date range, grouped into operating / investing / financing by the kind of entry
+   * that moved it. Opening cash is everything before `startDate` (all time when no start is given).
+   */
+  async getCashFlow(
+    tenantId: string,
+    branchId: string | null,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<CashFlowResponse> {
+    const accounts = await this.accountModel.find({
+      tenantId: new Types.ObjectId(tenantId),
+      systemKey: { $in: ['CASH', 'BANK'] },
+    });
+    const cashIds = accounts.map((a) => a.id);
+    const from = startDate ? new Date(startDate) : undefined;
+    const to = endDate ? new Date(endDate) : undefined;
+    // A bare yyyy-mm-dd means the whole day.
+    if (to && endDate!.length <= 10) to.setUTCHours(23, 59, 59, 999);
+
+    const match: Record<string, unknown> = {
+      tenantId: new Types.ObjectId(tenantId),
+      status: { $in: LEDGER_VISIBLE_STATUSES },
+      deletedAt: null,
+      'lines.accountId': { $in: cashIds },
+    };
+    if (branchId) match.branchId = new Types.ObjectId(branchId);
+    if (to) match.entryDate = { $lte: to };
+
+    const groups = cashIds.length
+      ? await this.journalEntryModel.aggregate<{
+          _id: { sourceType: string; before: boolean };
+          debit: number;
+          credit: number;
+        }>([
+          { $match: match },
+          { $unwind: '$lines' },
+          { $match: { 'lines.accountId': { $in: cashIds } } },
+          {
+            $group: {
+              _id: {
+                sourceType: '$sourceType',
+                before: from ? { $lt: ['$entryDate', from] } : { $literal: false },
+              },
+              debit: { $sum: '$lines.debit' },
+              credit: { $sum: '$lines.credit' },
+            },
+          },
+        ])
+      : [];
+
+    return buildCashFlow(groups.map((g) => ({ sourceType: g._id.sourceType, before: g._id.before, debit: g.debit, credit: g.credit })));
+  }
+
   async getOverview(
     tenantId: string,
     branchId: string | null,
+    startDate?: string,
+    endDate?: string,
   ): Promise<AccountingOverviewResponse> {
+    // No dates: running balances to date. With dates: what moved within the range.
+    const to = endDate ? new Date(endDate) : undefined;
+    // A bare yyyy-mm-dd means the whole day.
+    if (to && endDate!.length <= 10) to.setUTCHours(23, 59, 59, 999);
     const accounts = await this.accountModel.find({
       tenantId: new Types.ObjectId(tenantId),
       systemKey: { $in: ['ACCOUNTS_RECEIVABLE', 'ACCOUNTS_PAYABLE', 'CASH', 'BANK'] },
@@ -187,6 +249,9 @@ export class LedgerReportsService {
         deletedAt: null,
       };
       if (branchId) match.branchId = new Types.ObjectId(branchId);
+      if (startDate || to) {
+        match.entryDate = { ...(startDate && { $gte: new Date(startDate) }), ...(to && { $lte: to }) };
+      }
       const [result] = await this.journalEntryModel.aggregate<{ debit: number; credit: number }>([
         { $match: match },
         { $unwind: '$lines' },
@@ -218,11 +283,13 @@ export class LedgerReportsService {
       new Date().toISOString(),
     );
 
+    const net = await this.getProfitLoss(tenantId, branchId, startDate, to?.toISOString());
     return {
       totalReceivable,
       totalPayable,
       cashAndBankBalance: round2(cashBalance + bankBalance),
       netIncomeThisMonth: pl.netIncome,
+      netIncome: net.netIncome,
     };
   }
 }

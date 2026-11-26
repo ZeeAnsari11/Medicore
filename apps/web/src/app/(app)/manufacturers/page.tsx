@@ -1,11 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, AlertCircle, Factory } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
-import { Button, Alert, Input } from '@medicore/ui';
+import { Button, Alert } from '@medicore/ui';
 import { useManufacturers } from '@/hooks/use-manufacturers';
 import { usePermissions } from '@/hooks/use-permissions';
 import { useBranchFilter } from '@/hooks/use-branch-filter';
@@ -18,16 +20,15 @@ export default function ManufacturersPage() {
   const { manufacturers, isLoading, error } = useManufacturers();
   const { has } = usePermissions();
   const branchFilter = useBranchFilter();
-  const [search, setSearch] = useState('');
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // A specific branch shows only its own manufacturers; legacy ones with no branch appear under "All branches".
-  const visible = manufacturers.filter(
-    (m) =>
-      (!branchFilter.branchId || m.branchId === branchFilter.branchId) &&
-      m.name.toLowerCase().includes(search.trim().toLowerCase()),
+  const visible = useMemo(
+    () => manufacturers.filter((m) => !branchFilter.branchId || m.branchId === branchFilter.branchId),
+    [manufacturers, branchFilter.branchId],
   );
+  const shown = useShownRows(visible);
 
   const selected = selectedId ? manufacturers.find((m) => m.id === selectedId) : undefined;
 
@@ -49,6 +50,16 @@ export default function ManufacturersPage() {
   return (
     <PageAccessGuard requires="manufacturers:read">
       <PageHeader
+        report={<ReportButton
+          title="Manufacturers"
+          rows={shown.rows.map((m) => ({
+            Name: m.name,
+            Country: m.country ?? '',
+            Phone: m.contactPhone ?? '',
+            Website: m.website ?? '',
+            Status: m.isActive ? 'Active' : 'Inactive',
+          }))}
+        />}
         title="Manufacturers"
         description="Companies that make the products you distribute"
         actions={
@@ -66,20 +77,6 @@ export default function ManufacturersPage() {
         </Alert>
       )}
 
-      <div className="mb-4 flex items-center gap-3">
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search manufacturers..."
-          className="max-w-xs"
-          aria-label="Search manufacturers"
-        />
-        <Button
-          disabled={!(search)} variant="outline" size="sm" onClick={() => setSearch('')}>
-          Clear filters
-        </Button>
-      </div>
-
       {isLoading ? (
         <div className="flex h-96 items-center justify-center">
           <div className="size-6 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-primary" />
@@ -91,9 +88,9 @@ export default function ManufacturersPage() {
           description="Add the companies that make your products before adding products"
         />
       ) : visible.length === 0 ? (
-        <EmptyState icon={Factory} title="No matching manufacturers" description="Try a different search or branch" />
+        <EmptyState icon={Factory} title="No manufacturers in this branch" description="Try another branch" />
       ) : (
-        <ManufacturersTable manufacturers={visible} onEdit={handleOpenEdit} />
+        <ManufacturersTable manufacturers={visible} onEdit={handleOpenEdit} onFilteredRowsChange={shown.onFilteredRowsChange} />
       )}
 
       <ManufacturerDialog

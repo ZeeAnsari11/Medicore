@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { Plus, AlertCircle } from 'lucide-react';
+import { ReportButton } from '@/components/layout/report-button';
+import { useShownRows } from '@/hooks/use-shown-rows';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/layout/empty-state';
 import { PageAccessGuard } from '@/components/layout/page-access-guard';
@@ -15,6 +17,7 @@ type DialogMode = 'create' | 'edit' | null;
 
 export default function RolesPage() {
   const { roles, isLoading, error } = useRoles();
+  const shown = useShownRows(roles);
   const { has } = usePermissions();
   const [dialogMode, setDialogMode] = useState<DialogMode>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
@@ -39,6 +42,15 @@ export default function RolesPage() {
   return (
     <PageAccessGuard requires="roles:read">
       <PageHeader
+        report={<ReportButton
+          title="Roles"
+          rows={shown.rows.map((r) => ({
+            Name: r.name,
+            Description: r.description ?? '',
+            Modules: r.allowedModules.length,
+            Status: r.isActive ? 'Active' : 'Inactive',
+          }))}
+        />}
         title="Roles"
         description="Create and manage roles with permissions"
         actions={
@@ -67,7 +79,7 @@ export default function RolesPage() {
           description="Create your first role to assign permissions to users"
         />
       ) : (
-        <RolesTable roles={roles} onEdit={handleOpenEdit} />
+        <RolesTable roles={roles} onEdit={handleOpenEdit} onFilteredRowsChange={shown.onFilteredRowsChange} />
       )}
 
       <RoleDialog
